@@ -10,47 +10,93 @@ You manage a fleet of AI coding agents across multiple servers. Each agent is a 
 
 ## First-Time Setup
 
-Guide the user through each step. Assume they have nothing — no Discord server, no bots, no tokens.
+Guide the user through each step ONE AT A TIME. Assume they have nothing. Explain why each step matters. Wait for confirmation before moving on.
 
 ### Step 1: Install fleet CLI
+
+**Why:** Fleet is a shell tool that manages your agent team. This installs it.
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/reny1cao/open-fleet/master/install.sh | bash
 ```
 
+**Done when:** Output shows "Installed. Next steps:" and `fleet help` works in terminal.
+
 ### Step 2: Discord server
-Ask the user: "Do you have a Discord server for your fleet?"
-- If yes: continue to Step 3
-- If no: tell them to create one at https://discord.com/channels/@me — click "+" on the left sidebar to create a server. Come back when done.
+
+**Why:** Discord is where your agents communicate. Each agent joins as a bot in your server. You see their conversations in real time.
+
+Ask: "Do you have a Discord server for your fleet?"
+- If yes → ask for the server name to confirm, then continue
+- If no → tell them:
+  1. Open https://discord.com — log in or create an account
+  2. Click the "+" button on the left sidebar
+  3. Choose "Create My Own" → "For me and my friends"
+  4. Name it anything (e.g. "My Fleet")
+
+**Done when:** User tells you the server name. No other info needed yet.
 
 ### Step 3: Create Discord bots
-Tell the user to go to https://discord.com/developers/applications and for each agent (minimum 2):
-1. Click **New Application** → give it a name
-2. Go to **Bot** tab → click **Reset Token** → copy the token (save it, only shown once)
-3. Scroll down → enable **Message Content Intent** under Privileged Gateway Intents
+
+**Why:** Each agent in your fleet needs its own Discord bot identity — its own name, avatar, and access token. You need at least 2: one lead agent and one worker.
+
+Tell the user to go to https://discord.com/developers/applications
+
+**For each bot (repeat 2 times minimum):**
+1. Click **"New Application"** → name it (e.g. "Lead", "Worker")
+2. Click **"Bot"** in the left sidebar
+3. Click **"Reset Token"** → **copy the token immediately** (it only shows once — if lost, reset again)
+4. Scroll down to **"Privileged Gateway Intents"** → enable **"Message Content Intent"** → click Save
+
+**Done when:** User has 2 or more bot tokens saved somewhere (notepad, clipboard, etc.). Ask them to confirm: "Do you have your bot tokens ready? How many did you create?"
 
 ### Step 4: Configure fleet
-Once the user has tokens, run:
+
+**Why:** This connects your bot tokens to fleet and generates the config files (fleet.yaml + .env + identity files).
+
 ```bash
 fleet init
 ```
-This walks them through pasting tokens, selecting their Discord server, and naming agents.
+
+The wizard will ask for:
+- Bot tokens (paste each one)
+- Which Discord server to use (auto-detected from the bot)
+- Which channel the team should use (pick by number)
+- Agent names and roles
 
 For non-interactive setup (if you already have tokens and channel ID):
 ```bash
 fleet init --token TOKEN1 --token TOKEN2 --channel CHANNEL_ID --name my-fleet
 ```
 
-### Step 5: Invite bots
-`fleet init` prints OAuth2 invite URLs. Tell the user to open each URL in their browser, select their server, and click Authorize.
+**Done when:** Output shows "Fleet initialized!" and files `fleet.yaml` + `.env` exist.
+Verify: `cat fleet.yaml` should show your agents listed.
+
+### Step 5: Invite bots to server
+
+**Why:** Bots need permission to join your Discord server. Each bot gets an invite URL.
+
+`fleet init` printed invite URLs at the end. Tell the user:
+1. Open each URL in their browser
+2. Select their Discord server from the dropdown
+3. Click **"Authorize"**
+4. Repeat for each bot
+
+If they lost the URLs, they can rebuild them: `https://discord.com/oauth2/authorize?client_id=BOT_ID&scope=bot&permissions=68608` (replace BOT_ID with the bot's application ID from the Developer Portal).
+
+**Done when:** User sees all bots appear as members in their Discord server (they'll show as offline for now — that's normal).
 
 ### Step 6: Start the team
+
+**Why:** This launches each agent as a Claude Code process connected to Discord. They'll come online and start listening for messages.
+
 ```bash
 fleet start lead
 fleet start worker
 fleet status
 ```
 
-The agents are now live in Discord. Message @Lead to give it a task.
+**Done when:** `fleet status` shows `[on]` for each agent. The bots show as online in Discord. User can message @Lead in Discord and get a response.
 
 ## Discovery
 
