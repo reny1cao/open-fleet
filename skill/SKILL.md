@@ -26,7 +26,7 @@ fleet doctor
 ```
 
 Check the output for:
-- **Claude Code version** — must support the `--channels` flag. Run `claude --version` to check. If the version doesn't support `--channels`, tell user to update: `npm update -g @anthropic-ai/claude-code`
+- **Claude Code version** — needs **v2.1.80+** for `--channels` support. Run `claude --version` to check. If older, update: `npm update -g @anthropic-ai/claude-code`. Note: requires claude.ai login (Console/API key auth not supported for Channels).
 - **Discord plugin** — `fleet doctor` checks if `server.ts` exists at the plugin path
 - **Patches** — STATE_DIR and PARTNER_BOT_IDS must show as applied
 
@@ -57,7 +57,7 @@ Ask: "Do you have a Discord server for your fleet?"
 
 **Why:** Each agent needs a Discord bot identity. You'll create each bot, grab its token, run `fleet init` to generate config + invite links, then invite the bots.
 
-**IMPORTANT:** Do NOT generate invite URLs yourself. Only use the URLs that `fleet init` prints — it uses the correct Application ID from the Discord API. Manually constructed URLs may use the wrong ID and show "Unknown Application."
+**IMPORTANT:** After `fleet init` runs, always use its generated invite URLs (they use the correct Application ID). The only exception is the initial setup below, where bots must be invited before init can run — in that case, use the Application ID from the Developer Portal's General Information page.
 
 **What the user provides:** Only bot tokens. Everything else (server, channel, bot name, Application ID, invite URLs) is auto-detected by `fleet init`.
 
@@ -220,6 +220,12 @@ fleet apply
 ```
 Starts all agents from fleet.yaml. Skips already-running agents. Use `--json` for machine output.
 
+### "stop all"
+Stop each agent sequentially:
+```bash
+for agent in $(fleet status --json | python3 -c "import json,sys; [print(a['name']) for a in json.load(sys.stdin) if a['state']=='running']"); do fleet stop "$agent"; done
+```
+
 ### "add agent"
 ```bash
 fleet add-agent
@@ -239,8 +245,8 @@ Full health check: prerequisites, config, tokens, patches, SSH, remote nodes, id
 fleet init
 
 # Non-interactive (agent)
-fleet init --token TOKEN1 --token TOKEN2 --channel 123456 --name my-fleet
-fleet init --token TOKEN1 --channel 123456 --agent hub:local:hub --agent worker:staging:worker
+fleet init --token TOKEN1 --token TOKEN2 --name my-fleet
+fleet init --token TOKEN1 --token TOKEN2 --name my-fleet --agent lead:local:lead --agent worker:local:worker
 ```
 
 ## Agent-Friendly Flags
