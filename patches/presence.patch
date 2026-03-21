@@ -1,0 +1,8 @@
+--- a/server.ts
++++ b/server.ts
+@@ -45,7 +45,7 @@
+ const client = new Client({
+   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+-  // presence: { status: 'online' },
++  presence: { status: 'online' },
+ })

@@ -1,30 +1,20 @@
 ---
 name: hq
-description: Manage the Discord HQ bot fleet — start, stop, inject roles, relocate bots, and check status across local, Singapore, and Germany
+description: Manage the Discord HQ bot fleet — start, stop, inject roles, relocate bots, and check status across multiple locations
 user_invocable: true
 ---
 
 # HQ Bot Fleet Manager
 
-You manage a fleet of 5 Discord bots across 3 locations. Each bot is a Claude Code session with `--channels`. Any bot can run at any location.
+You manage a fleet of Discord bots across multiple locations. Each bot is a Claude Code session with `--channels`. Any bot can run at any location.
 
 ## Bot Registry
 
-| Bot | Default Location | Role | Default Dir |
-|-----|-----------------|------|-------------|
-| sentinel | local | Hub — 总调度，不干活 | ~/workspace/automation |
-| pilot | local | 指导远程开发 | ~/workspace/automation |
-| archon | singapore | Field Agent | ~/workspace |
-| forge | singapore | 开发执行 | ~/workspace |
-| citadel | germany | 基础设施执行 | ~/workspace |
-
-## Locations
-
-| Location | SSH Host | Server |
-|----------|----------|--------|
-| local | — | 本地 Mac |
-| singapore | hetzner | 新加坡 Hetzner VPS |
-| germany | nuremberg | 德国 Nuremberg VPS |
+Read `bot-pool.json` for the current fleet configuration. Each entry has:
+- **name**: Bot identifier (used for tmux session `hq-<name>` and identity file lookup)
+- **location**: Default location (`local` / `singapore` / `germany`)
+- **role**: Fleet role (hub, guide, field-agent, dev-worker, infra-worker)
+- **default_dir**: Working directory when none specified
 
 ## Script
 
@@ -32,41 +22,40 @@ All operations go through: `./spawn.sh`
 
 ## Commands
 
-### "启动/start/拉起 <bot>"
+### "start <bot>"
 ```bash
 ./spawn.sh start <bot>
 ```
 
-### "启动 <bot> 在 <path>"
+### "start <bot> at <path>"
 ```bash
 ./spawn.sh start <bot> <path>
 ```
 
-### "启动 <bot> 角色 <role>" / "start <bot> as <role>"
+### "start <bot> as <role>"
 ```bash
 ./spawn.sh start <bot> --role <role>
 ```
 
-### "把 <bot> 放到 <location>" / "<bot> 跑到新加坡/德国/本地"
+### "relocate <bot> to <location>"
 ```bash
 ./spawn.sh start <bot> --at <location>
 ```
 Override the bot's default location. `<location>` = `local` / `singapore` / `germany`.
 
-### 组合使用
+### Combine flags
 ```bash
-# Pilot 跑到新加坡，指定目录，当写作专家
 ./spawn.sh start pilot --at singapore ~/workspace/project --role writer
 ```
-`--at`、`--role`、work-dir 可以任意组合。
+`--at`, `--role`, and work-dir can be combined freely.
 
-### "注入/inject <bot> <role>" / "让 <bot> 当 <role>"
+### "inject <bot> <role>"
 ```bash
 ./spawn.sh inject <bot> <role>
 ```
 Hot-inject a role into a running bot without restart.
 
-### "停止/stop/关掉 <bot>"
+### "stop <bot>"
 ```bash
 ./spawn.sh stop <bot>
 ```
@@ -75,33 +64,30 @@ If the bot was started with `--at`, also pass `--at`:
 ./spawn.sh stop <bot> --at <location>
 ```
 
-### "状态/status/谁在线"
+### "status"
 ```bash
 ./spawn.sh status
 ```
 
-### "全部启动"
-Run `start` for each bot sequentially. Skip bots that are already running.
+### "start all"
+Run `start` for each bot sequentially. Skip bots already running.
 
-### "全部停止"
+### "stop all"
 Run `stop` for each bot sequentially.
 
 ## Roles
 
-Available roles in `scripts/hq/identities/roles/`:
+Available roles in `identities/roles/`:
+- **writer** — Content creation
+- **reviewer** — Code review
+- **ops** — Server operations
 
-| Role | File | Use When |
-|------|------|----------|
-| writer | writer.md | 写作任务（公众号/X/小红书） |
-| reviewer | reviewer.md | Code review |
-| ops | ops.md | 服务器运维 |
-
-Add new roles by creating `scripts/hq/identities/roles/<name>.md`.
+Add new roles by creating `identities/roles/<name>.md`.
 
 ## Rules
 
-1. **不要自己起停自己** — 如果你是 Sentinel，不要 `stop sentinel`
-2. **远程 bot 通过 SSH** — spawn.sh 自动处理，`--at` 覆盖默认位置
-3. **起停后汇报** — 简洁告知哪些 bot 起了/停了/在哪
-4. **status 输出直接转发** — 不要重新格式化，脚本输出已经够清晰
-5. **停非默认位置的 bot 要带 --at** — 否则会去默认位置找，找不到
+1. **Don't start/stop yourself** — If you are Sentinel, don't `stop sentinel`
+2. **Remote bots use SSH** — spawn.sh handles this automatically; `--at` overrides default location
+3. **Report after start/stop** — Concisely state which bots started/stopped and where
+4. **Pass status output directly** — Don't reformat it, the script output is clear enough
+5. **Use --at for non-default locations** — Stopping without it will look at the default location

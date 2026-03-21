@@ -31,7 +31,7 @@ When a Claude Code session does heavy coding, it fills its context window and fo
 
 2. **Clone and configure:**
    ```bash
-   git clone https://github.com/yourname/discord-hq-fleet.git
+   git clone https://github.com/reny1cao/discord-hq-fleet.git
    cd discord-hq-fleet
 
    cp .env.example .env          # Fill in your bot tokens
@@ -164,9 +164,20 @@ When `DISCORD_STATE_DIR` is not set, behavior is unchanged. Set it per bot to is
     "bot_id": "YOUR_BOT_ID",
     "token_env": "DISCORD_BOT_TOKEN_SENTINEL",
     "state_dir": "",
-    "default_dir": "~/workspace/automation",
+    "default_dir": "~/workspace",
     "location": "local",
     "role": "hub"
+  },
+  {
+    "name": "archon",
+    "bot_id": "YOUR_BOT_ID",
+    "token_env": "DISCORD_BOT_TOKEN_ARCHON",
+    "state_dir": "",
+    "default_dir": "~/workspace",
+    "location": "singapore",
+    "ssh_host": "your-singapore-host",
+    "remote_user": "dev",
+    "role": "field-agent"
   }
 ]
 ```
@@ -176,7 +187,9 @@ When `DISCORD_STATE_DIR` is not set, behavior is unchanged. Set it per bot to is
 - **token_env**: Name of the environment variable holding the bot token
 - **state_dir**: Custom state directory (empty = default). Required for 2+ bots on same machine
 - **default_dir**: Working directory when none is specified
-- **location**: `local`, `singapore`, or `germany` (maps to SSH hosts)
+- **location**: Any string label (e.g. `local`, `singapore`, `germany`). `local` means this machine; anything else is remote via SSH
+- **ssh_host**: SSH host alias (from `~/.ssh/config`) for remote locations. Not needed for `local`
+- **remote_user**: User to run commands as on remote servers (via `su -`). Defaults to current user if omitted. Not needed for `local`
 - **role**: Descriptive label
 
 ### `.env`
@@ -187,20 +200,7 @@ DISCORD_BOT_TOKEN_PILOT=your-token-here
 # ... one per bot
 ```
 
-### SSH Host Mapping
-
-Remote locations are mapped to SSH hosts in `spawn.sh`:
-
-```bash
-location_to_ssh() {
-  case "$1" in
-    singapore) echo "your-singapore-host" ;;
-    germany)   echo "your-germany-host" ;;
-  esac
-}
-```
-
-Edit this function to match your SSH config (`~/.ssh/config`).
+Locations and SSH mappings are configured directly in `bot-pool.json` via `ssh_host` and `remote_user` fields — no need to edit `spawn.sh`.
 
 ## Patch Checker
 
@@ -215,6 +215,28 @@ Verify that the Discord plugin patches are applied across all nodes:
 ```
 
 The script checks local and remote nodes via SSH.
+
+## Security
+
+### `--dangerously-skip-permissions`
+
+Every bot is launched with `--dangerously-skip-permissions`. This flag disables Claude Code's interactive permission prompts for file edits, shell commands, and other tool calls.
+
+**Why it's needed:** Bots run unattended in tmux sessions with no human at the terminal. Without this flag, Claude Code would prompt for confirmation on every file write or command execution — and with nobody to press "y", the bot would hang indefinitely.
+
+**What this means:**
+
+- The bot can read, write, and delete any file accessible to its OS user
+- The bot can execute arbitrary shell commands without confirmation
+- On remote servers, this includes Docker, databases, and system services
+
+**Mitigations:**
+
+- Run bots under a dedicated OS user with limited permissions (not root)
+- Use `default_dir` in `bot-pool.json` to scope each bot's working directory
+- Keep bot tokens in `.env` (gitignored) and never commit them
+- The Discord plugin's access control (`access.json`) limits who can send messages to each bot — configure this before exposing bots to shared servers
+- Review the identity files: behavioral rules like "confirm before destructive operations" provide a soft guardrail, but they are not a security boundary
 
 ## Known Limitations
 
@@ -248,7 +270,8 @@ discord-hq-fleet/
 ├── skill/
 │   └── SKILL.md
 ├── patches/
-│   └── state-dir.patch
+│   ├── state-dir.patch
+│   └── presence.patch
 └── docs/
     ├── ARCHITECTURE.md
     └── TROUBLESHOOTING.md

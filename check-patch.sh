@@ -1,60 +1,61 @@
 #!/bin/bash
-# check-patch.sh — 检查所有节点的 Discord 插件补丁状态
+# check-patch.sh — Check Discord plugin patch status across all nodes
+# Reads remote hosts from bot-pool.json (ssh_host + remote_user fields)
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+POOL="$SCRIPT_DIR/bot-pool.json"
 PLUGIN_PATH=".claude/plugins/cache/claude-plugins-official/discord/0.0.1/server.ts"
 
 check_node() {
   local label="$1" plugin="$2"
-  echo "=== $label 插件补丁检查 ==="
+  echo "=== $label patch check ==="
 
   if grep -q "DISCORD_STATE_DIR" "$plugin" 2>/dev/null; then
-    echo "  ✅ STATE_DIR env var 支持"
+    echo "  [ok] STATE_DIR env var"
   else
-    echo "  ❌ STATE_DIR env var 缺失 — 需要重新打补丁"
+    echo "  [!!] STATE_DIR env var missing — re-apply state-dir.patch"
   fi
 
   if grep -q "PARTNER_BOT_IDS" "$plugin" 2>/dev/null; then
-    echo "  ✅ PARTNER_BOT_IDS"
+    echo "  [ok] PARTNER_BOT_IDS"
   else
-    echo "  ❌ PARTNER_BOT_IDS 缺失 — 需要重新打补丁"
+    echo "  [!!] PARTNER_BOT_IDS missing — re-apply partner-bot-ids.patch"
   fi
 
   if grep -q 'presence.*online' "$plugin" 2>/dev/null; then
-    echo "  ✅ presence: online"
+    echo "  [ok] presence: online"
   else
-    echo "  ⬚  presence: online 未设置"
+    echo "  [--] presence: online not set"
   fi
   echo ""
 }
 
-# 本地
-check_node "本地" "$HOME/$PLUGIN_PATH"
+# Local
+check_node "Local" "$HOME/$PLUGIN_PATH"
 
-# 远程节点
-for host_label in "your-ssh-alias-1:Remote 1" "your-ssh-alias-2:Remote 2"; do
-  host="${host_label%%:*}"
-  label="${host_label##*:}"
+# Remote nodes — read unique (ssh_host, remote_user, location) from bot-pool.json
+jq -r '[.[] | select(.location != "local" and .ssh_host != null) | {ssh_host, remote_user, location}] | unique_by(.ssh_host) | .[] | "\(.ssh_host):\(.remote_user // ""):\(.location)"' "$POOL" | while IFS=: read -r host user location; do
+  home_dir="/home/${user:-$(whoami)}"
 
   REMOTE=$(ssh "$host" "
-    PLUGIN=/home/dev/$PLUGIN_PATH
-    echo '=== $label 插件补丁检查 ==='
+    PLUGIN=$home_dir/$PLUGIN_PATH
     if grep -q 'DISCORD_STATE_DIR' \$PLUGIN 2>/dev/null; then
-      echo '  ✅ STATE_DIR env var 支持'
+      echo '  [ok] STATE_DIR env var'
     else
-      echo '  ❌ STATE_DIR env var 缺失'
+      echo '  [!!] STATE_DIR env var missing'
     fi
     if grep -q 'PARTNER_BOT_IDS' \$PLUGIN 2>/dev/null; then
-      echo '  ✅ PARTNER_BOT_IDS'
+      echo '  [ok] PARTNER_BOT_IDS'
     else
-      echo '  ❌ PARTNER_BOT_IDS 缺失'
+      echo '  [!!] PARTNER_BOT_IDS missing'
     fi
     if grep -q 'presence.*online' \$PLUGIN 2>/dev/null; then
-      echo '  ✅ presence: online'
+      echo '  [ok] presence: online'
     else
-      echo '  ⬚  presence: online 未设置'
+      echo '  [--] presence: online not set'
     fi
-  " 2>&1) || REMOTE="  ⚠️  SSH 不通"
-  echo "=== $label 插件补丁检查 ==="
-  echo "$REMOTE" | grep -v "^==="
+  " 2>&1) || REMOTE="  [??] SSH unreachable"
+  echo "=== $location ($host) patch check ==="
+  echo "$REMOTE"
   echo ""
 done

@@ -1,6 +1,13 @@
+# Secrets — bot tokens, never commit
 .env
+
+# Bot pool config — contains bot IDs specific to your fleet
 bot-pool.json
+
+# Active identity files — contain your real bot IDs and channel IDs
+# Only .md.example templates are tracked; actual .md identities are personal config
 identities/*.md
 !identities/_discord-formatting.md
 !identities/roles/
+
 .DS_Store

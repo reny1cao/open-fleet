@@ -24,6 +24,8 @@
     "state_dir": "",
     "default_dir": "~/workspace",
     "location": "singapore",
+    "ssh_host": "your-singapore-host",
+    "remote_user": "dev",
     "role": "field-agent"
   },
   {
@@ -33,6 +35,8 @@
     "state_dir": "~/.claude/channels/discord-forge",
     "default_dir": "~/workspace",
     "location": "singapore",
+    "ssh_host": "your-singapore-host",
+    "remote_user": "dev",
     "role": "dev-worker"
   },
   {
@@ -42,6 +46,8 @@
     "state_dir": "~/.claude/channels/discord-citadel",
     "default_dir": "~/workspace",
     "location": "germany",
+    "ssh_host": "your-germany-host",
+    "remote_user": "dev",
     "role": "infra-worker"
   }
 ]

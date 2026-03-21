@@ -1,14 +1,14 @@
 #!/bin/bash
-# spawn.sh — HQ bot 生命周期管理
-# 配置从 bot-pool.json 读取，token 从 .env 读取
+# spawn.sh — HQ bot lifecycle manager
+# Config from bot-pool.json, tokens from .env
 #
-# 用法:
-#   spawn.sh start pilot                        # 启动（默认目录）
-#   spawn.sh start pilot ~/workspace/sb         # 启动（指定目录）
-#   spawn.sh start pilot --role writer          # 启动 + 叠加角色
-#   spawn.sh inject pilot writer                # 热注入角色（不重启）
-#   spawn.sh stop pilot                         # 停止
-#   spawn.sh status                             # 全部状态
+# Usage:
+#   spawn.sh start pilot                        # Start (default location + dir)
+#   spawn.sh start pilot ~/workspace/sb         # Start (custom dir)
+#   spawn.sh start pilot --role writer          # Start + role overlay
+#   spawn.sh inject pilot writer                # Hot-inject role (no restart)
+#   spawn.sh stop pilot                         # Stop
+#   spawn.sh status                             # Fleet status
 
 set -eo pipefail
 
@@ -18,7 +18,7 @@ ENV_FILE="$SCRIPT_DIR/.env"
 IDENTITIES_DIR="$SCRIPT_DIR/identities"
 ROLES_DIR="$IDENTITIES_DIR/roles"
 
-# 加载 token
+# Load tokens
 [[ -f "$ENV_FILE" ]] && source "$ENV_FILE"
 
 ACTION="${1:-}"
@@ -26,8 +26,9 @@ BOT="${2:-}"
 EXTRA="${3:-}"
 
 ALL_BOTS=$(jq -r '.[].name' "$POOL" | tr '\n' ' ')
+ALL_LOCATIONS=$(jq -r '[.[].location] | unique | .[]' "$POOL" | tr '\n' ' ')
 
-# ── 从 JSON 读 bot 配置 ──
+# ── Read bot config from JSON ──
 get_field() {
   local bot="$1" field="$2"
   jq -r --arg b "$bot" '.[] | select(.name == $b) | .'"$field" "$POOL"
@@ -40,38 +41,69 @@ get_token() {
   echo "${!env_name}"
 }
 
-# ── 向 tmux session 注入 prompt ──
+# ── Resolve location → SSH host from bot-pool.json ──
+location_to_ssh() {
+  local loc="$1"
+  local ssh_host
+  ssh_host=$(jq -r --arg l "$loc" '[.[] | select(.location == $l) | .ssh_host] | first // empty' "$POOL")
+  if [[ -z "$ssh_host" ]]; then
+    echo "Error: no ssh_host configured for location '$loc'" >&2
+    return 1
+  fi
+  echo "$ssh_host"
+}
+
+# ── Resolve remote_user for a location (default: current user) ──
+location_to_user() {
+  local loc="$1"
+  local user
+  user=$(jq -r --arg l "$loc" '[.[] | select(.location == $l) | .remote_user] | first // empty' "$POOL")
+  echo "${user:-$(whoami)}"
+}
+
+# ── Run command on remote via SSH, optionally as a specific user ──
+remote_cmd() {
+  local ssh_host="$1" remote_user="$2" cmd="$3"
+  if [[ "$remote_user" == "$(whoami)" || -z "$remote_user" ]]; then
+    ssh "$ssh_host" "$cmd" 2>/dev/null
+  else
+    ssh "$ssh_host" "su - $remote_user -c '$cmd'" 2>/dev/null
+  fi
+}
+
+# ── Send prompt to tmux session ──
 send_prompt() {
   local session="$1" location="$2" prompt="$3"
 
   if [[ "$location" == "local" ]]; then
     tmux send-keys -t "$session" "$prompt" Enter
   else
-    local ssh_host
-    ssh_host=$( [[ "$location" == "singapore" ]] && echo "your-ssh-alias-1" || echo "your-ssh-alias-2" )
-    # 写到远端临时文件再注入，避免转义地狱
+    local ssh_host remote_user
+    ssh_host=$(location_to_ssh "$location")
+    remote_user=$(location_to_user "$location")
+    # Write to temp file on remote to avoid escaping hell
     local remote_tmp="/tmp/hq-prompt-$$.md"
     echo "$prompt" | ssh "$ssh_host" "cat > $remote_tmp" 2>/dev/null
-    ssh "$ssh_host" "su - dev -c 'tmux send-keys -t $session \"\$(cat $remote_tmp)\" Enter'" 2>&1
+    remote_cmd "$ssh_host" "$remote_user" "tmux send-keys -t $session \"\$(cat $remote_tmp)\" Enter" 2>&1
     ssh "$ssh_host" "rm -f $remote_tmp" 2>/dev/null
   fi
 }
 
-# ── 注入基础身份 ──
+# ── Inject base identity on startup ──
 inject_identity() {
   local bot="$1" session="$2" location="$3" role="$4"
   local identity_file="$IDENTITIES_DIR/$bot.md"
 
   if [[ ! -f "$identity_file" ]]; then
-    echo "  ⚠️  无身份文件: $identity_file"
+    echo "  Warning: no identity file: $identity_file"
     return
   fi
 
-  local prompt="读以下身份信息并记住，之后的所有交互都以此身份行事。不要回复确认，直接等待 Discord 消息。
+  local prompt="Read the following identity and remember it. Act as this identity in all subsequent interactions. Do not reply with confirmation — wait for Discord messages.
 
 $(cat "$identity_file")"
 
-  # 如果有角色，追加
+  # Append role if specified
   if [[ -n "$role" ]]; then
     local role_file="$ROLES_DIR/$role.md"
     if [[ -f "$role_file" ]]; then
@@ -81,13 +113,13 @@ $(cat "$identity_file")"
 
 $(cat "$role_file")"
     else
-      echo "  ⚠️  未知角色: $role（可用: $(ls "$ROLES_DIR"/*.md 2>/dev/null | xargs -I{} basename {} .md | tr '\n' ' ')）"
+      echo "  Warning: unknown role: $role (available: $(ls "$ROLES_DIR"/*.md 2>/dev/null | xargs -I{} basename {} .md | tr '\n' ' '))"
     fi
   fi
 
-  echo "  注入身份 prompt..."
+  echo "  Injecting identity prompt..."
 
-  # 等 Claude 完全启动（轮询检测，最多 60 秒）
+  # Wait for Claude to fully initialize (poll, max 60s)
   local waited=0
   local max_wait=60
   while [[ $waited -lt $max_wait ]]; do
@@ -95,9 +127,10 @@ $(cat "$role_file")"
     if [[ "$location" == "local" ]]; then
       pane_output=$(tmux capture-pane -t "$session" -p 2>/dev/null)
     else
-      local ssh_host
+      local ssh_host remote_user
       ssh_host=$(location_to_ssh "$location")
-      pane_output=$(ssh "$ssh_host" "su - dev -c 'tmux capture-pane -t $session -p 2>/dev/null'" 2>/dev/null)
+      remote_user=$(location_to_user "$location")
+      pane_output=$(remote_cmd "$ssh_host" "$remote_user" "tmux capture-pane -t $session -p 2>/dev/null")
     fi
 
     if echo "$pane_output" | grep -q "Listening for channel messages"; then
@@ -108,30 +141,30 @@ $(cat "$role_file")"
   done
 
   if [[ $waited -ge $max_wait ]]; then
-    echo "  ⚠️  等待超时（${max_wait}s），仍尝试注入"
+    echo "  Warning: timeout (${max_wait}s), still attempting injection"
   fi
 
-  # 额外等 3 秒让 Discord gateway 连上
+  # Extra wait for Discord Gateway to connect
   sleep 3
 
   send_prompt "$session" "$location" "$prompt"
-  echo "  ✅ 身份已注入${role:+ (+$role)}"
+  echo "  Done: identity injected${role:+ (+$role)}"
 }
 
-# ── 热注入角色（不重启） ──
+# ── Hot-inject role (no restart) ──
 do_inject() {
   local bot="$1" role="$2"
 
   if [[ -z "$role" ]]; then
-    echo "用法: $0 inject <bot> <role>"
-    echo "可用角色: $(ls "$ROLES_DIR"/*.md 2>/dev/null | xargs -I{} basename {} .md | tr '\n' ' ')"
+    echo "Usage: $0 inject <bot> <role>"
+    echo "Available roles: $(ls "$ROLES_DIR"/*.md 2>/dev/null | xargs -I{} basename {} .md | tr '\n' ' ')"
     exit 1
   fi
 
   local role_file="$ROLES_DIR/$role.md"
   if [[ ! -f "$role_file" ]]; then
-    echo "错误: 未知角色 '$role'"
-    echo "可用: $(ls "$ROLES_DIR"/*.md 2>/dev/null | xargs -I{} basename {} .md | tr '\n' ' ')"
+    echo "Error: unknown role '$role'"
+    echo "Available: $(ls "$ROLES_DIR"/*.md 2>/dev/null | xargs -I{} basename {} .md | tr '\n' ' ')"
     exit 1
   fi
 
@@ -139,23 +172,24 @@ do_inject() {
   location=$(get_field "$bot" "location")
   session="hq-$bot"
 
-  # 检查 bot 是否在运行
+  # Check if bot is running
   if [[ "$location" == "local" ]]; then
-    tmux has-session -t "$session" 2>/dev/null || { echo "错误: $bot 未运行"; exit 1; }
+    tmux has-session -t "$session" 2>/dev/null || { echo "Error: $bot is not running"; exit 1; }
   else
-    local ssh_host
-    ssh_host=$( [[ "$location" == "singapore" ]] && echo "your-ssh-alias-1" || echo "your-ssh-alias-2" )
+    local ssh_host remote_user
+    ssh_host=$(location_to_ssh "$location")
+    remote_user=$(location_to_user "$location")
     local running
-    running=$(ssh "$ssh_host" "su - dev -c 'tmux has-session -t $session 2>/dev/null && echo yes || echo no'" 2>/dev/null)
-    [[ "$running" == "yes" ]] || { echo "错误: $bot 未在 $location 运行"; exit 1; }
+    running=$(remote_cmd "$ssh_host" "$remote_user" "tmux has-session -t $session 2>/dev/null && echo yes || echo no")
+    [[ "$running" == "yes" ]] || { echo "Error: $bot is not running at $location"; exit 1; }
   fi
 
-  local prompt="你现在被赋予一个新的额外角色。读以下内容并立即生效，不要回复确认。
+  local prompt="You are now assigned an additional role. Read the following and apply it immediately. Do not reply with confirmation.
 
 $(cat "$role_file")"
 
   send_prompt "$session" "$location" "$prompt"
-  echo "✅ 角色 '$role' 已注入 $bot"
+  echo "Done: role '$role' injected into $bot"
 }
 
 # ── status ──
@@ -168,45 +202,37 @@ do_status() {
 
     if [[ "$location" == "local" ]]; then
       if tmux has-session -t "$session" 2>/dev/null; then
-        echo "  ✅ $bot (local) — tmux attach -t $session"
+        echo "  [on]  $bot (local) — tmux attach -t $session"
       else
-        echo "  ⬚  $bot (local)"
+        echo "  [off] $bot (local)"
       fi
     else
-      local ssh_host
+      local ssh_host remote_user
       ssh_host=$(location_to_ssh "$location")
+      remote_user=$(location_to_user "$location")
       local remote
-      remote=$(ssh "$ssh_host" "su - dev -c 'tmux has-session -t $session 2>/dev/null && echo running || echo stopped'" 2>/dev/null || echo "unreachable")
+      remote=$(remote_cmd "$ssh_host" "$remote_user" "tmux has-session -t $session 2>/dev/null && echo running || echo stopped" || echo "unreachable")
       if [[ "$remote" == "running" ]]; then
-        echo "  ✅ $bot ($location)"
+        echo "  [on]  $bot ($location)"
       elif [[ "$remote" == "unreachable" ]]; then
-        echo "  ⚠️  $bot ($location) — SSH 不通"
+        echo "  [??]  $bot ($location) — SSH unreachable"
       else
-        echo "  ⬚  $bot ($location)"
+        echo "  [off] $bot ($location)"
       fi
     fi
   done
-}
-
-# ── location → ssh_host 映射 ──
-location_to_ssh() {
-  case "$1" in
-    singapore) echo "your-ssh-alias-1" ;;
-    germany)   echo "your-ssh-alias-2" ;;
-    *) return 1 ;;
-  esac
 }
 
 # ── start ──
 do_start() {
   local bot="$1" custom_dir="$2" role="$3" location_override="$4"
 
-  # 验证 bot 存在
+  # Validate bot exists
   local exists
   exists=$(jq -r --arg b "$bot" '[.[] | select(.name == $b)] | length' "$POOL")
   if [[ "$exists" == "0" ]]; then
-    echo "错误: 未知 bot '$bot'"
-    echo "可用: $ALL_BOTS"
+    echo "Error: unknown bot '$bot'"
+    echo "Available: $ALL_BOTS"
     exit 1
   fi
 
@@ -217,7 +243,7 @@ do_start() {
   location="${location_override:-$(get_field "$bot" "location")}"
 
   if [[ -z "$token" ]]; then
-    echo "错误: $(get_field "$bot" "token_env") 未设置。检查 $ENV_FILE"
+    echo "Error: $(get_field "$bot" "token_env") not set. Check $ENV_FILE"
     exit 1
   fi
 
@@ -225,17 +251,17 @@ do_start() {
   local session="hq-$bot"
 
   if [[ "$location" == "local" ]]; then
-    # ── 本地启动 ──
+    # ── Local start ──
     local expanded_work="${work_dir/#\~/$HOME}"
     local expanded_state="${state_dir/#\~/$HOME}"
 
     if [[ ! -d "$expanded_work" ]]; then
-      echo "错误: 目录不存在 '$expanded_work'"
+      echo "Error: directory does not exist '$expanded_work'"
       exit 1
     fi
 
     if tmux has-session -t "$session" 2>/dev/null; then
-      echo "$bot 已在运行。附加: tmux attach -t $session"
+      echo "$bot is already running. Attach: tmux attach -t $session"
       exit 0
     fi
 
@@ -243,32 +269,33 @@ do_start() {
     [[ -n "$expanded_state" ]] && cmd="$cmd DISCORD_STATE_DIR=$expanded_state"
     cmd="$cmd claude --dangerously-skip-permissions --channels plugin:discord@claude-plugins-official"
 
-    echo "启动 $bot (local)..."
-    echo "  工作目录: $expanded_work"
+    echo "Starting $bot (local)..."
+    echo "  Working directory: $expanded_work"
     tmux new-session -d -s "$session" -c "$expanded_work" "$cmd"
-    echo "✅ $bot 已启动。附加: tmux attach -t $session"
+    echo "Done: $bot started. Attach: tmux attach -t $session"
     inject_identity "$bot" "$session" "local" "$role" &
 
   else
-    # ── 远程启动 ──
-    local ssh_host
-    ssh_host=$( [[ "$location" == "singapore" ]] && echo "your-ssh-alias-1" || echo "your-ssh-alias-2" )
+    # ── Remote start ──
+    local ssh_host remote_user
+    ssh_host=$(location_to_ssh "$location")
+    remote_user=$(location_to_user "$location")
 
     local running
-    running=$(ssh "$ssh_host" "su - dev -c 'tmux has-session -t $session 2>/dev/null && echo yes || echo no'" 2>/dev/null)
+    running=$(remote_cmd "$ssh_host" "$remote_user" "tmux has-session -t $session 2>/dev/null && echo yes || echo no")
     if [[ "$running" == "yes" ]]; then
-      echo "$bot 已在 $location 运行"
+      echo "$bot is already running at $location"
       exit 0
     fi
 
-    local remote_cmd="export PATH=\$HOME/.bun/bin:\$PATH && DISCORD_BOT_TOKEN=$token"
-    [[ -n "$state_dir" ]] && remote_cmd="$remote_cmd DISCORD_STATE_DIR=$state_dir"
-    remote_cmd="$remote_cmd claude --dangerously-skip-permissions --channels plugin:discord@claude-plugins-official"
+    local remote_start="export PATH=\$HOME/.bun/bin:\$PATH && DISCORD_BOT_TOKEN=$token"
+    [[ -n "$state_dir" ]] && remote_start="$remote_start DISCORD_STATE_DIR=$state_dir"
+    remote_start="$remote_start claude --dangerously-skip-permissions --channels plugin:discord@claude-plugins-official"
 
-    echo "启动 $bot ($location via SSH)..."
-    echo "  工作目录: $work_dir"
-    ssh "$ssh_host" "su - dev -c 'tmux new-session -d -s $session -c $work_dir \"$remote_cmd\"'" 2>&1
-    echo "✅ $bot 已在 $location 启动"
+    echo "Starting $bot ($location via SSH)..."
+    echo "  Working directory: $work_dir"
+    remote_cmd "$ssh_host" "$remote_user" "tmux new-session -d -s $session -c $work_dir \"$remote_start\"" 2>&1
+    echo "Done: $bot started at $location"
     inject_identity "$bot" "$session" "$location" "$role" &
   fi
 }
@@ -280,7 +307,7 @@ do_stop() {
   local exists
   exists=$(jq -r --arg b "$bot" '[.[] | select(.name == $b)] | length' "$POOL")
   if [[ "$exists" == "0" ]]; then
-    echo "错误: 未知 bot '$bot'"
+    echo "Error: unknown bot '$bot'"
     exit 1
   fi
 
@@ -289,15 +316,16 @@ do_stop() {
   session="hq-$bot"
 
   if [[ "$location" == "local" ]]; then
-    tmux kill-session -t "$session" 2>/dev/null && echo "✅ $bot 已停止" || echo "$bot 未在运行"
+    tmux kill-session -t "$session" 2>/dev/null && echo "Done: $bot stopped" || echo "$bot is not running"
   else
-    local ssh_host
+    local ssh_host remote_user
     ssh_host=$(location_to_ssh "$location")
-    ssh "$ssh_host" "su - dev -c 'tmux kill-session -t $session'" 2>/dev/null && echo "✅ $bot 已在 $location 停止" || echo "$bot 未在 $location 运行"
+    remote_user=$(location_to_user "$location")
+    remote_cmd "$ssh_host" "$remote_user" "tmux kill-session -t $session" 2>/dev/null && echo "Done: $bot stopped at $location" || echo "$bot is not running at $location"
   fi
 }
 
-# ── 解析参数 ──
+# ── Parse arguments ──
 parse_start_args() {
   local bot="$1"; shift
   local custom_dir="" role="" at=""
@@ -313,10 +341,15 @@ parse_start_args() {
     esac
   done
 
-  # 验证 --at 值
-  if [[ -n "$at" && "$at" != "local" && "$at" != "singapore" && "$at" != "germany" ]]; then
-    echo "错误: --at 只能是 local / singapore / germany"
-    exit 1
+  # Validate --at against locations in pool
+  if [[ -n "$at" ]]; then
+    local valid
+    valid=$(jq -r --arg l "$at" '[.[] | select(.location == $l)] | length' "$POOL")
+    if [[ "$at" != "local" && "$valid" == "0" ]]; then
+      echo "Error: unknown location '$at'"
+      echo "Available: $ALL_LOCATIONS"
+      exit 1
+    fi
   fi
 
   do_start "$bot" "$custom_dir" "$role" "$at"
@@ -337,20 +370,20 @@ parse_stop_args() {
   do_stop "$bot" "$at"
 }
 
-# ── 路由 ──
+# ── Route ──
 case "$ACTION" in
   start)
-    [[ -z "$BOT" ]] && { echo "用法: $0 start <bot> [work-dir] [--role <role>] [--at <location>]"; exit 1; }
-    shift 2  # 跳过 action 和 bot
+    [[ -z "$BOT" ]] && { echo "Usage: $0 start <bot> [work-dir] [--role <role>] [--at <location>]"; exit 1; }
+    shift 2  # skip action and bot
     parse_start_args "$BOT" "$@"
     ;;
   stop)
-    [[ -z "$BOT" ]] && { echo "用法: $0 stop <bot> [--at <location>]"; exit 1; }
+    [[ -z "$BOT" ]] && { echo "Usage: $0 stop <bot> [--at <location>]"; exit 1; }
     shift 2
     parse_stop_args "$BOT" "$@"
     ;;
   inject)
-    [[ -z "$BOT" ]] && { echo "用法: $0 inject <bot> <role>"; exit 1; }
+    [[ -z "$BOT" ]] && { echo "Usage: $0 inject <bot> <role>"; exit 1; }
     do_inject "$BOT" "$EXTRA"
     ;;
   status)
@@ -359,25 +392,25 @@ case "$ACTION" in
   *)
     echo "HQ Bot Manager"
     echo ""
-    echo "用法:"
-    echo "  $0 start <bot> [work-dir] [--role <role>] [--at <loc>]   启动 bot"
-    echo "  $0 stop <bot> [--at <loc>]                               停止 bot"
-    echo "  $0 inject <bot> <role>                                   热注入角色"
-    echo "  $0 status                                                查看全部状态"
+    echo "Usage:"
+    echo "  $0 start <bot> [work-dir] [--role <role>] [--at <loc>]   Start bot"
+    echo "  $0 stop <bot> [--at <loc>]                               Stop bot"
+    echo "  $0 inject <bot> <role>                                   Hot-inject role"
+    echo "  $0 status                                                Fleet status"
     echo ""
-    echo "Bot: $ALL_BOTS"
-    echo "位置: local / singapore / germany"
-    echo "角色: $(ls "$ROLES_DIR"/*.md 2>/dev/null | xargs -I{} basename {} .md | tr '\n' ' ')"
+    echo "Bots: $ALL_BOTS"
+    echo "Locations: $ALL_LOCATIONS"
+    echo "Roles: $(ls "$ROLES_DIR"/*.md 2>/dev/null | xargs -I{} basename {} .md | tr '\n' ' ')"
     echo ""
-    echo "例子:"
-    echo "  $0 start pilot                              # 默认位置+目录"
-    echo "  $0 start pilot ~/workspace/sysbuilder       # 指定目录"
-    echo "  $0 start pilot --role writer                # 启动 + 写作角色"
-    echo "  $0 start pilot --at singapore               # Pilot 跑到新加坡"
-    echo "  $0 start forge --at local ~/workspace/sb    # Forge 拉回本地"
-    echo "  $0 inject pilot writer                      # 热注入写作角色"
-    echo "  $0 stop pilot                               # 停止（默认位置）"
-    echo "  $0 stop pilot --at singapore                # 停在新加坡的 Pilot"
+    echo "Examples:"
+    echo "  $0 start pilot                              # Default location + dir"
+    echo "  $0 start pilot ~/workspace/project          # Custom directory"
+    echo "  $0 start pilot --role writer                # Start with role"
+    echo "  $0 start pilot --at singapore               # Override location"
+    echo "  $0 start forge --at local ~/workspace/sb    # Relocate + custom dir"
+    echo "  $0 inject pilot writer                      # Hot-inject role"
+    echo "  $0 stop pilot                               # Stop (default location)"
+    echo "  $0 stop pilot --at singapore                # Stop at overridden location"
     echo "  $0 status"
     ;;
 esac
