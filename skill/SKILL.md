@@ -37,41 +37,42 @@ Ask: "Do you have a Discord server for your fleet?"
 
 **Done when:** User tells you the server name and confirms they can see the `#general` channel.
 
-### Step 3: Create Discord bots
+### Step 3: Create bots and configure fleet
 
-**Why:** Each agent in your fleet needs its own Discord bot identity — its own name, avatar, and access token. You need at least 2: one lead agent and one worker.
+**Why:** Each agent needs a Discord bot identity (name + token). You'll create each bot, grab its token, and feed it to fleet — one at a time.
+
+**What the user needs to provide:** Only bot tokens. Everything else (server, channel, bot name, bot ID) is auto-detected from the token.
 
 Tell the user to open https://discord.com/developers/applications in their browser.
 
-**For each bot (repeat 2 times minimum):**
-1. **Top right** of the page → click the blue **"New Application"** button → name it (e.g. "Lead", "Worker") → click Create
+**Create the first bot (lead):**
+1. **Top right** of the page → click the blue **"New Application"** button → name it (e.g. "Lead") → click Create
 2. You land on the "General Information" page. **Left sidebar** → click **"Bot"** (has a puzzle piece icon)
-3. **Bot page, top section** → click **"Reset Token"** → confirm in the popup → **copy the token immediately** and save it somewhere (it only shows once — if lost, click Reset Token again to generate a new one)
-4. **Bot page, scroll down** to the **"Privileged Gateway Intents"** section (below "Authorization Flow") → find **"Message Content Intent"** → toggle it **ON** (turns blue) → scroll to bottom → click **"Save Changes"**
+3. **Bot page, top section** → click **"Reset Token"** → confirm in the popup → **copy the token immediately**
+4. **Bot page, scroll down** to **"Privileged Gateway Intents"** section → find **"Message Content Intent"** → toggle it **ON** (turns blue) → scroll to bottom → click **"Save Changes"**
+5. Ask the user to paste the token here now
 
-**Done when:** User has 2 or more bot tokens saved somewhere (notepad, clipboard, etc.). Ask them to confirm: "Do you have your bot tokens ready? How many did you create?"
+**Create the second bot (worker):**
+Repeat steps 1-5 with a different name (e.g. "Worker"). Ask user to paste this token too.
 
-### Step 4: Configure fleet
+**Once you have all tokens, run fleet init:**
 
-**Why:** This connects your bot tokens to fleet and generates the config files (fleet.yaml + .env + identity files).
+If you're an agent, use non-interactive mode — this is the preferred path:
+```bash
+fleet init --token FIRST_TOKEN --token SECOND_TOKEN --channel CHANNEL_ID --name my-fleet
+```
 
+If you don't have the channel ID yet (user just created the server), use interactive mode:
 ```bash
 fleet init
 ```
+The wizard auto-detects the server from the token, lists channels by number, and generates all config.
 
-The wizard will ask for:
-- Bot tokens (paste each one)
-- Which Discord server to use (auto-detected from the bot)
-- Which channel the team should use (pick by number)
-- Agent names and roles
-
-For non-interactive setup (if you already have tokens and channel ID):
+**Done when:** Output shows "Fleet initialized!" Verify:
 ```bash
-fleet init --token TOKEN1 --token TOKEN2 --channel CHANNEL_ID --name my-fleet
+cat fleet.yaml    # should show your agents
+cat .env          # should show your tokens
 ```
-
-**Done when:** Output shows "Fleet initialized!" and files `fleet.yaml` + `.env` exist.
-Verify: `cat fleet.yaml` should show your agents listed.
 
 ### Step 5: Invite bots to server
 
