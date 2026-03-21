@@ -17,7 +17,7 @@ Fleet turns multiple Claude Code instances into a coordinated team. A hub agent 
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/reny1cao/fleet.git
+git clone https://github.com/reny1cao/open-fleet.git
 cd fleet
 ./install.sh
 ```

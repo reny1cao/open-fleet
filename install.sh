@@ -2,7 +2,7 @@
 # install.sh — One-command fleet setup
 #
 # Two ways to run:
-#   curl -fsSL https://raw.githubusercontent.com/reny1cao/fleet/master/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/reny1cao/open-fleet/master/install.sh | bash
 #   git clone ... && cd fleet && ./install.sh
 #
 # What it does:
@@ -18,7 +18,7 @@
 
 set -eo pipefail
 
-REPO_URL="https://github.com/reny1cao/fleet.git"
+REPO_URL="https://github.com/reny1cao/open-fleet.git"
 INSTALL_DIR="${FLEET_INSTALL_DIR:-$HOME/.fleet}"
 BIN_DIR="${BIN_DIR:-$HOME/.local/bin}"
 COMP_DIR_BASH="${BASH_COMPLETION_DIR:-$HOME/.local/share/bash-completion/completions}"
