@@ -92,7 +92,7 @@ Once the user agrees on the team, move to Step 4.
 5. After receiving the token, verify it by running: `curl -sf -H "Authorization: Bot TOKEN" https://discord.com/api/v10/users/@me`
 6. "One more thing — scroll down to 'Privileged Gateway Intents', turn on 'Message Content Intent', click Save."
 7. "Go back to 'General Information' in the left sidebar, copy the Application ID."
-8. Give invite URL: `https://discord.com/oauth2/authorize?client_id=APPLICATION_ID&scope=bot&permissions=68608`
+8. Give invite URL: `https://discord.com/oauth2/authorize?client_id=APPLICATION_ID&scope=bot&permissions=117840`
 9. "Open the link, select your server, click Authorize."
 
 Repeat for each bot.

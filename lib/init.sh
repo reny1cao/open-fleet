@@ -238,7 +238,7 @@ do_init() {
     warn "Bot is not in any server yet."
     echo ""
     echo "  Invite it now — open this link in your browser:"
-    echo "  https://discord.com/oauth2/authorize?client_id=$bot_id&scope=bot&permissions=68608"
+    echo "  https://discord.com/oauth2/authorize?client_id=$bot_id&scope=bot&permissions=117840"
     echo ""
     echo "  Select your server, click Authorize, then come back here."
     read -rp "  Press Enter after inviting the bot... "
@@ -624,7 +624,7 @@ EOACCESS
   if [[ ${#bot_ids[@]} -gt 0 ]]; then
     echo "  Bot invite URLs (in case you need them):"
     for i in "${!bot_ids[@]}"; do
-      echo "    ${bot_names[$i]}: https://discord.com/oauth2/authorize?client_id=${bot_ids[$i]}&scope=bot&permissions=68608"
+      echo "    ${bot_names[$i]}: https://discord.com/oauth2/authorize?client_id=${bot_ids[$i]}&scope=bot&permissions=117840"
     done
     echo ""
   fi
@@ -932,7 +932,7 @@ EOACCESS
   # Print invite URL
   echo ""
   echo "  Invite the bot to your server:"
-  echo "  https://discord.com/oauth2/authorize?client_id=$app_id&scope=bot&permissions=68608"
+  echo "  https://discord.com/oauth2/authorize?client_id=$app_id&scope=bot&permissions=117840"
   echo ""
   echo "  Then start it:"
   echo "    fleet start $agent_name"
