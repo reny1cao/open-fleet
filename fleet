@@ -16,7 +16,14 @@ set -eo pipefail
 
 # ── Resolve script location and source libs ───────────────────────────────────
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve symlinks to find the real script location
+_fleet_source="${BASH_SOURCE[0]}"
+while [[ -L "$_fleet_source" ]]; do
+  _fleet_dir="$(cd "$(dirname "$_fleet_source")" && pwd)"
+  _fleet_source="$(readlink "$_fleet_source")"
+  [[ "$_fleet_source" != /* ]] && _fleet_source="$_fleet_dir/$_fleet_source"
+done
+SCRIPT_DIR="$(cd "$(dirname "$_fleet_source")" && pwd)"
 FLEET_DIR="${FLEET_DIR:-$(pwd)}"
 
 source "$SCRIPT_DIR/lib/ui.sh"
