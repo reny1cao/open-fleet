@@ -67,8 +67,7 @@ https://discord.com/oauth2/authorize?client_id=YOUR_BOT_ID&scope=bot&permissions
 ### 5. Start your fleet
 
 ```bash
-fleet start hub           # Start the hub
-fleet start worker-1      # Start a worker
+fleet apply               # Start all agents from fleet.yaml
 fleet status              # See who's online
 
 # === my-fleet Fleet ===
@@ -80,18 +79,42 @@ fleet status              # See who's online
 ## Commands
 
 ```bash
+fleet apply                                  # Start all agents from fleet.yaml
 fleet start <agent>                          # Start at default server
-fleet start <agent> ~/project                # Custom workspace
+fleet start <agent> --wait --json            # Wait for ready, JSON output
 fleet start <agent> --role writer            # Start with role overlay
 fleet start <agent> --at staging             # Override server location
 fleet stop <agent>                           # Stop
 fleet stop <agent> --at staging              # Stop at overridden location
 fleet inject <agent> <role>                  # Hot-inject role (no restart)
 fleet status                                 # Fleet overview
+fleet status --json                          # Machine-readable JSON
 fleet doctor                                 # Diagnose issues
+fleet doctor --json                          # JSON diagnostics
+fleet deps --install                         # Check/install dependencies
+fleet patch                                  # Apply Discord plugin patches
 fleet init                                   # Interactive setup
+fleet init --token T --channel C --name N    # Non-interactive (for agents)
 fleet help                                   # Show usage
 ```
+
+### Flags
+
+| Flag | Commands | Purpose |
+|------|----------|---------|
+| `--json` | status, start, stop, apply, doctor | Machine-readable JSON output |
+| `--wait` | start, apply | Wait for identity injection before returning |
+| `--force` | stop | Override FLEET_SELF protection |
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Usage error (unknown agent, missing args) |
+| 2 | Config error (missing fleet.yaml, bad token) |
+| 3 | Runtime error (SSH unreachable) |
+| 5 | Conflict (already running, stopping yourself) |
 
 ## Configuration
 
