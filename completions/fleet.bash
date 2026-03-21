@@ -69,7 +69,7 @@ for s in d.get('servers', {}): print(s)
               COMPREPLY=($(compgen -W "local $servers" -- "$cur"))
               ;;
             *)
-              COMPREPLY=($(compgen -W "--role --at" -- "$cur"))
+              COMPREPLY=($(compgen -W "--role --at --wait --json --quiet" -- "$cur"))
               COMPREPLY+=($(compgen -d -- "$cur"))
               ;;
           esac
@@ -80,7 +80,7 @@ for s in d.get('servers', {}): print(s)
               COMPREPLY=($(compgen -W "local $servers" -- "$cur"))
               ;;
             *)
-              COMPREPLY=($(compgen -W "--at" -- "$cur"))
+              COMPREPLY=($(compgen -W "--at --json --quiet" -- "$cur"))
               ;;
           esac
           ;;

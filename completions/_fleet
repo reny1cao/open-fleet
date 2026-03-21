@@ -65,12 +65,17 @@ for s in d.get('servers', {}): print(s)
             '1:agent:($agents)' \
             '--role[Role overlay]:role:($roles)' \
             '--at[Override server]:server:(local $servers)' \
+            '--wait[Wait for identity injection]' \
+            '--json[JSON output]' \
+            '--quiet[Minimal output]' \
             '*:directory:_directories'
           ;;
         stop)
           _arguments \
             '1:agent:($agents)' \
-            '--at[Override server]:server:(local $servers)'
+            '--at[Override server]:server:(local $servers)' \
+            '--json[JSON output]' \
+            '--quiet[Minimal output]'
           ;;
         inject)
           _arguments \

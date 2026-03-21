@@ -16,7 +16,7 @@ inject_identity() {
   [[ "$identity_path" != /* ]] && identity_path="$FLEET_DIR/$identity_path"
 
   if [[ ! -f "$identity_path" ]]; then
-    $JSON_OUTPUT || echo "  Warning: no identity file: $identity_path"
+    $JSON_OUTPUT || $QUIET_OUTPUT || echo "  Warning: no identity file: $identity_path"
     return
   fi
 
@@ -34,11 +34,11 @@ $(cat "$identity_path")"
 
 $(cat "$role_file")"
     else
-      $JSON_OUTPUT || echo "  Warning: unknown role: $role (available: $(available_roles))"
+      $JSON_OUTPUT || $QUIET_OUTPUT || echo "  Warning: unknown role: $role (available: $(available_roles))"
     fi
   fi
 
-  $JSON_OUTPUT || echo "  Injecting identity..."
+  $JSON_OUTPUT || $QUIET_OUTPUT || echo "  Injecting identity..."
 
   # Wait for Claude to fully initialize (poll, max 60s)
   local waited=0 max_wait=60
@@ -61,14 +61,14 @@ $(cat "$role_file")"
   done
 
   if [[ $waited -ge $max_wait ]]; then
-    $JSON_OUTPUT || echo "  Warning: timeout (${max_wait}s), still attempting injection"
+    $JSON_OUTPUT || $QUIET_OUTPUT || echo "  Warning: timeout (${max_wait}s), still attempting injection"
   fi
 
   # Extra wait for Discord Gateway to connect
   sleep 3
 
   send_prompt "$session" "$server" "$prompt"
-  $JSON_OUTPUT || echo "  Done: identity injected${role:+ (+$role)}"
+  $JSON_OUTPUT || $QUIET_OUTPUT || echo "  Done: identity injected${role:+ (+$role)}"
 }
 
 # Hot-inject a role into a running agent

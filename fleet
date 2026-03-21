@@ -34,6 +34,7 @@ FLEET_DIR="${FLEET_DIR:-$(pwd)}"
 
 # Global flags (set before sourcing libs so they're available everywhere)
 JSON_OUTPUT=false
+QUIET_OUTPUT=false
 
 source "$SCRIPT_DIR/lib/ui.sh"
 source "$SCRIPT_DIR/lib/config.sh"
@@ -45,6 +46,27 @@ source "$SCRIPT_DIR/lib/deps.sh"
 source "$SCRIPT_DIR/lib/patch.sh"
 
 # ── JSON helpers ──────────────────────────────────────────────────────────────
+
+# ── Output helpers ─────────────────────────────────────────────────────────
+
+# Print to stdout (suppressed in --quiet mode unless --json)
+say() {
+  $QUIET_OUTPUT && ! $JSON_OUTPUT && return
+  echo "$@"
+}
+
+# Print error to stderr (always visible; JSON-structured if --json)
+# Usage: err "message" [key value ...] — first arg is the human-readable message
+#   JSON mode:  {"error": "message", key: value, ...} to stderr
+#   Plain mode: "Error: message" to stderr
+err() {
+  local message="$1"; shift
+  if $JSON_OUTPUT; then
+    json_obj "error" "$message" "$@" >&2
+  else
+    echo "Error: $message" >&2
+  fi
+}
 
 json_kv() {
   # json_kv key value — outputs "key": "value" (escapes quotes in value)
@@ -75,12 +97,7 @@ do_start() {
   local agents
   agents=$(list_agents)
   if ! echo "$agents" | grep -qx "$agent"; then
-    if $JSON_OUTPUT; then
-      json_obj "error" "unknown agent" "agent" "$agent"
-    else
-      echo "Error: unknown agent '$agent'"
-      echo "Available: $(echo "$agents" | tr '\n' ' ')"
-    fi
+    err "unknown agent '$agent'" "agent" "$agent"
     exit 1
   fi
 
@@ -96,11 +113,7 @@ do_start() {
   if [[ -z "$token" ]]; then
     local env_name
     env_name=$(agent_get "$agent" "token_env" 2>/dev/null || echo "?")
-    if $JSON_OUTPUT; then
-      json_obj "error" "token not set" "agent" "$agent" "token_env" "$env_name"
-    else
-      echo "Error: $env_name not set. Check .env"
-    fi
+    err "$env_name not set — check .env" "agent" "$agent" "token_env" "$env_name"
     exit 2
   fi
 
@@ -110,11 +123,7 @@ do_start() {
     local expanded_state="${state_dir/#\~/$HOME}"
 
     if [[ ! -d "$expanded_work" ]]; then
-      if $JSON_OUTPUT; then
-        json_obj "error" "directory not found" "path" "$expanded_work"
-      else
-        echo "Error: directory does not exist: $expanded_work"
-      fi
+      err "directory not found: $expanded_work" "path" "$expanded_work"
       exit 2
     fi
 
@@ -122,7 +131,7 @@ do_start() {
       if $JSON_OUTPUT; then
         json_obj "agent" "$agent" "state" "already_running" "session" "$session"
       else
-        echo "$agent is already running. Attach: tmux attach -t $session"
+        say "$agent is already running. Attach: tmux attach -t $session"
       fi
       exit 0
     fi
@@ -131,14 +140,12 @@ do_start() {
     [[ -n "$expanded_state" ]] && cmd="$cmd DISCORD_STATE_DIR=$expanded_state"
     cmd="$cmd $runtime --dangerously-skip-permissions --channels $plugin"
 
-    if ! $JSON_OUTPUT; then
-      echo "Starting $agent (local)..."
-      echo "  Workspace: $expanded_work"
-    fi
+    say "Starting $agent (local)..."
+    say "  Workspace: $expanded_work"
     tmux new-session -d -s "$session" -c "$expanded_work" "$cmd"
 
     if [[ "$wait_flag" == "true" ]]; then
-      if ! $JSON_OUTPUT; then echo "  Waiting for identity injection..."; fi
+      say "  Waiting for identity injection..."
       inject_identity "$agent" "$session" "local" "$role"
     else
       inject_identity "$agent" "$session" "local" "$role" &
@@ -147,18 +154,14 @@ do_start() {
     if $JSON_OUTPUT; then
       json_obj "agent" "$agent" "state" "started" "server" "local" "session" "$session" "workspace" "$expanded_work"
     else
-      echo "  ✔ $agent started. Attach: tmux attach -t $session"
+      say "  ✔ $agent started. Attach: tmux attach -t $session"
     fi
 
   else
     # ── Remote start ──
     local ssh_host remote_user
     ssh_host=$(server_ssh_host "$server") || {
-      if $JSON_OUTPUT; then
-        json_obj "error" "no ssh_host" "server" "$server"
-      else
-        echo "Error: no ssh_host for server '$server'"
-      fi
+      err "no ssh_host configured for server '$server'" "server" "$server"
       exit 3
     }
     remote_user=$(server_user "$server")
@@ -167,7 +170,7 @@ do_start() {
       if $JSON_OUTPUT; then
         json_obj "agent" "$agent" "state" "already_running" "server" "$server"
       else
-        echo "$agent is already running at $server"
+        say "$agent is already running at $server"
       fi
       exit 0
     fi
@@ -176,14 +179,12 @@ do_start() {
     [[ -n "$state_dir" ]] && remote_start="$remote_start DISCORD_STATE_DIR=$state_dir"
     remote_start="$remote_start $runtime --dangerously-skip-permissions --channels $plugin"
 
-    if ! $JSON_OUTPUT; then
-      echo "Starting $agent ($server via SSH)..."
-      echo "  Workspace: $workspace"
-    fi
+    say "Starting $agent ($server via SSH)..."
+    say "  Workspace: $workspace"
     remote_cmd "$ssh_host" "$remote_user" "tmux new-session -d -s $session -c $workspace \"$remote_start\"" 2>&1
 
     if [[ "$wait_flag" == "true" ]]; then
-      if ! $JSON_OUTPUT; then echo "  Waiting for identity injection..."; fi
+      say "  Waiting for identity injection..."
       inject_identity "$agent" "$session" "$server" "$role"
     else
       inject_identity "$agent" "$session" "$server" "$role" &
@@ -192,7 +193,7 @@ do_start() {
     if $JSON_OUTPUT; then
       json_obj "agent" "$agent" "state" "started" "server" "$server" "session" "$session"
     else
-      echo "  ✔ $agent started at $server"
+      say "  ✔ $agent started at $server"
     fi
   fi
 }
@@ -205,11 +206,7 @@ do_stop() {
   local agents
   agents=$(list_agents)
   if ! echo "$agents" | grep -qx "$agent"; then
-    if $JSON_OUTPUT; then
-      json_obj "error" "unknown agent" "agent" "$agent"
-    else
-      echo "Error: unknown agent '$agent'"
-    fi
+    err "unknown agent '$agent'" "agent" "$agent"
     exit 1
   fi
 
@@ -222,23 +219,19 @@ do_stop() {
       if $JSON_OUTPUT; then
         json_obj "agent" "$agent" "state" "stopped" "server" "local"
       else
-        echo "✔ $agent stopped"
+        say "✔ $agent stopped"
       fi
     else
       if $JSON_OUTPUT; then
         json_obj "agent" "$agent" "state" "not_running" "server" "local"
       else
-        echo "$agent is not running"
+        say "$agent is not running"
       fi
     fi
   else
     local ssh_host remote_user
     ssh_host=$(server_ssh_host "$server") || {
-      if $JSON_OUTPUT; then
-        json_obj "error" "no ssh_host" "server" "$server"
-      else
-        echo "Error: no ssh_host for server '$server'"
-      fi
+      err "no ssh_host configured for server '$server'" "server" "$server"
       exit 3
     }
     remote_user=$(server_user "$server")
@@ -246,13 +239,13 @@ do_stop() {
       if $JSON_OUTPUT; then
         json_obj "agent" "$agent" "state" "stopped" "server" "$server"
       else
-        echo "✔ $agent stopped at $server"
+        say "✔ $agent stopped at $server"
       fi
     else
       if $JSON_OUTPUT; then
         json_obj "agent" "$agent" "state" "not_running" "server" "$server"
       else
-        echo "$agent is not running at $server"
+        say "$agent is not running at $server"
       fi
     fi
   fi
@@ -341,6 +334,7 @@ Usage:
 
 Flags:
   --json    Machine-readable JSON output (for agent/script consumption)
+  --quiet   Minimal output, errors only (for pipelines)
   --wait    Block until identity injection completes (fleet start)
 
 Exit codes:
@@ -377,6 +371,7 @@ parse_start_args() {
       --at)    at="$2"; shift 2 ;;
       --wait)  wait_flag="true"; shift ;;
       --json)  JSON_OUTPUT=true; shift ;;
+      --quiet) QUIET_OUTPUT=true; shift ;;
       *)       custom_dir="$1"; shift ;;
     esac
   done
@@ -384,12 +379,7 @@ parse_start_args() {
   # Validate --at against known servers
   if [[ -n "$at" && "$at" != "local" ]]; then
     if ! list_servers | grep -qx "$at"; then
-      if $JSON_OUTPUT; then
-        json_obj "error" "unknown server" "server" "$at"
-      else
-        echo "Error: unknown server '$at'"
-        echo "Available: local $(list_servers | tr '\n' ' ')"
-      fi
+      err "unknown server '$at'" "server" "$at"
       exit 1
     fi
   fi
@@ -403,9 +393,10 @@ parse_stop_args() {
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --at)   at="$2"; shift 2 ;;
-      --json) JSON_OUTPUT=true; shift ;;
-      *)      shift ;;
+      --at)    at="$2"; shift 2 ;;
+      --json)  JSON_OUTPUT=true; shift ;;
+      --quiet) QUIET_OUTPUT=true; shift ;;
+      *)       shift ;;
     esac
   done
 
@@ -415,8 +406,9 @@ parse_stop_args() {
 parse_status_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --json) JSON_OUTPUT=true; shift ;;
-      *)      shift ;;
+      --json)  JSON_OUTPUT=true; shift ;;
+      --quiet) QUIET_OUTPUT=true; shift ;;
+      *)       shift ;;
     esac
   done
   do_status
@@ -425,8 +417,9 @@ parse_status_args() {
 parse_doctor_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --json) JSON_OUTPUT=true; shift ;;
-      *)      shift ;;
+      --json)  JSON_OUTPUT=true; shift ;;
+      --quiet) QUIET_OUTPUT=true; shift ;;
+      *)       shift ;;
     esac
   done
   do_doctor
