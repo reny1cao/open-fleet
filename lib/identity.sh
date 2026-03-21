@@ -40,7 +40,9 @@ $(cat "$role_file")"
 
   $JSON_OUTPUT || $QUIET_OUTPUT || echo "  Injecting identity..."
 
-  # Wait for Claude to fully initialize (poll, max 60s)
+  # Handle first-run --dangerously-skip-permissions confirmation
+  # Claude Code may prompt for confirmation on first use of this flag.
+  # We poll for the prompt and auto-accept it.
   local waited=0 max_wait=60
   while [[ $waited -lt $max_wait ]]; do
     local pane_output
@@ -53,9 +55,22 @@ $(cat "$role_file")"
       pane_output=$(remote_cmd "$ssh_host" "$remote_user" "tmux capture-pane -t $session -p 2>/dev/null")
     fi
 
+    # Check if we're past the permissions prompt and listening
     if echo "$pane_output" | grep -q "Listening for channel messages"; then
       break
     fi
+
+    # Auto-accept permissions confirmation if it appears
+    if echo "$pane_output" | grep -qi "bypass\|dangerous\|permission\|confirm\|accept\|y/n\|Y/n"; then
+      $JSON_OUTPUT || $QUIET_OUTPUT || echo "  Accepting permissions prompt..."
+      if [[ "$server" == "local" ]]; then
+        tmux send-keys -t "$session" "y" Enter
+      else
+        remote_cmd "$ssh_host" "$remote_user" "tmux send-keys -t $session y Enter"
+      fi
+      sleep 2
+    fi
+
     sleep 3
     waited=$((waited + 3))
   done

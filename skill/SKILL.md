@@ -61,17 +61,24 @@ Ask: "Do you have a Discord server for your fleet?"
 
 **What the user provides:** Only bot tokens. Everything else (server, channel, bot name, Application ID, invite URLs) is auto-detected by `fleet init`.
 
+**First, help the user decide their team structure.** Ask:
+
+> How do you want your team to work? Common patterns:
+> - **Lead + Worker** — one understands your intent and delegates, one executes (recommended for getting started)
+> - **Lead + Coder + Reviewer** — adds a dedicated code reviewer
+> - **Custom** — you decide each agent's role
+
+Based on their choice, you know how many bots to create and what to name them.
+
 Tell the user to open https://discord.com/developers/applications in their browser.
 
-**Create the first bot (lead):**
-1. **Top right** of the page → click the blue **"New Application"** button → name it (e.g. "Lead") → click Create. This name becomes the bot's display name in Discord.
+**For each bot in the team:**
+1. **Top right** of the page → click the blue **"New Application"** button → name it based on its role (e.g. "Lead", "Worker", "Reviewer"). This name becomes the bot's display name in Discord.
 2. You land on the "General Information" page. **Left sidebar** → click **"Bot"** (puzzle piece icon)
 3. **Bot page, top section** → click **"Reset Token"** → confirm → **copy the token immediately**
 4. **Bot page, scroll down** to **"Privileged Gateway Intents"** section → toggle **"Message Content Intent" ON** (turns blue) → click **"Save Changes"** at bottom
 5. Ask the user to paste the token to you now. Save it.
-
-**Create the second bot (worker):**
-Repeat steps 1-5 with a different name (e.g. "Worker"). Ask user to paste this token too. Save it.
+6. Repeat for each bot in the team.
 
 **Run fleet init (generates config + invite links):**
 
@@ -99,11 +106,26 @@ Give the user each invite URL that `fleet init` printed. For each one:
 
 **Why:** This launches each agent as a Claude Code process connected to Discord. They'll come online and start listening.
 
-**First-run note:** The first time Claude Code runs with `--dangerously-skip-permissions`, it may show a one-time confirmation prompt in the tmux session. If `fleet start` succeeds but the bot doesn't come online:
+**Before starting:** Claude Code needs `--dangerously-skip-permissions` to run unattended. To avoid a first-run confirmation prompt, pre-configure it:
+
+```bash
+# Check if settings already allow it
+cat ~/.claude/settings.json
+
+# If not, the agent can add the permission:
+# Read the current settings, add the bypass permission, write back
+```
+
+If the user hasn't run Claude Code with `--dangerously-skip-permissions` before, help them:
+1. Run `claude --dangerously-skip-permissions` once in their terminal
+2. Accept the one-time confirmation when prompted
+3. Exit Claude Code (`/exit`)
+4. Now `fleet start` will work without prompts
+
+Alternatively, if `fleet start` succeeds but the bot doesn't come online:
 1. Run `tmux attach -t <session-name>` (shown in fleet start output)
-2. If there's a permissions confirmation prompt, accept it
+2. If there's a confirmation prompt, accept it
 3. Detach with `Ctrl+B, D`
-4. The bot should come online after this. Subsequent starts won't ask again.
 
 ```bash
 fleet start lead
