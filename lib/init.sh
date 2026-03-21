@@ -55,8 +55,8 @@ prompt() {
 prompt_secret() {
   local message="$1"
   local ans
-  read -rsp "  $message: " ans
-  echo ""
+  # Use visible input — read -s breaks paste in many SSH terminals
+  read -rp "  $message: " ans
   echo "$ans"
 }
 
@@ -127,8 +127,12 @@ do_init() {
   local tokens=() bot_names=() bot_ids=()
   local first_token=""
 
-  echo "  Paste your first bot token (creates the connection to Discord)."
-  echo "  Get tokens: https://discord.com/developers/applications → Bot → Reset Token"
+  echo "  How to get a bot token:"
+  echo "    1. Go to https://discord.com/developers/applications"
+  echo "    2. Click your app → Bot tab → Reset Token → Copy"
+  echo "    3. Also enable 'Message Content Intent' (under Privileged Gateway Intents)"
+  echo ""
+  echo "  Paste the token below and press Enter."
   echo ""
 
   local token
