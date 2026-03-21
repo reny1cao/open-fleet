@@ -342,6 +342,10 @@ for g in guilds:
 
   fleet_name=$(prompt "Fleet name (used as tmux prefix)" "my-fleet")
 
+  # Ask for workspace
+  local fleet_workspace
+  fleet_workspace=$(prompt "Workspace directory (where agents work)" "$(pwd)")
+
   # First agent uses the token we already validated
   local agent_name
   agent_name=$(prompt "Agent 1 name" "hub")
@@ -470,7 +474,7 @@ for g in guilds:
     echo "defaults:"
     echo "  agent: claude-code"
     echo "  runtime: claude"
-    echo "  workspace: ~/workspace"
+    echo "  workspace: ${fleet_workspace:-~/workspace}"
     echo "  channel_plugin: plugin:discord@claude-plugins-official"
     echo "  permissions: dangerously-skip"
     echo ""
@@ -540,6 +544,51 @@ for g in guilds:
       ok "identities/${agent_names[$i]}.md"
     else
       info "identities/${agent_names[$i]}.md (already exists, skipped)"
+    fi
+  done
+
+  # ── Generate access.json for each bot ──
+  # Each bot needs an access.json that allows the user and all other bots
+  for i in "${!agent_names[@]}"; do
+    local state_dir="${agent_state_dirs[$i]}"
+    # Default state dir if not set
+    if [[ -z "$state_dir" ]]; then
+      state_dir="$HOME/.claude/channels/discord"
+    else
+      state_dir="${state_dir/#\~/$HOME}"
+    fi
+    mkdir -p "$state_dir"
+
+    local access_file="$state_dir/access.json"
+    if [[ ! -f "$access_file" ]]; then
+      # Build allowed users list: user + all bot IDs
+      local allowed_json="["
+      local first_entry=true
+      # Add user
+      if [[ -n "$user_id" ]]; then
+        allowed_json="$allowed_json\"$user_id\""
+        first_entry=false
+      fi
+      # Add all bot IDs
+      for j in "${!bot_ids[@]}"; do
+        if [[ $j -ne $i ]]; then  # don't add self
+          $first_entry || allowed_json="$allowed_json,"
+          allowed_json="$allowed_json\"${bot_ids[$j]}\""
+          first_entry=false
+        fi
+      done
+      allowed_json="$allowed_json]"
+
+      cat > "$access_file" <<EOACCESS
+{
+  "policy": "whitelist",
+  "requireMention": true,
+  "allowedUserIds": $allowed_json
+}
+EOACCESS
+      ok "access.json for ${agent_names[$i]}"
+    else
+      info "access.json for ${agent_names[$i]} (already exists)"
     fi
   done
 
@@ -661,7 +710,7 @@ do_init_noninteractive() {
     echo "defaults:"
     echo "  agent: claude-code"
     echo "  runtime: claude"
-    echo "  workspace: ~/workspace"
+    echo "  workspace: ${fleet_workspace:-~/workspace}"
     echo "  channel_plugin: plugin:discord@claude-plugins-official"
     echo "  permissions: dangerously-skip"
     echo ""

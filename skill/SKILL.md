@@ -99,6 +99,12 @@ Give the user each invite URL that `fleet init` printed. For each one:
 
 **Why:** This launches each agent as a Claude Code process connected to Discord. They'll come online and start listening.
 
+**First-run note:** The first time Claude Code runs with `--dangerously-skip-permissions`, it may show a one-time confirmation prompt in the tmux session. If `fleet start` succeeds but the bot doesn't come online:
+1. Run `tmux attach -t <session-name>` (shown in fleet start output)
+2. If there's a permissions confirmation prompt, accept it
+3. Detach with `Ctrl+B, D`
+4. The bot should come online after this. Subsequent starts won't ask again.
+
 ```bash
 fleet start lead
 fleet start worker
