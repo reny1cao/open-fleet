@@ -1,24 +1,33 @@
-# Fleet
+# Open Fleet
 
-Let your Claude Code agents work as a team.
+Let your coding agents work as a team — anywhere.
 
 ```
 You (Discord)
  │
- └── #dev ── Hub (dispatches tasks) · Worker (executes code)
+ └── #dev ── Hub (dispatches) · Worker (executes) · Worker-2 (reviews)
 ```
 
-Fleet turns multiple Claude Code instances into a coordinated team. A hub agent receives your tasks and dispatches to workers. Workers do the heavy lifting — coding, reviewing, deploying — while the hub stays responsive.
+Open Fleet is a CLI that spins up coding agents on any machine and lets them collaborate through Discord. One agent dispatches tasks, others execute. Add more agents when you need them, wherever you need them.
 
-**Why this works:** When a single Claude Code session does heavy coding, it fills its context window and stops responding. Fleet solves this with the **hub-never-works** pattern — the hub only dispatches, so its context stays clean and it always replies. Workers can go deep without worrying about responsiveness.
+Built on [Claude Code Channels](https://docs.anthropic.com/en/docs/claude-code). Currently supports Claude Code, designed to support any coding agent.
+
+## Why
+
+A single coding agent gets overwhelmed — context fills up, it stops responding. The fix: don't make one agent do everything. Split the work. The dispatcher (hub) stays responsive because it never does heavy work. Workers go deep.
 
 ## Quick Start (5 minutes)
 
-### 1. Clone and install
+### 1. Install
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/reny1cao/open-fleet/master/install.sh | bash
+```
+
+Or clone manually:
+```bash
 git clone https://github.com/reny1cao/open-fleet.git
-cd fleet
+cd open-fleet
 ./install.sh
 ```
 
