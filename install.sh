@@ -178,23 +178,21 @@ else
     fi
   done
 
-  # Open browser if we captured the URL
-  if [[ -n "$url_found" ]]; then
-    if open_url "$url_found"; then
-      info "Browser opened automatically"
-    else
-      echo ""
-      echo "  Open this URL in your browser:"
-      echo "  $url_found"
-    fi
-    echo ""
-  fi
-
-  # Attach to the tmux session so user can paste the token
-  echo "  Handing over to Claude login — paste your token when prompted."
-  echo "  After login completes, this script will continue automatically."
+  # Always print the full URL clearly before attaching
   echo ""
-  echo "  ─── Attaching to login session ───"
+  echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  if [[ -n "$url_found" ]]; then
+    echo "  Open this URL in your browser:"
+    echo ""
+    echo "  $url_found"
+    open_url "$url_found" && echo "" && info "Browser opened automatically" || true
+  else
+    echo "  Could not capture URL automatically."
+    echo "  Look for the URL in the login session below."
+  fi
+  echo ""
+  echo "  After logging in, paste the token into the session below."
+  echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo ""
 
   # tmux attach blocks until the session ends (login complete + sleep 5)
