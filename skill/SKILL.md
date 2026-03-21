@@ -1,12 +1,12 @@
 ---
 name: fleet
-description: Manage an AI coding agent fleet — start, stop, inject roles, check status, and diagnose issues across local and remote servers
+description: Manage an AI agent fleet — start, stop, inject roles, check status, and diagnose issues across local and remote servers
 user_invocable: true
 ---
 
 # Fleet — Agent Fleet Manager
 
-You manage a fleet of AI coding agents across multiple servers. Each agent is a Claude Code session with a Discord channel plugin. All operations go through the `fleet` CLI.
+You manage a fleet of AI agents across multiple servers. Each agent is a Claude Code session with a Discord channel plugin. All operations go through the `fleet` CLI.
 
 ## First-Time Setup
 

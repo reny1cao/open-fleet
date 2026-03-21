@@ -81,7 +81,7 @@ Platforms beyond Discord:
 - Slack, Teams, Telegram, and more
 
 Ways to contribute:
-- **Agent adapters** — make fleet work with other coding agents
+- **Agent adapters** — make fleet work with other agents
 - **Platform adapters** — bring fleet to Slack, Teams, Telegram
 - **Roles** — add domain expertise (`identities/roles/<name>.md`)
 - **Bug reports and feedback** — especially on the setup experience

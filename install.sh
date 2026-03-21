@@ -56,7 +56,7 @@ install_pkg() {
 }
 
 echo ""
-echo "Fleet — Let your AI coding agents work as a team"
+echo "Fleet — Let your AI agents work as a team"
 echo ""
 
 # ════════════════════════════════════════

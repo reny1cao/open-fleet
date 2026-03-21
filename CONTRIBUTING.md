@@ -1,6 +1,6 @@
 # Contributing to Fleet
 
-Thanks for your interest in contributing! Fleet is a shell-native tool for orchestrating AI coding agents across multiple servers.
+Thanks for your interest in contributing! Fleet is a shell-native tool for orchestrating AI agents across multiple servers.
 
 ## Getting Started
 

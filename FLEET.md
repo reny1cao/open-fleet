@@ -1,6 +1,6 @@
 # Fleet CLI — Agent Quick Reference
 
-Fleet manages AI coding agent fleets across servers via Discord + tmux + SSH.
+Fleet manages AI agent fleets across servers via Discord + tmux + SSH.
 
 ## Commands (use --json for machine output)
 
