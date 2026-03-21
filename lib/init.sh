@@ -270,9 +270,30 @@ for c in channels:
   local fleet_channel_name="${channel_names[$ch_idx]}"
   ok "Fleet channel: #$fleet_channel_name"
 
+  # Get server owner ID automatically
   local user_id
-  echo ""
-  user_id=$(prompt "Your Discord user ID (right-click your name → Copy User ID)" "")
+  user_id=$(echo "$guilds_json" | python3 -c "
+import json, sys
+guilds = json.load(sys.stdin)
+for g in guilds:
+    if g['id'] == sys.argv[1]:
+        print(g.get('owner_id', g.get('owner', {}).get('id', '')))
+        break
+" "$guild_id" 2>/dev/null || echo "")
+
+  if [[ -n "$user_id" ]]; then
+    ok "Server owner: $user_id"
+  else
+    # Fallback: get from guild detail endpoint
+    local guild_detail
+    guild_detail=$(discord_get "$token" "/guilds/$guild_id")
+    user_id=$(echo "$guild_detail" | python3 -c "import json,sys; print(json.load(sys.stdin).get('owner_id',''))" 2>/dev/null || echo "")
+    if [[ -n "$user_id" ]]; then
+      ok "Server owner: $user_id"
+    else
+      user_id=$(prompt "Your Discord user ID (could not auto-detect)" "")
+    fi
+  fi
 
   # ── Step 3: Define agents ──
   step "[3/5] Define your fleet"
