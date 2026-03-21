@@ -57,6 +57,10 @@ prompt_secret() {
   local ans
   # Use visible input — read -s breaks paste in many SSH terminals
   read -rp "  $message: " ans
+  # Show masked version so user knows it was received
+  if [[ ${#ans} -gt 8 ]]; then
+    printf "  → received: %s...%s (%d chars)\n" "${ans:0:4}" "${ans: -4}" "${#ans}" >&2
+  fi
   echo "$ans"
 }
 
