@@ -690,12 +690,26 @@ do_init_noninteractive() {
     done
   fi
 
-  # Get owner ID from first token's guild
+  # Get owner ID and auto-detect channel if not provided
   local user_id=""
-  local guilds_json
+  local guilds_json guild_id
   guilds_json=$(get_guilds "${tokens[0]}" 2>/dev/null)
   if [[ -n "$guilds_json" ]]; then
     user_id=$(echo "$guilds_json" | python3 -c "import json,sys; g=json.load(sys.stdin); print(g[0].get('owner_id','') if g else '')" 2>/dev/null || echo "")
+    guild_id=$(echo "$guilds_json" | python3 -c "import json,sys; g=json.load(sys.stdin); print(g[0]['id'] if g else '')" 2>/dev/null || echo "")
+  fi
+
+  # Auto-detect channel if not provided
+  if [[ -z "$channel_id" && -n "$guild_id" ]]; then
+    local channels_json
+    channels_json=$(get_channels "${tokens[0]}" "$guild_id" 2>/dev/null)
+    if [[ -n "$channels_json" ]]; then
+      channel_id=$(echo "$channels_json" | python3 -c "
+import json, sys
+channels = [c for c in json.load(sys.stdin) if c['type'] == 0]
+print(channels[0]['id'] if channels else '')
+" 2>/dev/null || echo "")
+    fi
   fi
 
   # Generate fleet.yaml
