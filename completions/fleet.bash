@@ -6,44 +6,59 @@ _fleet_completions() {
   local cur prev words cword
   _init_completion || return
 
-  local commands="start stop inject status"
+  local commands="start stop inject status init doctor help version"
 
-  # Find the pool file relative to the fleet binary
-  local fleet_bin
-  fleet_bin=$(command -v fleet 2>/dev/null)
-  if [[ -L "$fleet_bin" ]]; then
-    fleet_bin=$(readlink -f "$fleet_bin")
-  fi
-  local pool_dir
-  pool_dir=$(dirname "$fleet_bin" 2>/dev/null)
-  local pool="$pool_dir/bot-pool.json"
-
-  local bots="" roles="" locations=""
-  if [[ -f "$pool" ]]; then
-    bots=$(jq -r '.[].name' "$pool" 2>/dev/null | tr '\n' ' ')
-    locations=$(jq -r '[.[].location] | unique | .[]' "$pool" 2>/dev/null | tr '\n' ' ')
+  # Find fleet.yaml: check FLEET_CONFIG, then cwd, then relative to fleet binary
+  local fleet_yaml=""
+  if [[ -n "${FLEET_CONFIG:-}" && -f "$FLEET_CONFIG" ]]; then
+    fleet_yaml="$FLEET_CONFIG"
+  elif [[ -f "./fleet.yaml" ]]; then
+    fleet_yaml="./fleet.yaml"
+  else
+    local fleet_bin
+    fleet_bin=$(command -v fleet 2>/dev/null)
+    [[ -L "$fleet_bin" ]] && fleet_bin=$(readlink -f "$fleet_bin")
+    local fleet_dir=$(dirname "$fleet_bin" 2>/dev/null)
+    [[ -f "$fleet_dir/fleet.yaml" ]] && fleet_yaml="$fleet_dir/fleet.yaml"
   fi
 
-  local roles_dir="$pool_dir/identities/roles"
+  local agents="" servers="" roles=""
+  if [[ -n "$fleet_yaml" && -f "$fleet_yaml" ]]; then
+    agents=$(python3 -c "
+import yaml, sys
+with open(sys.argv[1]) as f:
+    d = yaml.safe_load(f)
+for a in d.get('agents', {}): print(a)
+" "$fleet_yaml" 2>/dev/null | tr '\n' ' ')
+    servers=$(python3 -c "
+import yaml, sys
+with open(sys.argv[1]) as f:
+    d = yaml.safe_load(f)
+for s in d.get('servers', {}): print(s)
+" "$fleet_yaml" 2>/dev/null | tr '\n' ' ')
+  fi
+
+  # Roles from identities/roles/ directory
+  local roles_dir=""
+  if [[ -n "$fleet_yaml" ]]; then
+    roles_dir="$(dirname "$fleet_yaml")/identities/roles"
+  fi
   if [[ -d "$roles_dir" ]]; then
     roles=$(ls "$roles_dir"/*.md 2>/dev/null | xargs -I{} basename {} .md | tr '\n' ' ')
   fi
 
   case "$cword" in
     1)
-      # First arg: subcommand
       COMPREPLY=($(compgen -W "$commands" -- "$cur"))
       ;;
     2)
-      # Second arg: bot name (for start/stop/inject)
       case "${words[1]}" in
         start|stop|inject)
-          COMPREPLY=($(compgen -W "$bots" -- "$cur"))
+          COMPREPLY=($(compgen -W "$agents" -- "$cur"))
           ;;
       esac
       ;;
     *)
-      # Subsequent args: context-dependent
       case "${words[1]}" in
         start)
           case "$prev" in
@@ -51,11 +66,10 @@ _fleet_completions() {
               COMPREPLY=($(compgen -W "$roles" -- "$cur"))
               ;;
             --at)
-              COMPREPLY=($(compgen -W "local $locations" -- "$cur"))
+              COMPREPLY=($(compgen -W "local $servers" -- "$cur"))
               ;;
             *)
               COMPREPLY=($(compgen -W "--role --at" -- "$cur"))
-              # Also complete directories
               COMPREPLY+=($(compgen -d -- "$cur"))
               ;;
           esac
@@ -63,7 +77,7 @@ _fleet_completions() {
         stop)
           case "$prev" in
             --at)
-              COMPREPLY=($(compgen -W "local $locations" -- "$cur"))
+              COMPREPLY=($(compgen -W "local $servers" -- "$cur"))
               ;;
             *)
               COMPREPLY=($(compgen -W "--at" -- "$cur"))
@@ -71,7 +85,6 @@ _fleet_completions() {
           esac
           ;;
         inject)
-          # Third arg for inject: role name
           if [[ "$cword" -eq 3 ]]; then
             COMPREPLY=($(compgen -W "$roles" -- "$cur"))
           fi

@@ -5,27 +5,47 @@
 _fleet() {
   local -a commands
   commands=(
-    'start:Start a bot'
-    'stop:Stop a bot'
-    'inject:Hot-inject a role into a running bot'
+    'start:Start an agent'
+    'stop:Stop an agent'
+    'inject:Hot-inject a role into a running agent'
     'status:Show fleet status'
+    'init:Interactive first-time setup'
+    'doctor:Health check and diagnostics'
+    'help:Show help'
+    'version:Show version'
   )
 
-  # Find pool file relative to fleet binary
-  local fleet_bin=${commands[fleet]:-$(command -v fleet 2>/dev/null)}
-  if [[ -L "$fleet_bin" ]]; then
-    fleet_bin=$(readlink -f "$fleet_bin")
+  # Find fleet.yaml
+  local fleet_yaml=""
+  if [[ -n "${FLEET_CONFIG:-}" && -f "$FLEET_CONFIG" ]]; then
+    fleet_yaml="$FLEET_CONFIG"
+  elif [[ -f "./fleet.yaml" ]]; then
+    fleet_yaml="./fleet.yaml"
+  else
+    local fleet_bin=$(command -v fleet 2>/dev/null)
+    [[ -L "$fleet_bin" ]] && fleet_bin=$(readlink -f "$fleet_bin")
+    local fleet_dir=$(dirname "$fleet_bin" 2>/dev/null)
+    [[ -f "$fleet_dir/fleet.yaml" ]] && fleet_yaml="$fleet_dir/fleet.yaml"
   fi
-  local pool_dir=$(dirname "$fleet_bin" 2>/dev/null)
-  local pool="$pool_dir/bot-pool.json"
 
-  local -a bots roles locations
-  if [[ -f "$pool" ]]; then
-    bots=(${(f)"$(jq -r '.[].name' "$pool" 2>/dev/null)"})
-    locations=(${(f)"$(jq -r '[.[].location] | unique | .[]' "$pool" 2>/dev/null)"})
+  local -a agents servers roles
+  if [[ -n "$fleet_yaml" && -f "$fleet_yaml" ]]; then
+    agents=(${(f)"$(python3 -c "
+import yaml, sys
+with open(sys.argv[1]) as f:
+    d = yaml.safe_load(f)
+for a in d.get('agents', {}): print(a)
+" "$fleet_yaml" 2>/dev/null)"})
+    servers=(${(f)"$(python3 -c "
+import yaml, sys
+with open(sys.argv[1]) as f:
+    d = yaml.safe_load(f)
+for s in d.get('servers', {}): print(s)
+" "$fleet_yaml" 2>/dev/null)"})
   fi
 
-  local roles_dir="$pool_dir/identities/roles"
+  local roles_dir=""
+  [[ -n "$fleet_yaml" ]] && roles_dir="$(dirname "$fleet_yaml")/identities/roles"
   if [[ -d "$roles_dir" ]]; then
     roles=(${(f)"$(ls "$roles_dir"/*.md 2>/dev/null | xargs -I{} basename {} .md)"})
   fi
@@ -42,23 +62,22 @@ _fleet() {
       case "${words[1]}" in
         start)
           _arguments \
-            '1:bot:($bots)' \
+            '1:agent:($agents)' \
             '--role[Role overlay]:role:($roles)' \
-            '--at[Override location]:location:(local $locations)' \
+            '--at[Override server]:server:(local $servers)' \
             '*:directory:_directories'
           ;;
         stop)
           _arguments \
-            '1:bot:($bots)' \
-            '--at[Override location]:location:(local $locations)'
+            '1:agent:($agents)' \
+            '--at[Override server]:server:(local $servers)'
           ;;
         inject)
           _arguments \
-            '1:bot:($bots)' \
+            '1:agent:($agents)' \
             '2:role:($roles)'
           ;;
-        status)
-          # No args
+        status|init|doctor|help|version)
           ;;
       esac
       ;;
