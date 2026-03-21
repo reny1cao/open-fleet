@@ -1,6 +1,6 @@
 # Open Fleet
 
-Let your coding agents work as a team — anywhere.
+Let your agents work as a team — anywhere.
 
 One agent talks to you and understands what needs to happen. The others do the work — coding, reviewing, deploying — across any number of machines. They coordinate through Discord.
 
