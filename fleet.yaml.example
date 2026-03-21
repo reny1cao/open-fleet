@@ -21,11 +21,8 @@ fleet:
 
 discord:
   server_id: "YOUR_DISCORD_SERVER_ID"
-  user_id: "YOUR_DISCORD_USER_ID"      # fleet admin
-  channels:
-    general: "YOUR_GENERAL_CHANNEL_ID"
-    dev: "YOUR_DEV_CHANNEL_ID"
-    infra: "YOUR_INFRA_CHANNEL_ID"
+  channel_id: "YOUR_CHANNEL_ID"         # all bots use this channel by default
+  user_id: "YOUR_DISCORD_USER_ID"       # fleet admin
 
 # ── Servers ─────────────────────────────────────────────────────────────────
 # SSH-reachable hosts. "local" is implicit — no config needed.

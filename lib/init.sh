@@ -242,25 +242,37 @@ for i, g in enumerate(guilds, 1):
   local channels_json
   channels_json=$(get_channels "$token" "$guild_id")
 
-  # Show text channels
-  echo "$channels_json" | python3 -c "
+  # Build channel list (text channels only)
+  local channel_names channel_ids
+  channel_names=()
+  channel_ids=()
+  while IFS=: read -r ch_name ch_id; do
+    channel_names+=("$ch_name")
+    channel_ids+=("$ch_id")
+  done < <(echo "$channels_json" | python3 -c "
 import json, sys
-channels = [c for c in json.load(sys.stdin) if c['type'] == 0]  # text channels only
+channels = [c for c in json.load(sys.stdin) if c['type'] == 0]
 for c in channels:
-    print(f'    #{c[\"name\"]} ({c[\"id\"]})')
-" 2>/dev/null
+    print(f'{c[\"name\"]}:{c[\"id\"]}')
+" 2>/dev/null)
+
+  # Show numbered list
+  for i in "${!channel_names[@]}"; do
+    echo "    $((i+1)). #${channel_names[$i]}"
+  done
 
   echo ""
-  echo "  Map your channels (paste channel IDs, or press Enter to skip):"
-
-  local ch_general ch_dev ch_infra
-  ch_general=$(prompt "general channel ID" "")
-  ch_dev=$(prompt "dev channel ID" "")
-  ch_infra=$(prompt "infra channel ID" "")
+  echo "  Which channel should the fleet use?"
+  local ch_choice
+  ch_choice=$(prompt "Select channel number" "1")
+  local ch_idx=$((ch_choice - 1))
+  local fleet_channel_id="${channel_ids[$ch_idx]}"
+  local fleet_channel_name="${channel_names[$ch_idx]}"
+  ok "Fleet channel: #$fleet_channel_name"
 
   local user_id
   echo ""
-  user_id=$(prompt "Your Discord user ID" "")
+  user_id=$(prompt "Your Discord user ID (right-click your name → Copy User ID)" "")
 
   # ── Step 3: Define agents ──
   step "[3/5] Define your fleet"
@@ -374,11 +386,8 @@ for c in channels:
     echo ""
     echo "discord:"
     echo "  server_id: \"$guild_id\""
+    echo "  channel_id: \"$fleet_channel_id\"    # #$fleet_channel_name"
     echo "  user_id: \"${user_id:-YOUR_DISCORD_USER_ID}\""
-    echo "  channels:"
-    [[ -n "$ch_general" ]] && echo "    general: \"$ch_general\""
-    [[ -n "$ch_dev" ]] && echo "    dev: \"$ch_dev\""
-    [[ -n "$ch_infra" ]] && echo "    infra: \"$ch_infra\""
     echo ""
 
     if [[ ${#unique_servers[@]} -gt 0 ]]; then
@@ -452,11 +461,9 @@ for c in channels:
         echo ""
         [[ -n "$user_id" ]] && echo "User: \`$user_id\`"
         echo ""
-        echo "## Channels"
+        echo "## Channel"
         echo ""
-        [[ -n "$ch_general" ]] && echo "- #general (\`$ch_general\`)"
-        [[ -n "$ch_dev" ]] && echo "- #dev (\`$ch_dev\`)"
-        [[ -n "$ch_infra" ]] && echo "- #infra (\`$ch_infra\`)"
+        echo "- #$fleet_channel_name (\`$fleet_channel_id\`)"
         echo ""
         echo "## Rules"
         echo ""
