@@ -12,15 +12,31 @@ You manage a fleet of AI coding agents across multiple servers. Each agent is a 
 
 Guide the user through each step ONE AT A TIME. Assume they have nothing. Explain why each step matters. Wait for confirmation before moving on.
 
-### Step 1: Install fleet CLI
+### Step 1: Install fleet CLI and verify environment
 
-**Why:** Fleet is a shell tool that manages your agent team. This installs it.
+**Why:** Fleet needs the CLI installed, Claude Code with Channels support, the Discord plugin, and patches applied. The install script handles all of this.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/reny1cao/open-fleet/master/install.sh | bash
 ```
 
-**Done when:** Output shows "Installed. Next steps:" and `fleet help` works in terminal.
+After install, verify everything:
+```bash
+fleet doctor
+```
+
+Check the output for:
+- **Claude Code version** — must be recent enough to support `--channels` flag. Run `claude --version` — needs 1.0.0+
+- **Discord plugin** — `fleet doctor` checks if `server.ts` exists at the plugin path
+- **Patches** — STATE_DIR and PARTNER_BOT_IDS must show as applied
+
+If `fleet doctor` shows failures:
+- Claude Code not installed → tell user: `npm install -g @anthropic-ai/claude-code`
+- Claude Code not logged in → tell user: `claude auth login`
+- Plugin missing → run: `fleet patch` (install.sh should have handled this, but re-run if needed)
+- Patches missing → run: `fleet patch`
+
+**Done when:** `fleet doctor` shows all checks green (or only non-blocking warnings). `fleet help` works.
 
 ### Step 2: Discord server
 
