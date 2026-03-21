@@ -8,6 +8,8 @@
 #   fleet status
 #   fleet init
 #   fleet doctor
+#   fleet deps [--install]
+#   fleet patch [patch-name]
 #   fleet help
 
 set -eo pipefail
@@ -23,6 +25,8 @@ source "$SCRIPT_DIR/lib/remote.sh"
 source "$SCRIPT_DIR/lib/identity.sh"
 source "$SCRIPT_DIR/lib/init.sh"
 source "$SCRIPT_DIR/lib/doctor.sh"
+source "$SCRIPT_DIR/lib/deps.sh"
+source "$SCRIPT_DIR/lib/patch.sh"
 
 # ── Commands ──────────────────────────────────────────────────────────────────
 
@@ -189,6 +193,8 @@ Usage:
   fleet inject <agent> <role>                    Hot-inject role
   fleet status                                   Fleet overview
   fleet doctor                                   Health check
+  fleet deps [--install]                         Check/install dependencies
+  fleet patch [name]                             Apply Discord plugin patches
   fleet help                                     This help
 
 Agents: $agents
@@ -204,6 +210,9 @@ Examples:
   fleet stop worker                            # Stop at default server
   fleet status                                 # Fleet overview
   fleet doctor                                 # Verify config + connectivity
+  fleet deps --install                         # Auto-install missing deps
+  fleet patch                                  # Apply all Discord patches
+  fleet patch state-dir                        # Apply specific patch
 EOF
 }
 
@@ -275,6 +284,12 @@ case "$ACTION" in
     ;;
   doctor)
     do_doctor
+    ;;
+  deps)
+    do_deps "${2:-}"
+    ;;
+  patch)
+    do_patch "${2:-all}"
     ;;
   help|--help|-h)
     usage
