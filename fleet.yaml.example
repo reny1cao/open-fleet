@@ -2,114 +2,86 @@
 # fleet.yaml — Agent Fleet Configuration
 # ============================================================================
 #
-# Copy to fleet.yaml and customize. This file replaces bot-pool.json as the
-# single source of truth for fleet topology.
-#
-# Migration from bot-pool.json:
-#   spawn.sh checks for fleet.yaml first, falls back to bot-pool.json.
-#   Once you have fleet.yaml working, bot-pool.json can be deleted.
+# Single source of truth for fleet topology.
+# Copy to fleet.yaml and customize, or run `fleet init` to generate.
 #
 # Usage:
-#   ./spawn.sh start sentinel         # start one agent
-#   ./spawn.sh start sentinel --role writer  # start with role overlay
-#   ./spawn.sh status                  # fleet status
-#   ./spawn.sh stop pilot             # stop one agent
+#   fleet start hub                   # start one agent
+#   fleet start hub --role writer     # start with role overlay
+#   fleet status                      # fleet overview
+#   fleet stop worker                 # stop one agent
 
 # ── Fleet metadata ──────────────────────────────────────────────────────────
 
 fleet:
-  name: hq
-  channel: discord
+  name: my-fleet                       # tmux prefix: my-fleet-<agent>
+
+# ── Discord ───────────────────────────────────────────────────────────────────
+# Centralized Discord IDs. Identity templates reference these via {{discord.*}}.
+
+discord:
+  server_id: "YOUR_DISCORD_SERVER_ID"
+  user_id: "YOUR_DISCORD_USER_ID"      # fleet admin
+  channels:
+    general: "YOUR_GENERAL_CHANNEL_ID"
+    dev: "YOUR_DEV_CHANNEL_ID"
+    infra: "YOUR_INFRA_CHANNEL_ID"
 
 # ── Servers ─────────────────────────────────────────────────────────────────
-# Define SSH-reachable hosts. "local" is implicit — no config needed.
+# SSH-reachable hosts. "local" is implicit — no config needed.
 
 servers:
-  singapore:
-    ssh_host: sg-dev                    # SSH config alias, or user@host
-    user: dev                           # remote user to run as (default: current)
-  # germany:
-  #   ssh_host: de-srv
-  #   user: dev
+  staging:
+    ssh_host: staging-server             # SSH config alias, or user@host
+    user: dev                            # remote user to run as (default: current)
+  # production:
+  #   ssh_host: prod-server
+  #   user: deploy
 
 # ── Defaults ────────────────────────────────────────────────────────────────
 
 defaults:
-  runtime: claude                       # agent CLI binary (claude, codex, etc.)
+  agent: claude-code                     # agent type (claude-code for v0.1)
+  runtime: claude                        # CLI binary name
   workspace: ~/workspace
   channel_plugin: plugin:discord@claude-plugins-official
-  permissions: dangerously-skip         # required for unattended bots
-  tmux_prefix: hq                       # sessions: hq-sentinel, hq-pilot, etc.
+  permissions: dangerously-skip          # required for unattended agents
 
 # ── Agents ──────────────────────────────────────────────────────────────────
 #
-# Each agent maps to one tmux session + one process.
+# Each agent = one tmux session + one Claude Code process.
 #
 # Required: token_env, server
 # Optional: everything else (inherits from defaults)
 #
-# Fields that map to current spawn.sh (bot-pool.json compatibility):
-#   token_env   → environment variable holding Discord bot token
-#   state_dir   → custom Discord plugin state dir (for multi-instance)
-#   server      → "local" or a key from servers section
-#   workspace   → working directory (overrides defaults.workspace)
-#   identity    → path to identity markdown file
-#   role        → freeform label used in status display
-#
-# New fields (forward-looking, spawn.sh will grow into these):
-#   runtime     → agent binary override (claude, codex, custom)
-#   model       → LLM model override
-#   flags       → extra CLI flags
-#   startup_msg → posted to Discord when agent comes online
+# Fields:
+#   token_env    env var holding the Discord bot token
+#   server       "local" or a key from the servers section
+#   role         freeform label (hub, worker, reviewer, etc.)
+#   identity     path to identity markdown (relative to fleet.yaml)
+#   workspace    working directory (overrides defaults.workspace)
+#   state_dir    Discord plugin state dir (needed for multi-instance on same machine)
+#   note         human-readable description (shown in docs, not used by CLI)
 
 agents:
-  sentinel:
-    token_env: DISCORD_BOT_TOKEN_SENTINEL
+  hub:
+    token_env: DISCORD_BOT_TOKEN_HUB
     role: hub
     server: local
-    identity: identities/sentinel.md
-    workspace: ~/workspace
-    note: "Hub — dispatches only, never does heavy work"
+    identity: identities/hub.md
+    note: "Dispatcher — receives tasks, delegates to workers"
 
-  pilot:
-    token_env: DISCORD_BOT_TOKEN_PILOT
-    role: guide
+  worker-1:
+    token_env: DISCORD_BOT_TOKEN_WORKER1
+    role: worker
     server: local
-    state_dir: ~/.claude/channels/discord-pilot
-    identity: identities/pilot.md
-    workspace: ~/workspace
-    note: "Reads codebase, writes specs, reviews code"
+    state_dir: ~/.fleet/state/discord-worker1
+    identity: identities/worker-1.md
+    note: "Local development execution"
 
-  archon:
-    token_env: DISCORD_BOT_TOKEN_ARCHON
-    role: field-agent
-    server: singapore
-    identity: identities/archon.md
-    note: "General-purpose execution on Singapore"
-
-  forge:
-    token_env: DISCORD_BOT_TOKEN_FORGE
-    role: dev-worker
-    server: singapore
-    state_dir: ~/.claude/channels/discord-forge
-    identity: identities/forge.md
-    note: "Focused coding execution"
-
-  citadel:
-    token_env: DISCORD_BOT_TOKEN_CITADEL
-    role: infra-worker
-    server: germany
-    state_dir: ~/.claude/channels/discord-citadel
-    identity: identities/citadel.md
-    note: "Infrastructure and ops"
-
-# ── Runtime definitions (future) ────────────────────────────────────────────
-# When spawn.sh supports multiple runtimes, define launch templates here.
-#
-# runtimes:
-#   claude:
-#     cmd: "claude --dangerously-skip-permissions --channels {{channel_plugin}}"
-#     health: "pgrep -f 'claude.*--channels'"
-#   codex:
-#     cmd: "codex --approval-mode full-auto"
-#     health: "pgrep -f codex"
+  worker-2:
+    token_env: DISCORD_BOT_TOKEN_WORKER2
+    role: worker
+    server: staging
+    identity: identities/worker-2.md
+    note: "Remote execution on staging server"

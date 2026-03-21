@@ -1,0 +1,278 @@
+#!/bin/bash
+# fleet — Agent fleet CLI
+#
+# Usage:
+#   fleet start <agent> [workspace] [--role <role>] [--at <server>]
+#   fleet stop <agent> [--at <server>]
+#   fleet inject <agent> <role>
+#   fleet status
+#   fleet help
+
+set -eo pipefail
+
+# ── Resolve script location and source libs ───────────────────────────────────
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FLEET_DIR="${FLEET_DIR:-$(pwd)}"
+
+source "$SCRIPT_DIR/lib/ui.sh"
+source "$SCRIPT_DIR/lib/config.sh"
+source "$SCRIPT_DIR/lib/remote.sh"
+source "$SCRIPT_DIR/lib/identity.sh"
+
+# ── Commands ──────────────────────────────────────────────────────────────────
+
+do_start() {
+  local agent="$1" custom_dir="$2" role="$3" server_override="$4"
+  require_config
+
+  # Validate agent exists
+  local agents
+  agents=$(list_agents)
+  if ! echo "$agents" | grep -qx "$agent"; then
+    echo "Error: unknown agent '$agent'"
+    echo "Available: $(echo "$agents" | tr '\n' ' ')"
+    exit 1
+  fi
+
+  local token server state_dir workspace session plugin runtime
+  token=$(get_token "$agent")
+  server="${server_override:-$(agent_get "$agent" "server" 2>/dev/null || echo "local")}"
+  state_dir=$(agent_get "$agent" "state_dir" 2>/dev/null || true)
+  workspace="${custom_dir:-$(agent_get_or_default "$agent" "workspace" 2>/dev/null || echo "~/workspace")}"
+  session=$(session_name "$agent")
+  plugin=$(channel_plugin)
+  runtime=$(runtime_binary)
+
+  if [[ -z "$token" ]]; then
+    local env_name
+    env_name=$(agent_get "$agent" "token_env" 2>/dev/null || echo "?")
+    echo "Error: $env_name not set. Check .env"
+    exit 1
+  fi
+
+  if [[ "$server" == "local" ]]; then
+    # ── Local start ──
+    local expanded_work="${workspace/#\~/$HOME}"
+    local expanded_state="${state_dir/#\~/$HOME}"
+
+    if [[ ! -d "$expanded_work" ]]; then
+      echo "Error: directory does not exist: $expanded_work"
+      exit 1
+    fi
+
+    if tmux has-session -t "$session" 2>/dev/null; then
+      echo "$agent is already running. Attach: tmux attach -t $session"
+      exit 0
+    fi
+
+    local cmd="DISCORD_BOT_TOKEN=$token"
+    [[ -n "$expanded_state" ]] && cmd="$cmd DISCORD_STATE_DIR=$expanded_state"
+    cmd="$cmd $runtime --dangerously-skip-permissions --channels $plugin"
+
+    echo "Starting $agent (local)..."
+    echo "  Workspace: $expanded_work"
+    tmux new-session -d -s "$session" -c "$expanded_work" "$cmd"
+    echo "  ✔ $agent started. Attach: tmux attach -t $session"
+    inject_identity "$agent" "$session" "local" "$role" &
+
+  else
+    # ── Remote start ──
+    local ssh_host remote_user
+    ssh_host=$(server_ssh_host "$server") || { echo "Error: no ssh_host for server '$server'"; exit 1; }
+    remote_user=$(server_user "$server")
+
+    if session_exists "$session" "$server"; then
+      echo "$agent is already running at $server"
+      exit 0
+    fi
+
+    local remote_start="export PATH=\$HOME/.bun/bin:\$PATH && DISCORD_BOT_TOKEN=$token"
+    [[ -n "$state_dir" ]] && remote_start="$remote_start DISCORD_STATE_DIR=$state_dir"
+    remote_start="$remote_start $runtime --dangerously-skip-permissions --channels $plugin"
+
+    echo "Starting $agent ($server via SSH)..."
+    echo "  Workspace: $workspace"
+    remote_cmd "$ssh_host" "$remote_user" "tmux new-session -d -s $session -c $workspace \"$remote_start\"" 2>&1
+    echo "  ✔ $agent started at $server"
+    inject_identity "$agent" "$session" "$server" "$role" &
+  fi
+}
+
+do_stop() {
+  local agent="$1" server_override="$2"
+  require_config
+
+  # Validate agent exists
+  local agents
+  agents=$(list_agents)
+  if ! echo "$agents" | grep -qx "$agent"; then
+    echo "Error: unknown agent '$agent'"
+    exit 1
+  fi
+
+  local server session
+  server="${server_override:-$(agent_get "$agent" "server" 2>/dev/null || echo "local")}"
+  session=$(session_name "$agent")
+
+  if [[ "$server" == "local" ]]; then
+    tmux kill-session -t "$session" 2>/dev/null && echo "✔ $agent stopped" || echo "$agent is not running"
+  else
+    local ssh_host remote_user
+    ssh_host=$(server_ssh_host "$server") || { echo "Error: no ssh_host for server '$server'"; exit 1; }
+    remote_user=$(server_user "$server")
+    remote_cmd "$ssh_host" "$remote_user" "tmux kill-session -t $session" 2>/dev/null \
+      && echo "✔ $agent stopped at $server" \
+      || echo "$agent is not running at $server"
+  fi
+}
+
+do_status() {
+  require_config
+
+  local prefix
+  prefix=$(yaml_get "fleet.name" 2>/dev/null || echo "fleet")
+  echo "=== $prefix Fleet ==="
+
+  for agent in $(list_agents); do
+    local server session state role note
+    server=$(agent_get "$agent" "server" 2>/dev/null || echo "local")
+    session=$(session_name "$agent")
+    state=$(session_state "$session" "$server")
+    role=$(agent_get "$agent" "role" 2>/dev/null || echo "")
+    note=$(agent_get "$agent" "note" 2>/dev/null || echo "")
+
+    local label="$agent ($server)"
+    [[ -n "$role" ]] && label="$agent ($server, $role)"
+
+    case "$state" in
+      running)     printf "  ${green}[on]${reset}  %s" "$label"
+                   [[ "$server" == "local" ]] && printf " — tmux attach -t $session"
+                   echo "" ;;
+      stopped)     printf "  ${dim}[off]${reset} %s\n" "$label" ;;
+      unreachable) printf "  ${yellow}[??]${reset}  %s — SSH unreachable\n" "$label" ;;
+    esac
+  done
+}
+
+do_inject() {
+  local agent="$1" role="$2"
+  require_config
+
+  # Validate agent exists
+  local agents
+  agents=$(list_agents)
+  if ! echo "$agents" | grep -qx "$agent"; then
+    echo "Error: unknown agent '$agent'"
+    exit 1
+  fi
+
+  hot_inject_role "$agent" "$role"
+}
+
+usage() {
+  local agents roles
+  agents=$(list_agents 2>/dev/null | tr '\n' ' ' || echo "(no fleet.yaml found)")
+  roles=$(available_roles 2>/dev/null || echo "")
+
+  cat <<EOF
+fleet — Agent fleet CLI
+
+Usage:
+  fleet start <agent> [workspace] [--role <role>] [--at <server>]
+  fleet stop <agent> [--at <server>]
+  fleet inject <agent> <role>
+  fleet status
+  fleet help
+
+Agents: $agents
+Roles:  ${roles:-"(none)"}
+
+Examples:
+  fleet start hub                              # Default server + workspace
+  fleet start hub ~/workspace/project          # Custom workspace
+  fleet start worker --role writer             # Start with role overlay
+  fleet start worker --at singapore            # Override server location
+  fleet inject worker reviewer                 # Hot-inject role (no restart)
+  fleet stop worker                            # Stop at default server
+  fleet stop worker --at singapore             # Stop at overridden server
+  fleet status                                 # Fleet overview
+EOF
+}
+
+# ── Argument parsing ──────────────────────────────────────────────────────────
+
+parse_start_args() {
+  local agent="$1"; shift
+  local custom_dir="" role="" at=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --role) role="$2"; shift 2 ;;
+      --at)   at="$2"; shift 2 ;;
+      *)      custom_dir="$1"; shift ;;
+    esac
+  done
+
+  # Validate --at against known servers
+  if [[ -n "$at" && "$at" != "local" ]]; then
+    if ! list_servers | grep -qx "$at"; then
+      echo "Error: unknown server '$at'"
+      echo "Available: local $(list_servers | tr '\n' ' ')"
+      exit 1
+    fi
+  fi
+
+  do_start "$agent" "$custom_dir" "$role" "$at"
+}
+
+parse_stop_args() {
+  local agent="$1"; shift
+  local at=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --at) at="$2"; shift 2 ;;
+      *)    shift ;;
+    esac
+  done
+
+  do_stop "$agent" "$at"
+}
+
+# ── Route ─────────────────────────────────────────────────────────────────────
+
+ACTION="${1:-help}"
+AGENT="${2:-}"
+
+case "$ACTION" in
+  start)
+    [[ -z "$AGENT" ]] && { echo "Usage: fleet start <agent> [workspace] [--role <role>] [--at <server>]"; exit 1; }
+    shift 2
+    parse_start_args "$AGENT" "$@"
+    ;;
+  stop)
+    [[ -z "$AGENT" ]] && { echo "Usage: fleet stop <agent> [--at <server>]"; exit 1; }
+    shift 2
+    parse_stop_args "$AGENT" "$@"
+    ;;
+  inject)
+    [[ -z "$AGENT" ]] && { echo "Usage: fleet inject <agent> <role>"; exit 1; }
+    do_inject "$AGENT" "${3:-}"
+    ;;
+  status)
+    do_status
+    ;;
+  help|--help|-h)
+    usage
+    ;;
+  version|--version|-v)
+    echo "fleet 0.1.0"
+    ;;
+  *)
+    echo "Unknown command: $ACTION"
+    echo ""
+    usage
+    exit 1
+    ;;
+esac
