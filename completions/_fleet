@@ -1,0 +1,68 @@
+#compdef fleet
+# Zsh completion for fleet CLI
+# Install via install.sh or copy to ~/.zfunc/_fleet
+
+_fleet() {
+  local -a commands
+  commands=(
+    'start:Start a bot'
+    'stop:Stop a bot'
+    'inject:Hot-inject a role into a running bot'
+    'status:Show fleet status'
+  )
+
+  # Find pool file relative to fleet binary
+  local fleet_bin=${commands[fleet]:-$(command -v fleet 2>/dev/null)}
+  if [[ -L "$fleet_bin" ]]; then
+    fleet_bin=$(readlink -f "$fleet_bin")
+  fi
+  local pool_dir=$(dirname "$fleet_bin" 2>/dev/null)
+  local pool="$pool_dir/bot-pool.json"
+
+  local -a bots roles locations
+  if [[ -f "$pool" ]]; then
+    bots=(${(f)"$(jq -r '.[].name' "$pool" 2>/dev/null)"})
+    locations=(${(f)"$(jq -r '[.[].location] | unique | .[]' "$pool" 2>/dev/null)"})
+  fi
+
+  local roles_dir="$pool_dir/identities/roles"
+  if [[ -d "$roles_dir" ]]; then
+    roles=(${(f)"$(ls "$roles_dir"/*.md 2>/dev/null | xargs -I{} basename {} .md)"})
+  fi
+
+  _arguments -C \
+    '1:command:->command' \
+    '*::arg:->args'
+
+  case "$state" in
+    command)
+      _describe 'command' commands
+      ;;
+    args)
+      case "${words[1]}" in
+        start)
+          _arguments \
+            '1:bot:($bots)' \
+            '--role[Role overlay]:role:($roles)' \
+            '--at[Override location]:location:(local $locations)' \
+            '*:directory:_directories'
+          ;;
+        stop)
+          _arguments \
+            '1:bot:($bots)' \
+            '--at[Override location]:location:(local $locations)'
+          ;;
+        inject)
+          _arguments \
+            '1:bot:($bots)' \
+            '2:role:($roles)'
+          ;;
+        status)
+          # No args
+          ;;
+      esac
+      ;;
+  esac
+}
+
+_fleet "$@"

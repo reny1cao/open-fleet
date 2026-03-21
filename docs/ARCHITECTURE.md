@@ -48,7 +48,7 @@ An early blueprint proposed a full platform: Redis state management, unified gat
 - A shell script + tmux + SSH covers 95% of fleet management needs
 - Complexity should live in the bots' prompts (identity files), not in infrastructure
 
-`spawn.sh` is ~380 lines of bash. That's the entire management layer.
+`fleet` is ~380 lines of bash. That's the entire management layer.
 
 ## System Topology
 
@@ -72,7 +72,7 @@ An early blueprint proposed a full platform: Redis state management, unified gat
 
   Each box = tmux sessions running Claude Code + Discord plugin
   Communication = Discord messages (@mentions)
-  Management = spawn.sh (local tmux / remote SSH + tmux)
+  Management = fleet (local tmux / remote SSH + tmux)
 ```
 
 ## Bot Roles
@@ -114,7 +114,7 @@ An early blueprint proposed a full platform: Redis state management, unified gat
 ### Timing
 
 ```
-spawn.sh start <bot>
+fleet start <bot>
   │
   ├── Start Claude Code in tmux with DISCORD_BOT_TOKEN
   │
@@ -142,7 +142,7 @@ For remote bots, the prompt can't be sent directly via `tmux send-keys` (shell e
 
 ### Hot Injection
 
-`spawn.sh inject <bot> <role>` sends a role overlay to a running bot without restarting. The prompt starts with "You are now assigned an additional role" — Claude appends the new expertise to its existing identity.
+`fleet inject <bot> <role>` sends a role overlay to a running bot without restarting. The prompt starts with "You are now assigned an additional role" — Claude appends the new expertise to its existing identity.
 
 ## Multi-Instance Isolation
 
@@ -172,7 +172,7 @@ const STATE_DIR = process.env.DISCORD_STATE_DIR
 - No env var set → original behavior (backwards compatible)
 - `DISCORD_STATE_DIR=~/.claude/channels/discord-pilot` → fully isolated state
 
-`spawn.sh` reads `state_dir` from `bot-pool.json` and passes it as an environment variable when starting the Claude Code process.
+`fleet` reads `state_dir` from `bot-pool.json` and passes it as an environment variable when starting the Claude Code process.
 
 ### Why CLAUDE_PLUGIN_DATA doesn't help
 
