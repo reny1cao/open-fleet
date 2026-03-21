@@ -20,35 +20,43 @@ When a Claude Code session does heavy coding, it fills its context window and fo
 
 ### Prerequisites
 
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) with the Discord channel plugin installed
-- [jq](https://jqlang.github.io/jq/) for JSON parsing
-- [tmux](https://github.com/tmux/tmux) for session management
-- A Discord server with your bots invited
+- A Discord server with your bots created and invited
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) logged in (the only manual step)
+
+Everything else (`jq`, `tmux`, `bun`, Discord plugin, patches) is installed automatically.
 
 ### Setup
 
 1. **Create Discord bots** at the [Discord Developer Portal](https://discord.com/developers/applications). You need one bot per fleet member. Enable the **Message Content Intent** for each.
 
-2. **Clone and configure:**
+2. **One command:**
    ```bash
    git clone https://github.com/reny1cao/discord-hq-fleet.git
    cd discord-hq-fleet
-
-   cp .env.example .env          # Fill in your bot tokens
-   cp bot-pool.json.example bot-pool.json  # Fill in your bot IDs + SSH hosts
-   ./install.sh                  # Symlink `fleet` to ~/.local/bin + shell completions
+   ./install.sh
    ```
 
-3. **Apply the multi-instance patch** (required if running 2+ bots on the same machine):
+   The installer automatically:
+   - Installs missing dependencies (jq, tmux, bun via your package manager)
+   - Installs the Claude Code Discord plugin
+   - Patches `server.ts` for multi-instance isolation + bot-to-bot communication + presence
+   - Copies config templates (`.env`, `bot-pool.json`)
+   - Installs the `fleet` CLI to `~/.local/bin/` with shell completions
+
+   The only thing it can't do for you: **log in to Claude Code**. If you haven't logged in yet, the installer pauses and tells you to run `claude` in another terminal.
+
+3. **Configure:**
    ```bash
-   cd ~/.claude/plugins/cache/claude-plugins-official/discord/0.0.1/
-   git apply /path/to/discord-hq-fleet/patches/state-dir.patch
+   # Edit these with your bot tokens, IDs, and SSH hosts
+   nano .env
+   nano bot-pool.json
+
+   # Add your bot IDs to the PARTNER_BOT_IDS set in server.ts
+   nano ~/.claude/plugins/cache/claude-plugins-official/discord/0.0.1/server.ts
    ```
-   This adds `DISCORD_STATE_DIR` support — one line that lets multiple bot instances coexist. See [Multi-Instance Isolation](#multi-instance-isolation) for details.
 
 4. **Create identity files** for your bots:
    ```bash
-   # Copy the examples and customize
    cp identities/sentinel.md.example identities/sentinel.md
    cp identities/pilot.md.example identities/pilot.md
    # ... edit with your bot names, IDs, and channel IDs
