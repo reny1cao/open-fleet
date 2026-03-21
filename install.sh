@@ -127,9 +127,19 @@ if is_logged_in; then
   info "Claude Code is authenticated"
 else
   echo "  Not logged in. Starting login flow..."
+  echo ""
+  echo "  Claude Code supports multiple auth methods:"
+  echo "    1) Claude subscription (claude.ai) — default"
+  echo "    2) Anthropic Console (API billing) — use: claude auth login --console"
+  echo "    3) SSO — use: claude auth login --sso"
+  echo ""
+  echo "  Proceeding with Claude subscription (--claudeai)..."
+  echo "  To use a different method, Ctrl+C and run the command above manually."
+  echo ""
 
-  # Start claude login in a background tmux session
-  tmux new-session -d -s "$LOGIN_SESSION" "claude login 2>&1; sleep 5"
+  # --claudeai skips the interactive method picker
+  # The login process outputs a URL that the user must open in a browser
+  tmux new-session -d -s "$LOGIN_SESSION" "claude auth login --claudeai 2>&1; sleep 10"
 
   # Poll tmux pane for a URL
   url_found=""
