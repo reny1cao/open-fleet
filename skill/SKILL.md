@@ -37,61 +37,49 @@ Ask: "Do you have a Discord server for your fleet?"
 
 **Done when:** User tells you the server name and confirms they can see the `#general` channel.
 
-### Step 3: Create bots and configure fleet
+### Step 3: Create bots, configure, and invite
 
-**Why:** Each agent needs a Discord bot identity (name + token). You'll create each bot, grab its token, and feed it to fleet — one at a time.
+**Why:** Each agent needs a Discord bot identity. You'll create each bot, grab its token, run `fleet init` to generate config + invite links, then invite the bots. The order matters — `fleet init` needs the tokens first, and it outputs the invite links you'll use.
 
-**What the user needs to provide:** Only bot tokens. Everything else (server, channel, bot name, bot ID) is auto-detected from the token.
+**What the user provides:** Only bot tokens. Everything else (server, channel, bot name, bot ID, invite URLs) is auto-detected.
 
 Tell the user to open https://discord.com/developers/applications in their browser.
 
 **Create the first bot (lead):**
-1. **Top right** of the page → click the blue **"New Application"** button → name it (e.g. "Lead") → click Create. This name is what the bot will be called in Discord — users will see it as the bot's display name.
-2. You land on the "General Information" page. **Left sidebar** → click **"Bot"** (has a puzzle piece icon)
-3. **Bot page, top section** → click **"Reset Token"** → confirm in the popup → **copy the token immediately**
-4. **Bot page, scroll down** to **"Privileged Gateway Intents"** section → find **"Message Content Intent"** → toggle it **ON** (turns blue) → scroll to bottom → click **"Save Changes"**
-5. Ask the user to paste the token here now
+1. **Top right** of the page → click the blue **"New Application"** button → name it (e.g. "Lead") → click Create. This name becomes the bot's display name in Discord.
+2. You land on the "General Information" page. **Left sidebar** → click **"Bot"** (puzzle piece icon)
+3. **Bot page, top section** → click **"Reset Token"** → confirm → **copy the token immediately**
+4. **Bot page, scroll down** to **"Privileged Gateway Intents"** section → toggle **"Message Content Intent" ON** (turns blue) → click **"Save Changes"** at bottom
+5. Ask the user to paste the token to you now. Save it.
 
 **Create the second bot (worker):**
-Repeat steps 1-5 with a different name (e.g. "Worker"). Ask user to paste this token too.
+Repeat steps 1-5 with a different name (e.g. "Worker"). Ask user to paste this token too. Save it.
 
-**Once you have all tokens, run fleet init:**
+**Run fleet init (generates config + invite links):**
 
-If you're an agent, use non-interactive mode — this is the preferred path:
+As an agent, prefer non-interactive mode:
 ```bash
-fleet init --token FIRST_TOKEN --token SECOND_TOKEN --channel CHANNEL_ID --name my-fleet
+fleet init --token FIRST_TOKEN --token SECOND_TOKEN --name my-fleet
+```
+Fleet auto-detects the Discord server and channel from the token. If multiple servers/channels exist, it picks the first — use interactive `fleet init` instead if the user wants to choose.
+
+**Done when:** Output shows "Fleet initialized!" and prints invite URLs for each bot. Verify:
+```bash
+cat fleet.yaml    # should list your agents
 ```
 
-If you don't have the channel ID yet (user just created the server), use interactive mode:
-```bash
-fleet init
-```
-The wizard auto-detects the server from the token, lists channels by number, and generates all config.
+**Invite the bots using the URLs from fleet init:**
 
-**Done when:** Output shows "Fleet initialized!" Verify:
-```bash
-cat fleet.yaml    # should show your agents
-cat .env          # should show your tokens
-```
+Give the user each invite URL that `fleet init` printed. For each one:
+1. Open the URL in browser → Discord authorization page
+2. **"Add to Server"** dropdown (middle of page) → select their fleet server
+3. Click **"Continue"** → **"Authorize"** → complete captcha if shown
 
-### Step 5: Invite bots to server
+**Done when:** User confirms they see all bots as members in their Discord server (right sidebar → Members list). Bots show as offline — that's normal until Step 4.
 
-**Why:** Bots need permission to join your Discord server. Each bot gets an invite URL.
+### Step 4: Start the team
 
-`fleet init` printed invite URLs at the end. Tell the user to do this for each URL:
-1. Open the URL in browser — it goes to a Discord authorization page
-2. **"Add to Server"** dropdown (middle of the page) → select their fleet server
-3. Click **"Continue"** → then **"Authorize"**
-4. Complete the captcha if shown
-5. Repeat for each bot
-
-If they lost the URLs, rebuild: `https://discord.com/oauth2/authorize?client_id=BOT_ID&scope=bot&permissions=68608` (replace BOT_ID — find it on the Developer Portal → General Information → Application ID).
-
-**Done when:** User opens Discord, clicks their server name, and sees all bots listed under "Members" in the right sidebar (they'll show as offline — that's normal until Step 6).
-
-### Step 6: Start the team
-
-**Why:** This launches each agent as a Claude Code process connected to Discord. They'll come online and start listening for messages.
+**Why:** This launches each agent as a Claude Code process connected to Discord. They'll come online and start listening.
 
 ```bash
 fleet start lead
