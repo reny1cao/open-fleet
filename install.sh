@@ -163,25 +163,20 @@ if is_logged_in; then
 else
   warn "Claude Code is not logged in"
   echo ""
-  echo "  You need to log in before fleet can start agents."
-  echo "  Run this command now (it will show a URL to open in your browser):"
+  echo "  Log in by running this in another terminal:"
   echo ""
   echo "    claude auth login"
   echo ""
-  echo "  If you're on a remote server:"
-  echo "    1. Copy the URL it shows"
-  echo "    2. Open it in your LOCAL browser"
-  echo "    3. Complete the login"
-  echo "    4. Come back and re-run: ./install.sh"
+  echo "  On a remote server: copy the URL it shows, open in your local browser,"
+  echo "  complete login, then come back."
   echo ""
-  read -rp "  Press Enter to run 'claude auth login' now, or Ctrl+C to do it later... "
-  claude auth login
-  echo ""
+  read -rp "  Press Enter when done... "
+
   if is_logged_in; then
-    ok "Login successful!"
+    ok "Claude Code is logged in"
   else
-    warn "Login not completed — run 'claude auth login' manually, then re-run ./install.sh"
-    exit 1
+    warn "Still not logged in — fleet start will fail until you log in"
+    echo "  Run: claude auth login"
   fi
 fi
 
