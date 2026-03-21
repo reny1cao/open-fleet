@@ -2,8 +2,8 @@
 # install.sh — One-command fleet setup
 #
 # Two ways to run:
-#   curl -fsSL https://raw.githubusercontent.com/reny1cao/discord-hq-fleet/master/install.sh | bash
-#   git clone ... && cd discord-hq-fleet && ./install.sh
+#   curl -fsSL https://raw.githubusercontent.com/reny1cao/fleet/master/install.sh | bash
+#   git clone ... && cd fleet && ./install.sh
 #
 # What it does:
 #   1. Clones repo (if run via curl)
