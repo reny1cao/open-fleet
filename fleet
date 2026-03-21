@@ -6,6 +6,8 @@
 #   fleet stop <agent> [--at <server>]
 #   fleet inject <agent> <role>
 #   fleet status
+#   fleet init
+#   fleet doctor
 #   fleet help
 
 set -eo pipefail
@@ -19,6 +21,8 @@ source "$SCRIPT_DIR/lib/ui.sh"
 source "$SCRIPT_DIR/lib/config.sh"
 source "$SCRIPT_DIR/lib/remote.sh"
 source "$SCRIPT_DIR/lib/identity.sh"
+source "$SCRIPT_DIR/lib/init.sh"
+source "$SCRIPT_DIR/lib/doctor.sh"
 
 # ── Commands ──────────────────────────────────────────────────────────────────
 
@@ -179,24 +183,27 @@ usage() {
 fleet — Agent fleet CLI
 
 Usage:
-  fleet start <agent> [workspace] [--role <role>] [--at <server>]
-  fleet stop <agent> [--at <server>]
-  fleet inject <agent> <role>
-  fleet status
-  fleet help
+  fleet init                                     First-time setup wizard
+  fleet start <agent> [workspace] [--role <r>]   Start an agent
+  fleet stop <agent> [--at <server>]             Stop an agent
+  fleet inject <agent> <role>                    Hot-inject role
+  fleet status                                   Fleet overview
+  fleet doctor                                   Health check
+  fleet help                                     This help
 
 Agents: $agents
 Roles:  ${roles:-"(none)"}
 
 Examples:
+  fleet init                                   # Interactive setup
   fleet start hub                              # Default server + workspace
   fleet start hub ~/workspace/project          # Custom workspace
   fleet start worker --role writer             # Start with role overlay
   fleet start worker --at singapore            # Override server location
   fleet inject worker reviewer                 # Hot-inject role (no restart)
   fleet stop worker                            # Stop at default server
-  fleet stop worker --at singapore             # Stop at overridden server
   fleet status                                 # Fleet overview
+  fleet doctor                                 # Verify config + connectivity
 EOF
 }
 
@@ -262,6 +269,12 @@ case "$ACTION" in
     ;;
   status)
     do_status
+    ;;
+  init)
+    do_init
+    ;;
+  doctor)
+    do_doctor
     ;;
   help|--help|-h)
     usage
