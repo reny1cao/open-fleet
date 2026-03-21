@@ -159,10 +159,10 @@ else
   echo "  Override with: ./install.sh --console  or  ./install.sh --sso"
   echo ""
 
-  # Wide tmux window prevents URL truncation at default 80-col width
-  tmux new-session -d -s "$LOGIN_SESSION" -x 250 -y 50 "claude auth login $AUTH_METHOD 2>&1; sleep 10"
+  # Start login in background tmux with wide window (prevents URL truncation)
+  tmux new-session -d -s "$LOGIN_SESSION" -x 250 -y 50 "claude auth login $AUTH_METHOD 2>&1; echo ''; echo 'Login complete. This window will close automatically.'; sleep 5"
 
-  # Poll tmux pane for a URL
+  # Poll tmux pane to capture the login URL before attaching
   # -J joins wrapped lines so URLs split across lines are captured whole
   url_found=""
   waited=0
@@ -173,57 +173,46 @@ else
     waited=$((waited + 2))
     pane=$(tmux capture-pane -t "$LOGIN_SESSION" -p -J 2>/dev/null || true)
     url_found=$(echo "$pane" | tr -d '[:space:]' | grep -oE 'https://[^[:space:]]+' | head -1 || true)
-    # Fallback: try without tr in case URL has no wrapping
     if [[ -z "$url_found" ]]; then
       url_found=$(echo "$pane" | grep -oE 'https://[^ ]+' | head -1 || true)
     fi
   done
 
+  # Open browser if we captured the URL
   if [[ -n "$url_found" ]]; then
-    echo ""
     if open_url "$url_found"; then
       info "Browser opened automatically"
     else
-      # Remote or headless — print URL for user
-      echo "  ┌─────────────────────────────────────────────┐"
-      echo "  │  Open this URL in your browser:             │"
-      echo "  └─────────────────────────────────────────────┘"
       echo ""
+      echo "  Open this URL in your browser:"
       echo "  $url_found"
     fi
     echo ""
-    echo "  Complete the login in your browser."
-    echo "  This script will detect it automatically..."
-    echo ""
-  else
-    warn "Could not capture login URL from tmux"
-    echo "  Try running 'claude login' manually in another terminal"
-    echo "  This script will detect when you're logged in..."
-    echo ""
   fi
 
-  # Poll auth status until logged in or timeout
-  waited=0
-  while [[ $waited -lt $LOGIN_TIMEOUT ]]; do
-    if is_logged_in; then
-      info "Login detected!"
-      # Clean up tmux session
-      tmux kill-session -t "$LOGIN_SESSION" 2>/dev/null || true
-      break
-    fi
-    sleep 3
-    waited=$((waited + 3))
+  # Attach to the tmux session so user can paste the token
+  echo "  Handing over to Claude login — paste your token when prompted."
+  echo "  After login completes, this script will continue automatically."
+  echo ""
+  echo "  ─── Attaching to login session ───"
+  echo ""
 
-    # Show a dot every 15 seconds so user knows we're alive
-    if (( waited % 15 == 0 )); then
-      echo "  ... still waiting (${waited}s / ${LOGIN_TIMEOUT}s)"
-    fi
-  done
+  # tmux attach blocks until the session ends (login complete + sleep 5)
+  tmux attach -t "$LOGIN_SESSION" 2>/dev/null || true
 
-  if ! is_logged_in; then
-    tmux kill-session -t "$LOGIN_SESSION" 2>/dev/null || true
-    warn "Login timed out after ${LOGIN_TIMEOUT}s"
-    echo "  Run 'claude login' manually, then re-run this script"
+  echo ""
+  echo "  ─── Back to installer ───"
+  echo ""
+
+  # Clean up in case session is still around
+  tmux kill-session -t "$LOGIN_SESSION" 2>/dev/null || true
+
+  # Verify login succeeded
+  if is_logged_in; then
+    info "Login successful!"
+  else
+    warn "Login not detected after session ended"
+    echo "  Run 'claude auth login' manually, then re-run this script"
     exit 1
   fi
 fi
