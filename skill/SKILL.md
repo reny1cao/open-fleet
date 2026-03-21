@@ -18,55 +18,55 @@ Read `bot-pool.json` for the current fleet configuration. Each entry has:
 
 ## Script
 
-All operations go through: `./spawn.sh`
+All operations go through: `fleet`
 
 ## Commands
 
 ### "start <bot>"
 ```bash
-./spawn.sh start <bot>
+fleet start <bot>
 ```
 
 ### "start <bot> at <path>"
 ```bash
-./spawn.sh start <bot> <path>
+fleet start <bot> <path>
 ```
 
 ### "start <bot> as <role>"
 ```bash
-./spawn.sh start <bot> --role <role>
+fleet start <bot> --role <role>
 ```
 
 ### "relocate <bot> to <location>"
 ```bash
-./spawn.sh start <bot> --at <location>
+fleet start <bot> --at <location>
 ```
 Override the bot's default location. `<location>` = `local` / `singapore` / `germany`.
 
 ### Combine flags
 ```bash
-./spawn.sh start pilot --at singapore ~/workspace/project --role writer
+fleet start pilot --at singapore ~/workspace/project --role writer
 ```
 `--at`, `--role`, and work-dir can be combined freely.
 
 ### "inject <bot> <role>"
 ```bash
-./spawn.sh inject <bot> <role>
+fleet inject <bot> <role>
 ```
 Hot-inject a role into a running bot without restart.
 
 ### "stop <bot>"
 ```bash
-./spawn.sh stop <bot>
+fleet stop <bot>
 ```
 If the bot was started with `--at`, also pass `--at`:
 ```bash
-./spawn.sh stop <bot> --at <location>
+fleet stop <bot> --at <location>
 ```
 
 ### "status"
 ```bash
-./spawn.sh status
+fleet status
 ```
 
 ### "start all"

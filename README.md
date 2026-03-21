@@ -35,7 +35,8 @@ When a Claude Code session does heavy coding, it fills its context window and fo
    cd discord-hq-fleet
 
    cp .env.example .env          # Fill in your bot tokens
-   cp bot-pool.json.example bot-pool.json  # Fill in your bot IDs
+   cp bot-pool.json.example bot-pool.json  # Fill in your bot IDs + SSH hosts
+   ./install.sh                  # Symlink `fleet` to ~/.local/bin + shell completions
    ```
 
 3. **Apply the multi-instance patch** (required if running 2+ bots on the same machine):
@@ -55,8 +56,8 @@ When a Claude Code session does heavy coding, it fills its context window and fo
 
 5. **Start your first bot:**
    ```bash
-   ./spawn.sh start sentinel
-   # ✅ sentinel 已启动。附加: tmux attach -t hq-sentinel
+   fleet start sentinel
+   # Done: sentinel started. Attach: tmux attach -t hq-sentinel
    ```
 
 ## Commands
@@ -64,31 +65,31 @@ When a Claude Code session does heavy coding, it fills its context window and fo
 ### Start a bot
 
 ```bash
-./spawn.sh start <bot>                          # Default location + directory
-./spawn.sh start <bot> ~/workspace/project      # Custom working directory
-./spawn.sh start <bot> --role writer            # Start with a role overlay
-./spawn.sh start <bot> --at singapore           # Override default location
-./spawn.sh start forge --at local ~/my-project  # Combine: location + directory
+fleet start <bot>                          # Default location + directory
+fleet start <bot> ~/workspace/project      # Custom working directory
+fleet start <bot> --role writer            # Start with a role overlay
+fleet start <bot> --at singapore           # Override default location
+fleet start forge --at local ~/my-project  # Combine: location + directory
 ```
 
 ### Stop a bot
 
 ```bash
-./spawn.sh stop <bot>                           # Stop at default location
-./spawn.sh stop <bot> --at singapore            # Stop at overridden location
+fleet stop <bot>                           # Stop at default location
+fleet stop <bot> --at singapore            # Stop at overridden location
 ```
 
 ### Hot-inject a role
 
 ```bash
-./spawn.sh inject <bot> writer                  # Add role without restart
-./spawn.sh inject <bot> reviewer                # Switch expertise on the fly
+fleet inject <bot> writer                  # Add role without restart
+fleet inject <bot> reviewer                # Switch expertise on the fly
 ```
 
 ### Fleet status
 
 ```bash
-./spawn.sh status
+fleet status
 # === HQ Bot Fleet ===
 #   ✅ sentinel (local) — tmux attach -t hq-sentinel
 #   ✅ pilot (local) — tmux attach -t hq-pilot
@@ -123,7 +124,7 @@ Add new roles by creating `identities/roles/<name>.md`. The file is a prompt tha
 
 ### How injection works
 
-1. `spawn.sh` starts Claude Code in a tmux session with the Discord plugin
+1. `fleet` starts Claude Code in a tmux session with the Discord plugin
 2. Waits for Claude to initialize (polls for "Listening for channel messages")
 3. Sends the identity prompt via `tmux send-keys`
 4. For remote bots: writes the prompt to a temp file on the server, then injects via SSH
@@ -149,7 +150,7 @@ When `DISCORD_STATE_DIR` is not set, behavior is unchanged. Set it per bot to is
 }
 ```
 
-`spawn.sh` reads `state_dir` from `bot-pool.json` and passes it as an environment variable. All derived paths (access.json, approved users, inbox) inherit from this single variable.
+`fleet` reads `state_dir` from `bot-pool.json` and passes it as an environment variable. All derived paths (access.json, approved users, inbox) inherit from this single variable.
 
 **Caveat:** The `/discord:access` and `/discord:configure` skills have hardcoded paths. For non-default bots, configure access manually instead of using these skills.
 
@@ -200,7 +201,7 @@ DISCORD_BOT_TOKEN_PILOT=your-token-here
 # ... one per bot
 ```
 
-Locations and SSH mappings are configured directly in `bot-pool.json` via `ssh_host` and `remote_user` fields — no need to edit `spawn.sh`.
+Locations and SSH mappings are configured directly in `bot-pool.json` via `ssh_host` and `remote_user` fields — no need to edit `fleet`.
 
 ## Patch Checker
 
@@ -250,11 +251,13 @@ Every bot is launched with `--dangerously-skip-permissions`. This flag disables 
 
 ```
 discord-hq-fleet/
-├── README.md
-├── LICENSE
+├── fleet                       # Main CLI (symlinked by install.sh)
+├── install.sh                  # Installer (symlink + completions)
+├── completions/
+│   ├── fleet.bash              # Bash tab completion
+│   └── _fleet                  # Zsh tab completion
 ├── .env.example
 ├── bot-pool.json.example
-├── spawn.sh
 ├── check-patch.sh
 ├── identities/
 │   ├── sentinel.md.example
@@ -272,9 +275,11 @@ discord-hq-fleet/
 ├── patches/
 │   ├── state-dir.patch
 │   └── presence.patch
-└── docs/
-    ├── ARCHITECTURE.md
-    └── TROUBLESHOOTING.md
+├── docs/
+│   ├── ARCHITECTURE.md
+│   └── TROUBLESHOOTING.md
+├── LICENSE
+└── README.md
 ```
 
 ## License

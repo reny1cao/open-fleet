@@ -1,14 +1,14 @@
 #!/bin/bash
-# spawn.sh — HQ bot lifecycle manager
+# fleet — AI coding agent fleet manager
 # Config from bot-pool.json, tokens from .env
 #
 # Usage:
-#   spawn.sh start pilot                        # Start (default location + dir)
-#   spawn.sh start pilot ~/workspace/sb         # Start (custom dir)
-#   spawn.sh start pilot --role writer          # Start + role overlay
-#   spawn.sh inject pilot writer                # Hot-inject role (no restart)
-#   spawn.sh stop pilot                         # Stop
-#   spawn.sh status                             # Fleet status
+#   fleet start pilot                        # Start (default location + dir)
+#   fleet start pilot ~/workspace/sb         # Start (custom dir)
+#   fleet start pilot --role writer          # Start + role overlay
+#   fleet inject pilot writer                # Hot-inject role (no restart)
+#   fleet stop pilot                         # Stop
+#   fleet status                             # Fleet status
 
 set -eo pipefail
 
@@ -390,7 +390,7 @@ case "$ACTION" in
     do_status
     ;;
   *)
-    echo "HQ Bot Manager"
+    echo "Fleet — AI coding agent fleet manager"
     echo ""
     echo "Usage:"
     echo "  $0 start <bot> [work-dir] [--role <role>] [--at <loc>]   Start bot"

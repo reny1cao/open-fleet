@@ -4,7 +4,7 @@ Common issues and solutions, earned the hard way.
 
 ## 1. Bot is "listening" but not responding to messages
 
-**Symptom:** `spawn.sh status` shows the bot is running, but @mentioning it in Discord gets no response.
+**Symptom:** `fleet status` shows the bot is running, but @mentioning it in Discord gets no response.
 
 **Causes (check in order):**
 
@@ -39,13 +39,13 @@ Common issues and solutions, earned the hard way.
 **Symptom:** Bot starts but doesn't know its name/role.
 
 **Causes:**
-- Bot wasn't fully initialized when injection fired (spawn.sh now polls for readiness)
+- Bot wasn't fully initialized when injection fired (fleet now polls for readiness)
 - Remote bot's Discord plugin failed to start (check bun in PATH)
 - tmux session crashed during injection
 
 **Debug:** `tmux capture-pane -t hq-<bot> -p | tail -30` to see what the bot received.
 
-## 5. `spawn.sh status` shows "SSH unreachable"
+## 5. `fleet status` shows "SSH unreachable"
 
 **Symptom:** Remote bot shows as unreachable.
 
