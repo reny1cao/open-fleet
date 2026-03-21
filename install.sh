@@ -1,24 +1,25 @@
 #!/bin/bash
 # install.sh — One-command fleet setup
 #
-# Does everything needed to get fleet running:
-#   1. Installs fleet CLI to PATH
-#   2. Checks/installs dependencies (jq, tmux, python3, PyYAML, bun)
-#   3. Checks Claude Code login (prompts if needed)
-#   4. Installs Discord plugin
-#   5. Applies patches
+# Two ways to run:
+#   curl -fsSL https://raw.githubusercontent.com/reny1cao/discord-hq-fleet/master/install.sh | bash
+#   git clone ... && cd discord-hq-fleet && ./install.sh
 #
-# After this, only two steps remain:
-#   fleet init     — configure tokens, Discord server, agents
+# What it does:
+#   1. Clones repo (if run via curl)
+#   2. Installs fleet CLI to PATH
+#   3. Checks/installs dependencies
+#   4. Checks Claude Code login
+#   5. Installs Discord plugin + patches
+#
+# After this:
+#   fleet init     — configure tokens, Discord, agents
 #   fleet start    — launch your fleet
-#
-# Usage:
-#   git clone https://github.com/reny1cao/discord-hq-fleet && cd discord-hq-fleet
-#   ./install.sh
 
 set -eo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_URL="https://github.com/reny1cao/discord-hq-fleet.git"
+INSTALL_DIR="${FLEET_INSTALL_DIR:-$HOME/.fleet}"
 BIN_DIR="${BIN_DIR:-$HOME/.local/bin}"
 COMP_DIR_BASH="${BASH_COMPLETION_DIR:-$HOME/.local/share/bash-completion/completions}"
 COMP_DIR_ZSH="${ZSH_COMPLETION_DIR:-${ZDOTDIR:-$HOME}/.zfunc}"
@@ -55,9 +56,36 @@ install_pkg() {
 }
 
 echo ""
-echo "Fleet — AI coding agent fleet manager"
-echo "Setting up everything you need..."
+echo "Fleet — Let your AI coding agents work as a team"
 echo ""
+
+# ════════════════════════════════════════
+# Step 0: Get the repo
+# ════════════════════════════════════════
+
+# Detect if we're inside the repo or running via curl pipe
+if [[ -f "$(dirname "${BASH_SOURCE[0]:-$0}" 2>/dev/null)/fleet" ]]; then
+  # Running from inside the repo (./install.sh)
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+else
+  # Running via curl pipe or from outside the repo
+  step "Step 0: Downloading fleet"
+
+  if [[ -d "$INSTALL_DIR/.git" ]]; then
+    echo "  Updating existing installation..."
+    git -C "$INSTALL_DIR" pull --quiet 2>/dev/null || true
+    ok "Updated $INSTALL_DIR"
+  else
+    if ! command -v git &>/dev/null; then
+      fail "git is required. Install git first."
+      exit 1
+    fi
+    echo "  Cloning to $INSTALL_DIR..."
+    git clone --quiet "$REPO_URL" "$INSTALL_DIR"
+    ok "Cloned to $INSTALL_DIR"
+  fi
+  SCRIPT_DIR="$INSTALL_DIR"
+fi
 
 # ════════════════════════════════════════
 # Step 1: Fleet CLI + Completions
@@ -138,7 +166,7 @@ if command -v claude &>/dev/null; then
 else
   fail "Claude Code not found"
   echo "  Install: npm install -g @anthropic-ai/claude-code"
-  echo "  Then re-run: ./install.sh"
+  echo "  Then re-run: $0"
   exit 1
 fi
 
@@ -165,7 +193,7 @@ else
   echo ""
   echo "  Run:  claude auth login"
   echo ""
-  echo "  Then re-run ./install.sh"
+  echo "  Then re-run: $0"
   exit 1
 fi
 
@@ -179,7 +207,6 @@ if [[ -f "$PLUGIN_DIR/server.ts" ]]; then
   ok "Discord plugin installed"
 else
   echo "  Installing Discord plugin..."
-  # The plugin installs when claude runs with --channels, but we can trigger it
   if claude plugin install discord@claude-plugins-official 2>/dev/null; then
     ok "Discord plugin installed"
   elif [[ -f "$PLUGIN_DIR/server.ts" ]]; then
@@ -242,7 +269,7 @@ echo "════════════════════════�
 echo "  Setup complete!"
 echo ""
 echo "  Next:"
-echo "    fleet init         # Configure tokens, Discord server, agents"
+echo "    fleet init         # Configure tokens + agents"
 echo "    fleet start hub    # Launch your first agent"
 echo "════════════════════════════════════════"
 echo ""
