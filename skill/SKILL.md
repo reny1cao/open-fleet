@@ -48,8 +48,8 @@ If `fleet doctor` shows failures:
 Ask: "Do you have a Discord server for your fleet?"
 - If yes → continue to Step 3
 - If no → tell them:
-  1. Open https://discord.com in browser (or Discord app) — log in or create a free account
-  2. **Left sidebar, very bottom** → click the green **"+"** button (below all existing servers)
+  1. Open https://discord.com/channels/@me in browser (or Discord app) — log in or create a free account
+  2. **Left sidebar**, find **"Add a Server"** (below Direct Messages) → click it
   3. Choose **"Create My Own"** → then **"For me and my friends"**
   4. Name it anything (e.g. "My Fleet") → click **"Create"**
   5. You're now inside your new server. There's a default `#general` channel — that's enough.

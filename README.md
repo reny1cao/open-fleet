@@ -10,7 +10,9 @@ Built on [Claude Code Channels](https://docs.anthropic.com/en/docs/claude-code).
 
 **Paste this into your Claude Code:**
 
-> Install Open Fleet: run `curl -fsSL https://raw.githubusercontent.com/reny1cao/open-fleet/master/install.sh | bash` then read `~/.fleet/skill/SKILL.md` and follow the setup instructions to configure and start a 2-agent team.
+> Install Open Fleet and help me set up an agent team: run `curl -fsSL https://raw.githubusercontent.com/reny1cao/open-fleet/master/install.sh | bash` then read `~/.fleet/skill/SKILL.md` and follow the setup instructions.
+
+We recommend starting with 2-3 agents. Each agent needs its own Discord bot application.
 
 **Or do it yourself:**
 
