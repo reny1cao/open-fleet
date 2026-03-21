@@ -161,23 +161,16 @@ is_logged_in() {
 if is_logged_in; then
   ok "Claude Code is logged in"
 else
-  warn "Claude Code is not logged in"
+  fail "Claude Code is not logged in"
   echo ""
-  echo "  Log in by running this in another terminal:"
+  echo "  Run this command to log in:"
   echo ""
   echo "    claude auth login"
   echo ""
   echo "  On a remote server: copy the URL it shows, open in your local browser,"
-  echo "  complete login, then come back."
+  echo "  complete login, then re-run ./install.sh to continue."
   echo ""
-  read -rp "  Press Enter when done... "
-
-  if is_logged_in; then
-    ok "Claude Code is logged in"
-  else
-    warn "Still not logged in — fleet start will fail until you log in"
-    echo "  Run: claude auth login"
-  fi
+  exit 1
 fi
 
 # ════════════════════════════════════════
