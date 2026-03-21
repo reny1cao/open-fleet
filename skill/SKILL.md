@@ -57,31 +57,57 @@ Ask: "Do you have a Discord server for your fleet?"
 **Done when:** User confirms they have a Discord server with at least one text channel.
 
 
-### Step 3: Create bots, configure, and invite
+### Step 3: Understand user needs and design the team
 
-**Why:** Each agent needs a Discord bot identity. You'll create each bot, grab its token, run `fleet init` to generate config + invite links, then invite the bots.
+**Why:** Before creating any bots, understand what the user wants to accomplish. This determines how many agents they need and what roles to assign.
 
-**IMPORTANT:** After `fleet init` runs, always use its generated invite URLs (they use the correct Application ID). The only exception is the initial setup below, where bots must be invited before init can run — in that case, use the Application ID from the Developer Portal's General Information page.
+Ask the user what they want their agent team to help with. For example:
+- Writing code + code review
+- Managing infrastructure across servers
+- Content creation + editing
+- Research + analysis
+- Something else
 
-**What the user provides:** Only bot tokens. Everything else (server, channel, bot name, Application ID, invite URLs) is auto-detected by `fleet init`.
+Based on their answer, suggest a team composition. Examples:
+- "I want help coding" → Lead (talks to you, delegates) + Coder (writes code)
+- "Code + review" → Lead + Coder + Reviewer
+- "Multi-server ops" → Lead (local) + Ops (remote server)
 
-**First, help the user decide their team structure.** Ask:
+Confirm the team with the user — how many agents, what each one does, what to name them. The names become the bot display names in Discord.
 
-> How do you want your team to work? Common patterns:
-> - **Lead + Worker** — one understands your intent and delegates, one executes (recommended for getting started)
-> - **Lead + Coder + Reviewer** — adds a dedicated code reviewer
-> - **Custom** — you decide each agent's role
+Once the user agrees on the team, move to Step 4.
 
-Based on their choice, you know how many bots to create and what to name them.
+### Step 4: Create bots, configure, and invite
 
-Tell the user to open https://discord.com/developers/applications in their browser.
+**Why:** Each agent needs a Discord bot identity. You'll guide the user to create each one, grab its token, invite it, then run `fleet init`.
 
-**For each bot in the team:**
-1. **Top right** of the page → click the blue **"New Application"** button → name it based on its role (e.g. "Lead", "Worker", "Reviewer"). This name becomes the bot's display name in Discord.
-2. You land on the "General Information" page. Note the **Application ID** shown on this page — you'll need it for the invite link.
-3. **Left sidebar** → click **"Bot"**
-4. **Bot page, top section** → click **"Reset Token"** → confirm → **copy the token immediately**
-5. **Bot page, scroll down** to **"Privileged Gateway Intents"** section → toggle **"Message Content Intent" ON** (turns blue) → click **"Save Changes"** at bottom. **This is critical** — without it the bot cannot read messages.
+**What the user provides:** Only bot tokens. Everything else is auto-detected.
+
+**IMPORTANT:** Invite URLs during initial setup use the Application ID from the Developer Portal. After `fleet init` runs, always use its generated URLs for any future bots.
+
+Guide the user through creating **one bot at a time**:
+
+**For the first bot:**
+1. Tell the user: "Open https://discord.com/developers/applications"
+2. "Click 'New Application' at the top right. Name it [the name you agreed on]. Click Create."
+3. "Now click 'Bot' in the left sidebar."
+4. "Click 'Reset Token', confirm, and paste the token to me."
+5. After receiving the token, verify it, then say: "One more thing on that page — scroll down to 'Privileged Gateway Intents', turn on 'Message Content Intent', and click Save."
+6. "Now note the Application ID from the General Information page. I'll use it for the invite link."
+7. Give them the invite URL: `https://discord.com/oauth2/authorize?client_id=APPLICATION_ID&scope=bot&permissions=68608`
+8. "Open that link, select your server, click Authorize."
+
+**For additional bots:** repeat the same flow one at a time.
+
+**After all bots are created and invited, run fleet init:**
+
+Ask the user what they want to name their fleet (used as tmux prefix).
+
+```bash
+fleet init --token FIRST_TOKEN --token SECOND_TOKEN --name USER_CHOSEN_NAME --agent name1:local:role1 --agent name2:local:role2
+```
+
+Or use interactive `fleet init` if the user prefers.
 6. Ask the user to paste the token to you now. Save it.
 7. Repeat for each bot in the team.
 
@@ -123,7 +149,7 @@ cat fleet.yaml    # should list your agents
 **Verify:** `fleet init` should show "Bot joined a server!" for each token. If it says "Bot is not in any server," the user missed the invite step above — go back and invite first.
 
 
-### Step 4: Start the team
+### Step 5: Start the team
 
 **Why:** This launches each agent as a Claude Code process connected to Discord. They'll come online and start listening.
 
