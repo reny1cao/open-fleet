@@ -28,6 +28,14 @@ get_bot_info() {
   echo "$name:$id"
 }
 
+# Get the application ID (for OAuth2 invite URLs — more reliable than bot user ID)
+get_application_id() {
+  local token="$1"
+  local app_json
+  app_json=$(discord_get "$token" "/oauth2/applications/@me") || { echo ""; return; }
+  echo "$app_json" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])" 2>/dev/null
+}
+
 get_guilds() {
   local token="$1"
   discord_get "$token" "/users/@me/guilds"
@@ -207,12 +215,15 @@ do_init() {
   bot_info=$(get_bot_info "$bot_json")
   bot_name="${bot_info%%:*}"
   bot_id="${bot_info##*:}"
-  ok "Bot \"$bot_name\" (ID: $bot_id)"
+  local app_id
+  app_id=$(get_application_id "$token")
+  [[ -z "$app_id" ]] && app_id="$bot_id"  # fallback to bot user ID
+  ok "Bot \"$bot_name\" (App ID: $app_id)"
 
   first_token="$token"
   tokens+=("$token")
   bot_names+=("$bot_name")
-  bot_ids+=("$bot_id")
+  bot_ids+=("$app_id")
 
   # Discover server
   echo ""
@@ -368,10 +379,13 @@ for g in guilds:
       new_info=$(get_bot_info "$new_json")
       new_bot_name="${new_info%%:*}"
       new_bot_id="${new_info##*:}"
-      ok "Bot \"$new_bot_name\" (ID: $new_bot_id)"
+      local new_app_id
+      new_app_id=$(get_application_id "$new_token")
+      [[ -z "$new_app_id" ]] && new_app_id="$new_bot_id"
+      ok "Bot \"$new_bot_name\" (App ID: $new_app_id)"
       tokens+=("$new_token")
       bot_names+=("$new_bot_name")
-      bot_ids+=("$new_bot_id")
+      bot_ids+=("$new_app_id")
     fi
 
     agent_role=$(prompt "Agent $agent_index role" "worker")
@@ -599,7 +613,10 @@ do_init_noninteractive() {
     local info
     info=$(get_bot_info "$bot_json")
     bot_names+=("${info%%:*}")
-    bot_ids+=("${info##*:}")
+    local app_id
+    app_id=$(get_application_id "$token")
+    [[ -z "$app_id" ]] && app_id="${info##*:}"
+    bot_ids+=("$app_id")
   done
 
   # Parse agent definitions (format: name:server:role)

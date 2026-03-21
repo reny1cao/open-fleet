@@ -39,9 +39,11 @@ Ask: "Do you have a Discord server for your fleet?"
 
 ### Step 3: Create bots, configure, and invite
 
-**Why:** Each agent needs a Discord bot identity. You'll create each bot, grab its token, run `fleet init` to generate config + invite links, then invite the bots. The order matters — `fleet init` needs the tokens first, and it outputs the invite links you'll use.
+**Why:** Each agent needs a Discord bot identity. You'll create each bot, grab its token, run `fleet init` to generate config + invite links, then invite the bots.
 
-**What the user provides:** Only bot tokens. Everything else (server, channel, bot name, bot ID, invite URLs) is auto-detected.
+**IMPORTANT:** Do NOT generate invite URLs yourself. Only use the URLs that `fleet init` prints — it uses the correct Application ID from the Discord API. Manually constructed URLs may use the wrong ID and show "Unknown Application."
+
+**What the user provides:** Only bot tokens. Everything else (server, channel, bot name, Application ID, invite URLs) is auto-detected by `fleet init`.
 
 Tell the user to open https://discord.com/developers/applications in their browser.
 
