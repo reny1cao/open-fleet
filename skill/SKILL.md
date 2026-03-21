@@ -10,26 +10,47 @@ You manage a fleet of AI coding agents across multiple servers. Each agent is a 
 
 ## First-Time Setup
 
-If fleet is not installed, run:
+Guide the user through each step. Assume they have nothing — no Discord server, no bots, no tokens.
+
+### Step 1: Install fleet CLI
 ```bash
 curl -fsSL https://raw.githubusercontent.com/reny1cao/open-fleet/master/install.sh | bash
 ```
 
-Then configure (non-interactive — provide tokens and channel):
-```bash
-fleet init --token $DISCORD_BOT_TOKEN_1 --token $DISCORD_BOT_TOKEN_2 --channel $CHANNEL_ID --name my-fleet
-```
+### Step 2: Discord server
+Ask the user: "Do you have a Discord server for your fleet?"
+- If yes: continue to Step 3
+- If no: tell them to create one at https://discord.com/channels/@me — click "+" on the left sidebar to create a server. Come back when done.
 
-Or interactive:
+### Step 3: Create Discord bots
+Tell the user to go to https://discord.com/developers/applications and for each agent (minimum 2):
+1. Click **New Application** → give it a name
+2. Go to **Bot** tab → click **Reset Token** → copy the token (save it, only shown once)
+3. Scroll down → enable **Message Content Intent** under Privileged Gateway Intents
+
+### Step 4: Configure fleet
+Once the user has tokens, run:
 ```bash
 fleet init
 ```
+This walks them through pasting tokens, selecting their Discord server, and naming agents.
 
-Start agents:
+For non-interactive setup (if you already have tokens and channel ID):
+```bash
+fleet init --token TOKEN1 --token TOKEN2 --channel CHANNEL_ID --name my-fleet
+```
+
+### Step 5: Invite bots
+`fleet init` prints OAuth2 invite URLs. Tell the user to open each URL in their browser, select their server, and click Authorize.
+
+### Step 6: Start the team
 ```bash
 fleet start lead
 fleet start worker
+fleet status
 ```
+
+The agents are now live in Discord. Message @Lead to give it a task.
 
 ## Discovery
 
