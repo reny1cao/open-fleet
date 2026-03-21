@@ -326,6 +326,80 @@ do_inject() {
   hot_inject_role "$agent" "$role"
 }
 
+do_apply() {
+  require_config
+
+  local prefix
+  prefix=$(yaml_get "fleet.name" 2>/dev/null || echo "fleet")
+
+  if ! $JSON_OUTPUT; then
+    echo "Applying $prefix fleet..."
+    echo ""
+  fi
+
+  local results=() failed=0
+
+  for agent in $(list_agents); do
+    local server session state
+    server=$(agent_get "$agent" "server" 2>/dev/null || echo "local")
+    session=$(session_name "$agent")
+    state=$(session_state "$session" "$server")
+
+    if [[ "$state" == "running" ]]; then
+      if ! $JSON_OUTPUT; then
+        echo "  ✔ $agent ($server) — already running"
+      fi
+      results+=("{\"agent\":\"$agent\",\"state\":\"already_running\",\"server\":\"$server\"}")
+    else
+      if ! $JSON_OUTPUT; then
+        echo "  Starting $agent ($server)..."
+      fi
+
+      # Build start args
+      local token workspace_dir state_dir plugin runtime
+      token=$(get_token "$agent")
+      workspace_dir=$(agent_get_or_default "$agent" "workspace" 2>/dev/null || echo "~/workspace")
+      state_dir=$(agent_get "$agent" "state_dir" 2>/dev/null || true)
+      plugin=$(channel_plugin)
+      runtime=$(runtime_binary)
+
+      if [[ -z "$token" ]]; then
+        if ! $JSON_OUTPUT; then echo "  ✘ $agent — token not set"; fi
+        results+=("{\"agent\":\"$agent\",\"state\":\"error\",\"error\":\"token not set\"}")
+        failed=$((failed + 1))
+        continue
+      fi
+
+      # Start the agent (reuse do_start logic inline for simplicity)
+      local saved_json=$JSON_OUTPUT
+      JSON_OUTPUT=false
+      do_start "$agent" "" "" "" "true" 2>/dev/null
+      JSON_OUTPUT=$saved_json
+
+      local new_state
+      new_state=$(session_state "$session" "$server")
+      if [[ "$new_state" == "running" ]]; then
+        if ! $JSON_OUTPUT; then echo "  ✔ $agent ($server) — started"; fi
+        results+=("{\"agent\":\"$agent\",\"state\":\"started\",\"server\":\"$server\"}")
+      else
+        if ! $JSON_OUTPUT; then echo "  ✘ $agent ($server) — failed to start"; fi
+        results+=("{\"agent\":\"$agent\",\"state\":\"error\",\"server\":\"$server\"}")
+        failed=$((failed + 1))
+      fi
+    fi
+  done
+
+  if $JSON_OUTPUT; then
+    echo "[$(IFS=,; echo "${results[*]}")]"
+  else
+    echo ""
+    local total=${#results[@]}
+    echo "  $((total - failed))/$total agents running."
+  fi
+
+  return $failed
+}
+
 usage() {
   local agents roles
   agents=$(list_agents 2>/dev/null | tr '\n' ' ' || echo "(no fleet.yaml found)")
@@ -339,6 +413,7 @@ Usage:
   fleet start <agent> [--role <r>] [--wait] [--json]  Start an agent
   fleet stop <agent> [--at <server>] [--json]    Stop an agent
   fleet inject <agent> <role>                    Hot-inject role
+  fleet apply [--json]                            Start all agents from fleet.yaml
   fleet status [--json]                          Fleet overview
   fleet doctor [--json]                          Health check
   fleet deps [--install]                         Check/install dependencies
@@ -361,6 +436,7 @@ Roles:  ${roles:-"(none)"}
 Examples:
   fleet init                                   # Interactive setup
   fleet start hub                              # Default server + workspace
+  fleet apply                                  # Start all agents
   fleet start hub --wait --json                # Agent-friendly: wait + JSON
   fleet start worker --role writer             # Start with role overlay
   fleet stop worker                            # Stop at default server
@@ -463,6 +539,13 @@ case "$ACTION" in
   inject)
     [[ -z "$AGENT" ]] && { echo "Usage: fleet inject <agent> <role>"; exit 1; }
     do_inject "$AGENT" "${3:-}"
+    ;;
+  apply)
+    shift
+    while [[ $# -gt 0 ]]; do
+      case "$1" in --json) JSON_OUTPUT=true; shift ;; *) shift ;; esac
+    done
+    do_apply
     ;;
   status)
     shift
