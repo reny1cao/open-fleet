@@ -54,9 +54,34 @@ prompt() {
 
 prompt_secret() {
   local message="$1"
-  local ans
-  read -rsp "  $message: " ans
-  echo ""
+  local ans=""
+  local char=""
+
+  printf "  %s: " "$message" >&2
+
+  # Read char-by-char: show ● for each character, support backspace + paste
+  while IFS= read -rs -n1 char; do
+    # Enter → done
+    [[ -z "$char" ]] && break
+    # Backspace
+    if [[ "$char" == $'\x7f' || "$char" == $'\b' ]]; then
+      if [[ -n "$ans" ]]; then
+        ans="${ans%?}"
+        printf '\b \b' >&2
+      fi
+    else
+      ans+="$char"
+      printf '●' >&2
+    fi
+  done
+  echo "" >&2
+
+  # Show masked confirmation
+  if [[ ${#ans} -gt 8 ]]; then
+    printf "  → received: %s●●●●%s (%d chars)\n" "${ans:0:4}" "${ans: -4}" "${#ans}" >&2
+  elif [[ -n "$ans" ]]; then
+    printf "  → received: ●●●● (%d chars)\n" "${#ans}" >&2
+  fi
   echo "$ans"
 }
 
@@ -127,8 +152,12 @@ do_init() {
   local tokens=() bot_names=() bot_ids=()
   local first_token=""
 
-  echo "  Paste your first bot token (creates the connection to Discord)."
-  echo "  Get tokens: https://discord.com/developers/applications → Bot → Reset Token"
+  echo "  How to get a bot token:"
+  echo "    1. Go to https://discord.com/developers/applications"
+  echo "    2. Click your app → Bot tab → Reset Token → Copy"
+  echo "    3. Also enable 'Message Content Intent' (under Privileged Gateway Intents)"
+  echo ""
+  echo "  Paste the token below and press Enter."
   echo ""
 
   local token
@@ -168,9 +197,24 @@ do_init() {
   guild_count=$(echo "$guilds_json" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
 
   if [[ "$guild_count" == "0" ]]; then
-    fail "Bot is not in any server."
-    echo "  Invite it first: https://discord.com/oauth2/authorize?client_id=$bot_id&scope=bot&permissions=68608"
-    exit 1
+    warn "Bot is not in any server yet."
+    echo ""
+    echo "  Invite it now — open this link in your browser:"
+    echo "  https://discord.com/oauth2/authorize?client_id=$bot_id&scope=bot&permissions=68608"
+    echo ""
+    echo "  Select your server, click Authorize, then come back here."
+    read -rp "  Press Enter after inviting the bot... "
+
+    # Retry discovery
+    guilds_json=$(get_guilds "$token")
+    guild_count=$(echo "$guilds_json" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+
+    if [[ "$guild_count" == "0" ]]; then
+      fail "Still not in any server. Check the invite link and try again."
+      echo "  You can re-run: fleet init"
+      exit 1
+    fi
+    ok "Bot joined a server!"
   fi
 
   if [[ "$guild_count" == "1" ]]; then
@@ -198,25 +242,58 @@ for i, g in enumerate(guilds, 1):
   local channels_json
   channels_json=$(get_channels "$token" "$guild_id")
 
-  # Show text channels
-  echo "$channels_json" | python3 -c "
+  # Build channel list (text channels only)
+  local channel_names channel_ids
+  channel_names=()
+  channel_ids=()
+  while IFS=: read -r ch_name ch_id; do
+    channel_names+=("$ch_name")
+    channel_ids+=("$ch_id")
+  done < <(echo "$channels_json" | python3 -c "
 import json, sys
-channels = [c for c in json.load(sys.stdin) if c['type'] == 0]  # text channels only
+channels = [c for c in json.load(sys.stdin) if c['type'] == 0]
 for c in channels:
-    print(f'    #{c[\"name\"]} ({c[\"id\"]})')
-" 2>/dev/null
+    print(f'{c[\"name\"]}:{c[\"id\"]}')
+" 2>/dev/null)
+
+  # Show numbered list
+  for i in "${!channel_names[@]}"; do
+    echo "    $((i+1)). #${channel_names[$i]}"
+  done
 
   echo ""
-  echo "  Map your channels (paste channel IDs, or press Enter to skip):"
+  echo "  Which channel should the fleet use?"
+  local ch_choice
+  ch_choice=$(prompt "Select channel number" "1")
+  local ch_idx=$((ch_choice - 1))
+  local fleet_channel_id="${channel_ids[$ch_idx]}"
+  local fleet_channel_name="${channel_names[$ch_idx]}"
+  ok "Fleet channel: #$fleet_channel_name"
 
-  local ch_general ch_dev ch_infra
-  ch_general=$(prompt "general channel ID" "")
-  ch_dev=$(prompt "dev channel ID" "")
-  ch_infra=$(prompt "infra channel ID" "")
-
+  # Get server owner ID automatically
   local user_id
-  echo ""
-  user_id=$(prompt "Your Discord user ID" "")
+  user_id=$(echo "$guilds_json" | python3 -c "
+import json, sys
+guilds = json.load(sys.stdin)
+for g in guilds:
+    if g['id'] == sys.argv[1]:
+        print(g.get('owner_id', g.get('owner', {}).get('id', '')))
+        break
+" "$guild_id" 2>/dev/null || echo "")
+
+  if [[ -n "$user_id" ]]; then
+    ok "Server owner: $user_id"
+  else
+    # Fallback: get from guild detail endpoint
+    local guild_detail
+    guild_detail=$(discord_get "$token" "/guilds/$guild_id")
+    user_id=$(echo "$guild_detail" | python3 -c "import json,sys; print(json.load(sys.stdin).get('owner_id',''))" 2>/dev/null || echo "")
+    if [[ -n "$user_id" ]]; then
+      ok "Server owner: $user_id"
+    else
+      user_id=$(prompt "Your Discord user ID (could not auto-detect)" "")
+    fi
+  fi
 
   # ── Step 3: Define agents ──
   step "[3/5] Define your fleet"
@@ -330,11 +407,8 @@ for c in channels:
     echo ""
     echo "discord:"
     echo "  server_id: \"$guild_id\""
+    echo "  channel_id: \"$fleet_channel_id\"    # #$fleet_channel_name"
     echo "  user_id: \"${user_id:-YOUR_DISCORD_USER_ID}\""
-    echo "  channels:"
-    [[ -n "$ch_general" ]] && echo "    general: \"$ch_general\""
-    [[ -n "$ch_dev" ]] && echo "    dev: \"$ch_dev\""
-    [[ -n "$ch_infra" ]] && echo "    infra: \"$ch_infra\""
     echo ""
 
     if [[ ${#unique_servers[@]} -gt 0 ]]; then
@@ -408,11 +482,9 @@ for c in channels:
         echo ""
         [[ -n "$user_id" ]] && echo "User: \`$user_id\`"
         echo ""
-        echo "## Channels"
+        echo "## Channel"
         echo ""
-        [[ -n "$ch_general" ]] && echo "- #general (\`$ch_general\`)"
-        [[ -n "$ch_dev" ]] && echo "- #dev (\`$ch_dev\`)"
-        [[ -n "$ch_infra" ]] && echo "- #infra (\`$ch_infra\`)"
+        echo "- #$fleet_channel_name (\`$fleet_channel_id\`)"
         echo ""
         echo "## Rules"
         echo ""
