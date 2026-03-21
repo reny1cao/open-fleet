@@ -10,13 +10,29 @@ Common issues and solutions, earned the hard way.
 
 1. **Missing `--channels` flag** — `enabledPlugins` in settings.json is not enough. The bot must be started with `--channels plugin:discord@claude-plugins-official`.
 
-2. **`access.json` missing channel ID** — The bot's `access.json` `groups` must include the Discord channel ID where you're messaging. Guild ID alone may not work.
+2. **`access.json` missing or wrong schema** — The Discord plugin's `gate()` function requires a specific schema. For guild (server) messages, the channel ID must be in `groups`. The correct schema is:
+   ```json
+   {
+     "dmPolicy": "allowlist",
+     "allowFrom": ["user-id", "other-bot-id"],
+     "groups": {
+       "CHANNEL_ID": {
+         "requireMention": true,
+         "allowFrom": []
+       }
+     },
+     "pending": {}
+   }
+   ```
+   Common mistakes: using `policy` instead of `dmPolicy`, `allowedUserIds` instead of `allowFrom`, or missing the `groups` key entirely. Without `groups`, all guild messages are silently dropped.
 
-3. **`allowFrom` missing sender's ID** — If a bot is messaging another bot, the receiver's `allowFrom` must include the sender's bot ID.
+3. **`allowFrom` missing sender's ID** — If a bot is messaging another bot, the receiver's DM `allowFrom` must include the sender's bot ID. For guild channels, `allowFrom: []` in the group policy means "accept from anyone".
 
 4. **Discord plugin process not running** — Check with: `ps aux | grep "bun.*discord" | grep -v grep`. If missing, likely a dependency issue (bun not in PATH).
 
 5. **`bun` not in PATH** — Common on remote servers. `.bashrc` non-interactive guard blocks PATH exports. Fix: add bun to `.profile` or prepend `export PATH=$HOME/.bun/bin:$PATH` before the claude command.
+
+6. **`PARTNER_BOT_IDS` missing fleet bot IDs** — The Discord plugin drops all bot messages unless the sender's ID is in `PARTNER_BOT_IDS` (in `server.ts`). `fleet init` patches this automatically, but if you added bots manually, update the set.
 
 ## 2. Bots can't talk to each other
 
@@ -32,7 +48,7 @@ Common issues and solutions, earned the hard way.
 
 **Cause:** `STATE_DIR` is hardcoded to `~/.claude/channels/discord/`.
 
-**Fix:** Apply `state-dir.patch` and set `DISCORD_STATE_DIR` env var for the second bot. Each bot needs its own state directory.
+**Fix:** `fleet init` handles this automatically — the second+ agent on the same server gets `state_dir: ~/.fleet/state/discord-<name>` in fleet.yaml. The `DISCORD_STATE_DIR` env var is set when `fleet start` launches the agent. To fix manually, add `state_dir` to the agent in fleet.yaml.
 
 ## 4. Identity injection doesn't land
 
@@ -80,6 +96,10 @@ curl -s -H "Authorization: Bot <TOKEN>" https://discord.com/api/v10/users/@me/gu
 grep "PARTNER_BOT_IDS" ~/.claude/plugins/cache/claude-plugins-official/discord/0.0.1/server.ts
 grep "DISCORD_STATE_DIR" ~/.claude/plugins/cache/claude-plugins-official/discord/0.0.1/server.ts
 
-# Check access.json
+# Check access.json (first agent uses default path, others use state_dir)
 cat ~/.claude/channels/discord/access.json | jq .
+cat ~/.fleet/state/discord-<agent>/access.json | jq .
+
+# Verify access.json has correct schema (must have groups with channel ID)
+jq '.groups | keys' ~/.claude/channels/discord/access.json
 ```

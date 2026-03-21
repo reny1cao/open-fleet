@@ -548,10 +548,10 @@ for g in guilds:
   done
 
   # ── Generate access.json for each bot ──
-  # Each bot needs an access.json that allows the user and all other bots
+  # Schema must match the Discord plugin's gate() function:
+  #   dmPolicy, allowFrom (DMs), groups.{channelId} (guild messages), pending
   for i in "${!agent_names[@]}"; do
     local state_dir="${agent_state_dirs[$i]}"
-    # Default state dir if not set
     if [[ -z "$state_dir" ]]; then
       state_dir="$HOME/.claude/channels/discord"
     else
@@ -561,31 +561,38 @@ for g in guilds:
 
     local access_file="$state_dir/access.json"
     if [[ ! -f "$access_file" ]]; then
-      # Build allowed users list: user + all bot IDs
-      local allowed_json="["
+      # Build allowFrom for DMs: user + all other bots
+      local dm_allow="["
       local first_entry=true
-      # Add user
       if [[ -n "$user_id" ]]; then
-        allowed_json="$allowed_json\"$user_id\""
+        dm_allow="$dm_allow\"$user_id\""
         first_entry=false
       fi
-      # Add all bot IDs
       for j in "${!bot_ids[@]}"; do
-        if [[ $j -ne $i ]]; then  # don't add self
-          $first_entry || allowed_json="$allowed_json,"
-          allowed_json="$allowed_json\"${bot_ids[$j]}\""
+        if [[ $j -ne $i ]]; then
+          $first_entry || dm_allow="$dm_allow,"
+          dm_allow="$dm_allow\"${bot_ids[$j]}\""
           first_entry=false
         fi
       done
-      allowed_json="$allowed_json]"
+      dm_allow="$dm_allow]"
 
-      cat > "$access_file" <<EOACCESS
-{
-  "policy": "whitelist",
-  "requireMention": true,
-  "allowedFrom": $allowed_json
+      # Build groups: register the fleet channel so guild messages are delivered
+      local groups="{}"
+      if [[ -n "$fleet_channel_id" ]]; then
+        groups="{\"$fleet_channel_id\":{\"requireMention\":true,\"allowFrom\":[]}}"
+      fi
+
+      python3 -c "
+import json
+data = {
+    'dmPolicy': 'allowlist',
+    'allowFrom': json.loads('$dm_allow'),
+    'groups': json.loads('$groups'),
+    'pending': {}
 }
-EOACCESS
+print(json.dumps(data, indent=2))
+" > "$access_file"
       ok "access.json for ${agent_names[$i]}"
     else
       info "access.json for ${agent_names[$i]} (already exists)"
@@ -736,6 +743,10 @@ print(channels[0]['id'] if channels else '')
       echo "    role: ${agent_roles[$i]}"
       echo "    server: ${agent_servers[$i]}"
       echo "    identity: identities/${agent_names[$i]}.md"
+      # Second+ agent on same server needs its own state_dir
+      if [[ $i -gt 0 ]]; then
+        echo "    state_dir: ~/.fleet/state/discord-${agent_names[$i]}"
+      fi
     done
   } > "$target_dir/fleet.yaml"
 
@@ -771,9 +782,10 @@ print(channels[0]['id'] if channels else '')
   done
 
   # Generate access.json for each agent
+  # Schema must match the Discord plugin's gate() function:
+  #   dmPolicy, allowFrom (DMs), groups.{channelId} (guild messages), pending
   for i in "${!agent_names[@]}"; do
     local state_dir=""
-    # Second+ agent on same server needs state_dir
     if [[ $i -gt 0 ]]; then
       state_dir="$HOME/.fleet/state/discord-${agent_names[$i]}"
     else
@@ -782,28 +794,39 @@ print(channels[0]['id'] if channels else '')
     mkdir -p "$state_dir"
 
     local access_file="$state_dir/access.json"
-    if [[ ! -f "$access_file" ]]; then
-      local allowed="["
+    if [[ ! -f "$access_file" || "$force" == "true" ]]; then
+      # Build allowFrom for DMs: user + all other bots
+      local dm_allow="["
       local first=true
-      # Add user
-      [[ -n "$user_id" ]] && { allowed="$allowed\"$user_id\""; first=false; }
-      # Add all bot IDs except self
+      if [[ -n "$user_id" ]]; then
+        dm_allow="$dm_allow\"$user_id\""
+        first=false
+      fi
       for j in "${!bot_ids[@]}"; do
         if [[ $j -ne $i ]]; then
-          $first || allowed="$allowed,"
-          allowed="$allowed\"${bot_ids[$j]}\""
+          $first || dm_allow="$dm_allow,"
+          dm_allow="$dm_allow\"${bot_ids[$j]}\""
           first=false
         fi
       done
-      allowed="$allowed]"
+      dm_allow="$dm_allow]"
 
-      cat > "$access_file" <<EOACCESS
-{
-  "policy": "whitelist",
-  "requireMention": true,
-  "allowedFrom": $allowed
+      # Build groups: register the fleet channel so guild messages are delivered
+      local groups="{}"
+      if [[ -n "$channel_id" ]]; then
+        groups="{\"$channel_id\":{\"requireMention\":true,\"allowFrom\":[]}}"
+      fi
+
+      python3 -c "
+import json
+data = {
+    'dmPolicy': 'allowlist',
+    'allowFrom': json.loads('$dm_allow'),
+    'groups': json.loads('$groups'),
+    'pending': {}
 }
-EOACCESS
+print(json.dumps(data, indent=2))
+" > "$access_file"
     fi
   done
 

@@ -172,7 +172,7 @@ const STATE_DIR = process.env.DISCORD_STATE_DIR
 - No env var set → original behavior (backwards compatible)
 - `DISCORD_STATE_DIR=~/.claude/channels/discord-pilot` → fully isolated state
 
-`fleet` reads `state_dir` from `bot-pool.json` and passes it as an environment variable when starting the Claude Code process.
+`fleet` reads `state_dir` from `fleet.yaml` and passes it as `DISCORD_STATE_DIR` when starting the Claude Code process.
 
 ### Why CLAUDE_PLUGIN_DATA doesn't help
 
