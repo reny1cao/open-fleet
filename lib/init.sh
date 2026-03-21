@@ -141,8 +141,7 @@ do_init() {
 
   echo "  Validating..."
   local bot_json
-  bot_json=$(validate_token "$token")
-  if [[ $? -ne 0 || -z "$bot_json" ]]; then
+  if ! bot_json=$(validate_token "$token") || [[ -z "$bot_json" ]]; then
     fail "Token rejected (invalid or expired)"
     echo "  Check your token and try again."
     exit 1
