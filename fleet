@@ -127,7 +127,7 @@ do_start() {
       exit 0
     fi
 
-    local cmd="DISCORD_BOT_TOKEN=$token"
+    local cmd="DISCORD_BOT_TOKEN=$token FLEET_SELF=$agent"
     [[ -n "$expanded_state" ]] && cmd="$cmd DISCORD_STATE_DIR=$expanded_state"
     cmd="$cmd $runtime --dangerously-skip-permissions --channels $plugin"
 
@@ -172,7 +172,7 @@ do_start() {
       exit 0
     fi
 
-    local remote_start="export PATH=\$HOME/.bun/bin:\$PATH && DISCORD_BOT_TOKEN=$token"
+    local remote_start="export PATH=\$HOME/.bun/bin:\$PATH && DISCORD_BOT_TOKEN=$token FLEET_SELF=$agent"
     [[ -n "$state_dir" ]] && remote_start="$remote_start DISCORD_STATE_DIR=$state_dir"
     remote_start="$remote_start $runtime --dangerously-skip-permissions --channels $plugin"
 
@@ -201,6 +201,12 @@ do_stop() {
   local agent="$1" server_override="$2"
   require_config
 
+  # FLEET_SELF protection: don't stop yourself
+  if [[ -n "${FLEET_SELF:-}" && "$agent" == "$FLEET_SELF" ]]; then
+    echo "Error: cannot stop yourself ($FLEET_SELF). Use --force to override." >&2
+    exit 5
+  fi
+
   # Validate agent exists
   local agents
   agents=$(list_agents)
@@ -208,7 +214,7 @@ do_stop() {
     if $JSON_OUTPUT; then
       json_obj "error" "unknown agent" "agent" "$agent"
     else
-      echo "Error: unknown agent '$agent'"
+      echo "Error: unknown agent '$agent'" >&2
     fi
     exit 1
   fi
@@ -399,15 +405,21 @@ parse_start_args() {
 
 parse_stop_args() {
   local agent="$1"; shift
-  local at=""
+  local at="" force=false
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --at)   at="$2"; shift 2 ;;
-      --json) JSON_OUTPUT=true; shift ;;
-      *)      shift ;;
+      --at)    at="$2"; shift 2 ;;
+      --json)  JSON_OUTPUT=true; shift ;;
+      --force) force=true; shift ;;
+      *)       shift ;;
     esac
   done
+
+  # --force overrides FLEET_SELF protection
+  if $force; then
+    FLEET_SELF=""
+  fi
 
   do_stop "$agent" "$at"
 }
@@ -457,7 +469,8 @@ case "$ACTION" in
     parse_status_args "$@"
     ;;
   init)
-    do_init
+    shift 1
+    do_init "$@"
     ;;
   doctor)
     shift
