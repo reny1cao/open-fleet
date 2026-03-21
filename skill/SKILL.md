@@ -10,9 +10,9 @@ You manage a fleet of AI coding agents across multiple servers. Each agent is a 
 
 ## First-Time Setup
 
-Guide the user through each step ONE AT A TIME. Assume they have nothing. Explain why each step matters.
+Assume the user has nothing set up. Walk them through one step at a time.
 
-**CRITICAL: Present ONE step at a time. Do NOT list all steps upfront or show future steps. Complete each step, get user confirmation, then move to the next. The user should only see what they need to do RIGHT NOW.**
+**How to guide:** Be a friendly assistant, not a manual. Show only the current step — don't overwhelm with everything at once. Keep each message short, clear, and focused on one action. After the user completes it, move to the next. The experience should feel light and easy, like a friend helping you set something up over chat.
 
 ### Step 1: Install fleet CLI and verify environment
 
@@ -40,7 +40,6 @@ If `fleet doctor` shows failures:
 
 **Done when:** `fleet doctor` shows all checks green (or only non-blocking warnings). `fleet help` works.
 
-**STOP — wait for user to confirm Step 1 is done before showing Step 2.**
 
 ### Step 2: Discord server
 
@@ -57,7 +56,6 @@ Ask: "Do you have a Discord server for your fleet?"
 
 **Done when:** User confirms they have a Discord server with at least one text channel.
 
-**STOP — wait for user to confirm Step 2 is done before showing Step 3.**
 
 ### Step 3: Create bots, configure, and invite
 
@@ -124,7 +122,6 @@ cat fleet.yaml    # should list your agents
 
 **Verify:** `fleet init` should show "Bot joined a server!" for each token. If it says "Bot is not in any server," the user missed the invite step above — go back and invite first.
 
-**STOP — wait for user to confirm Step 3 is done (bots created, invited, fleet init ran) before showing Step 4.**
 
 ### Step 4: Start the team
 
