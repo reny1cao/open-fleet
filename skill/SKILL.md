@@ -79,9 +79,37 @@ Full health check: prerequisites, config, tokens, patches, SSH, remote nodes, id
 
 ### "initialize"
 ```bash
+# Interactive (human)
 fleet init
+
+# Non-interactive (agent)
+fleet init --token TOKEN1 --token TOKEN2 --channel 123456 --name my-fleet
+fleet init --token TOKEN1 --channel 123456 --agent hub:local:hub --agent worker:staging:worker
 ```
-Interactive setup: creates fleet.yaml + .env + identity files.
+
+## Agent-Friendly Flags
+
+All commands support:
+- `--json` — machine-readable JSON output (use this when parsing results)
+- `--wait` — on `fleet start`, wait for identity injection to complete before returning
+- `--force` — override safety checks (e.g., stopping yourself)
+
+```bash
+fleet status --json                    # JSON array of agent states
+fleet start hub --json --wait          # JSON result, sync wait for ready
+fleet stop worker --json               # JSON result
+fleet doctor --json                    # JSON with pass/fail/checks array
+```
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Usage error (unknown agent, missing args) |
+| 2 | Config error (missing fleet.yaml, bad token) |
+| 3 | Runtime error (SSH unreachable) |
+| 5 | Conflict (already running, or stopping yourself) |
 
 ## Roles
 
@@ -94,8 +122,9 @@ Add new roles by creating `identities/roles/<name>.md`.
 
 ## Rules
 
-1. **Don't operate on $FLEET_SELF** — Never start, stop, or inject yourself
-2. **Report after start/stop** — Concisely state which agents started/stopped and where
-3. **Pass status output directly** — Don't reformat it, the script output is clear enough
-4. **Use --at for non-default servers** — Stopping without it looks at the default server
-5. **Run doctor for issues** — If something seems wrong, `fleet doctor` before manual debugging
+1. **$FLEET_SELF is set automatically** — The CLI sets this env var when starting an agent. `fleet stop` will refuse to stop the agent named in $FLEET_SELF (use `--force` to override)
+2. **Use --json for parsing** — Never parse human-readable output; always use `--json`
+3. **Use --wait on start** — Ensures the agent is ready to receive messages before returning
+4. **Report after start/stop** — Concisely state which agents started/stopped and where
+5. **Use --at for non-default servers** — Stopping without it looks at the default server
+6. **Run doctor for issues** — If something seems wrong, `fleet doctor --json` before manual debugging
