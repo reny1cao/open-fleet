@@ -1,254 +1,227 @@
 # Fleet
 
-Command a fleet of AI coding agents from Discord. One person, multiple servers, zero SSH.
+Let your Claude Code agents work as a team.
 
 ```
 You (Discord)
  │
- ├── #general ── Hub (dispatcher — receives tasks, never does heavy work)
- ├── #dev ────── Worker-1 (local) · Worker-2 (staging)
- └── #infra ──── Worker-3 (production)
+ └── #dev ── Hub (dispatches tasks) · Worker (executes code)
 ```
 
-Each agent is a Claude Code session with a Discord channel plugin, managed via tmux and SSH. The hub receives your messages, delegates to workers, and reports back.
+Fleet turns multiple Claude Code instances into a coordinated team. A hub agent receives your tasks and dispatches to workers. Workers do the heavy lifting — coding, reviewing, deploying — while the hub stays responsive.
 
-## Why "Hub never works"
+**Why this works:** When a single Claude Code session does heavy coding, it fills its context window and stops responding. Fleet solves this with the **hub-never-works** pattern — the hub only dispatches, so its context stays clean and it always replies. Workers can go deep without worrying about responsiveness.
 
-When a Claude Code session does heavy coding, it fills its context window and forgets to reply on Discord. The fix: the hub never does real work. It dispatches to workers via @mention and relays results. Its context stays clean, so it always responds.
+## Quick Start (5 minutes)
 
-## Quick Start
-
-### 1. Install (2 minutes)
+### 1. Clone and install
 
 ```bash
 git clone https://github.com/reny1cao/discord-hq-fleet.git
 cd discord-hq-fleet
-./setup.sh
+./install.sh
 ```
 
-`setup.sh` installs dependencies (jq, tmux, bun, Claude Code), applies Discord plugin patches, creates config templates, and adds `fleet` to your PATH.
+### 2. Create 2 Discord bots
 
-### 2. Create Discord bots (5 minutes)
+Go to [Discord Developer Portal](https://discord.com/developers/applications):
 
-Go to the [Discord Developer Portal](https://discord.com/developers/applications):
+1. **New Application** → name it "Hub" → **Bot** tab → **Reset Token** → copy
+2. Enable **Message Content Intent** (under Privileged Gateway Intents)
+3. Repeat for a second bot called "Worker"
 
-1. Click **New Application** → name it (e.g. "Hub")
-2. Go to **Bot** tab → click **Reset Token** → copy it
-3. Enable **Message Content Intent** under Privileged Gateway Intents
-4. Repeat for each agent you want (minimum 2: one hub + one worker)
-
-### 3. Configure (3 minutes)
+### 3. Set up your fleet
 
 ```bash
 fleet init
 ```
 
-`fleet init` walks you through:
-- Pasting bot tokens (validated via Discord API)
-- Selecting your Discord server
-- Mapping channels
-- Generating `fleet.yaml` and `.env`
+Paste your tokens, pick a channel, name your agents. Done.
 
-Or configure manually:
+### 4. Invite bots to your Discord server
 
-```bash
-cp fleet.yaml.example fleet.yaml   # Edit: servers, agents, Discord IDs
-cp .env.example .env               # Paste bot tokens
-```
+`fleet init` prints invite links. Click each one, select your server, authorize.
 
-### 4. Invite bots to your server
-
-`fleet init` generates invite links. Or build them manually:
-
-```
-https://discord.com/oauth2/authorize?client_id=YOUR_BOT_ID&scope=bot&permissions=68608
-```
-
-### 5. Start your fleet
+### 5. Start your team
 
 ```bash
-fleet apply               # Start all agents from fleet.yaml
-fleet status              # See who's online
+fleet start hub
+fleet start worker
+fleet status
 
 # === my-fleet Fleet ===
-#   [on]  hub (local, hub) — tmux attach -t my-fleet-hub
-#   [on]  worker-1 (local, worker)
-#   [off] worker-2 (staging, worker)
+#   [on]  hub (local, hub)
+#   [on]  worker (local, worker)
 ```
 
-## Commands
+Message `@Hub` in your Discord channel. It dispatches to Worker, who does the work and reports back.
 
-```bash
-fleet apply                                  # Start all agents from fleet.yaml
-fleet start <agent>                          # Start at default server
-fleet start <agent> --wait --json            # Wait for ready, JSON output
-fleet start <agent> --role writer            # Start with role overlay
-fleet start <agent> --at staging             # Override server location
-fleet stop <agent>                           # Stop
-fleet stop <agent> --at staging              # Stop at overridden location
-fleet inject <agent> <role>                  # Hot-inject role (no restart)
-fleet status                                 # Fleet overview
-fleet status --json                          # Machine-readable JSON
-fleet doctor                                 # Diagnose issues
-fleet doctor --json                          # JSON diagnostics
-fleet deps --install                         # Check/install dependencies
-fleet patch                                  # Apply Discord plugin patches
-fleet init                                   # Interactive setup
-fleet init --token T --channel C --name N    # Non-interactive (for agents)
-fleet help                                   # Show usage
-```
+## Scale up: add remote servers
 
-### Flags
-
-| Flag | Commands | Purpose |
-|------|----------|---------|
-| `--json` | status, start, stop, apply, doctor | Machine-readable JSON output |
-| `--wait` | start, apply | Wait for identity injection before returning |
-| `--force` | stop | Override FLEET_SELF protection |
-
-### Exit Codes
-
-| Code | Meaning |
-|------|---------|
-| 0 | Success |
-| 1 | Usage error (unknown agent, missing args) |
-| 2 | Config error (missing fleet.yaml, bad token) |
-| 3 | Runtime error (SSH unreachable) |
-| 5 | Conflict (already running, stopping yourself) |
-
-## Configuration
-
-### `fleet.yaml`
-
-Single source of truth for your fleet topology:
+Once you outgrow a single machine, fleet scales to any number of servers:
 
 ```yaml
-fleet:
-  name: my-fleet                     # tmux prefix: my-fleet-<agent>
-
-discord:
-  server_id: "123456789"
-  user_id: "987654321"               # your Discord user ID
-  channels:
-    general: "111111111"
-    dev: "222222222"
-
+# fleet.yaml
 servers:
   staging:
-    ssh_host: staging-server         # SSH config alias
-    user: dev                        # remote user
-
-defaults:
-  agent: claude-code
-  runtime: claude
-  workspace: ~/workspace
-  channel_plugin: plugin:discord@claude-plugins-official
+    ssh_host: my-staging-server
+    user: dev
 
 agents:
   hub:
     token_env: DISCORD_BOT_TOKEN_HUB
     role: hub
     server: local
-    identity: identities/hub.md
-  worker-1:
-    token_env: DISCORD_BOT_TOKEN_WORKER1
+  worker-remote:
+    token_env: DISCORD_BOT_TOKEN_WORKER
     role: worker
     server: staging
-    identity: identities/worker-1.md
 ```
-
-### `.env`
 
 ```bash
-DISCORD_BOT_TOKEN_HUB=your-token-here
-DISCORD_BOT_TOKEN_WORKER1=your-token-here
+fleet init --remote          # Enable multi-server configuration
+fleet start worker-remote    # Starts on staging via SSH
 ```
 
-## Identity System
+No changes to the hub. It dispatches the same way whether workers are local or remote.
 
-Two-layer design: **base identity** + **role overlay**.
-
-**Base identity** (`identities/<agent>.md`) — injected on startup. Contains the agent's name, team roster, channel list, and behavioral rules.
-
-**Role overlay** (`identities/roles/<role>.md`) — adds domain expertise. Hot-inject without restart:
+## Commands
 
 ```bash
-fleet inject worker-1 writer      # Now it writes content
-fleet inject worker-1 reviewer    # Switch to code review mode
+# Core
+fleet start <agent>                   # Start an agent
+fleet stop <agent>                    # Stop an agent
+fleet apply                           # Start all agents from fleet.yaml
+fleet status                          # Who's online
+
+# Setup
+fleet init                            # Interactive setup (local mode)
+fleet init --remote                   # Interactive setup (multi-server)
+fleet init --token T --channel C      # Non-interactive (for agents/scripts)
+
+# Maintenance
+fleet inject <agent> <role>           # Hot-inject role (no restart)
+fleet doctor                          # Health diagnostics
+fleet deps --install                  # Check/install dependencies
+fleet patch                           # Apply Discord plugin patches
+
+# Flags (any command)
+--json                                # Machine-readable output
+--wait                                # Wait for agent to be ready (start)
+--quiet                               # Minimal output
+--force                               # Override safety checks (stop)
 ```
 
-Built-in roles: `writer`, `reviewer`, `ops`. Add your own by creating `identities/roles/<name>.md`.
+## Agent-Friendly
 
-## Adding a Remote Server
+Fleet is designed for both humans and AI agents:
 
-1. Set up SSH access to your server (`~/.ssh/config`)
-2. Install Claude Code on the remote server
-3. Add to `fleet.yaml`:
+```bash
+# Agent can set up a fleet programmatically
+fleet init --token $TOKEN1 --token $TOKEN2 --channel $CHAN --name my-team
 
-```yaml
-servers:
-  production:
-    ssh_host: prod-server
-    user: deploy
+# Agent can check fleet status
+fleet status --json
+# [{"name":"hub","state":"running","server":"local","role":"hub"}]
 
-agents:
-  worker-prod:
-    token_env: DISCORD_BOT_TOKEN_PROD
-    role: worker
-    server: production
+# Agent can start with sync wait
+fleet start worker --wait --json
+# {"agent":"worker","state":"started","server":"local"}
+
+# FLEET_SELF prevents agents from stopping themselves
+fleet stop hub   # Refused if FLEET_SELF=hub
 ```
 
-4. Run `fleet start worker-prod`
-
-## Multi-Instance on Same Machine
-
-Running 2+ agents on one machine requires separate Discord plugin state directories:
-
-```yaml
-agents:
-  hub:
-    server: local
-    # No state_dir needed — uses default
-  worker-1:
-    server: local
-    state_dir: ~/.fleet/state/discord-worker1   # Isolated state
-```
-
-This requires the `state-dir` patch (applied automatically by `setup.sh`).
-
-## Using as a Skill
-
-Agents can manage the fleet from within conversations using the `/fleet` skill:
-
+Install the `/fleet` skill so any agent can manage the team:
 ```bash
 cp -r skill/ ~/.claude/skills/fleet/
 ```
 
-Now any agent can run `/fleet status`, `/fleet start worker-2`, etc. The `FLEET_SELF` environment variable prevents an agent from stopping itself.
+## Identity System
+
+Two layers: **base identity** + **role overlay**.
+
+**Base identity** — injected on startup. Contains the agent's name, team roster, and behavioral rules.
+
+**Role overlay** — hot-injectable domain expertise:
+
+```bash
+fleet inject worker writer      # Content creation mode
+fleet inject worker reviewer    # Code review mode
+fleet inject worker ops         # Server operations mode
+```
+
+Add custom roles by creating `identities/roles/<name>.md`.
+
+## How It Works
+
+1. `fleet start` launches Claude Code in a tmux session with the Discord channel plugin
+2. Waits for Claude Code to initialize (polls for "Listening for channel messages")
+3. Injects the identity prompt (team roster, channels, behavioral rules)
+4. The agent is now live on Discord, ready to receive tasks
+
+Multiple agents on the same machine use isolated state directories (`DISCORD_STATE_DIR`) to avoid conflicts. This requires a one-line patch to the Discord plugin, applied automatically by `fleet patch`.
+
+## Configuration
+
+### fleet.yaml
+
+```yaml
+fleet:
+  name: my-fleet
+
+discord:
+  channel_id: "123456789"
+  user_id: "987654321"
+
+defaults:
+  agent: claude-code
+  runtime: claude
+  workspace: ~/workspace
+
+agents:
+  hub:
+    token_env: DISCORD_BOT_TOKEN_HUB
+    role: hub
+    server: local
+  worker:
+    token_env: DISCORD_BOT_TOKEN_WORKER
+    role: worker
+    server: local
+    state_dir: ~/.fleet/state/discord-worker
+```
+
+### .env
+
+```bash
+DISCORD_BOT_TOKEN_HUB=your-hub-token
+DISCORD_BOT_TOKEN_WORKER=your-worker-token
+```
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Usage error |
+| 2 | Config error |
+| 3 | Runtime error |
+| 5 | Conflict (already running / stopping self) |
 
 ## Security
 
 Agents run with `--dangerously-skip-permissions` (required for unattended operation). Mitigations:
 
-- Run agents under a dedicated OS user with limited permissions
-- Configure `access.json` to restrict who can message each bot
+- Run under a dedicated OS user with limited permissions
+- Configure Discord `access.json` to restrict who can message bots
 - Keep tokens in `.env` (gitignored)
-- Identity rules like "confirm before destructive operations" provide soft guardrails
-
-## Diagnostics
-
-```bash
-fleet doctor
-```
-
-Checks: prerequisites (python3, tmux, jq, claude, PyYAML), config validity, token verification via Discord API, plugin patches, SSH connectivity, remote node readiness, identity files, and state directories.
 
 ## Known Limitations
 
-- Plugin updates overwrite patches — re-run `setup.sh` after updates
-- Creating Discord bots requires manual Developer Portal interaction (hCaptcha)
-- One bot per tmux session (N agents = N sessions)
-- Bot presence requires the `presence` patch
+- Discord plugin updates overwrite patches — re-run `fleet patch`
+- Bot creation requires Discord Developer Portal (cannot be automated)
+- One agent per tmux session
+- Claude Code only (v0.1)
 
 ## License
 
