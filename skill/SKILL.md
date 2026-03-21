@@ -29,24 +29,25 @@ curl -fsSL https://raw.githubusercontent.com/reny1cao/open-fleet/master/install.
 Ask: "Do you have a Discord server for your fleet?"
 - If yes → ask for the server name to confirm, then continue
 - If no → tell them:
-  1. Open https://discord.com — log in or create an account
-  2. Click the "+" button on the left sidebar
-  3. Choose "Create My Own" → "For me and my friends"
-  4. Name it anything (e.g. "My Fleet")
+  1. Open https://discord.com in browser (or Discord app) — log in or create a free account
+  2. **Left sidebar, very bottom** → click the green **"+"** button (below all existing servers)
+  3. Choose **"Create My Own"** → then **"For me and my friends"**
+  4. Name it anything (e.g. "My Fleet") → click **"Create"**
+  5. You're now inside your new server. There's a default `#general` channel — that's enough.
 
-**Done when:** User tells you the server name. No other info needed yet.
+**Done when:** User tells you the server name and confirms they can see the `#general` channel.
 
 ### Step 3: Create Discord bots
 
 **Why:** Each agent in your fleet needs its own Discord bot identity — its own name, avatar, and access token. You need at least 2: one lead agent and one worker.
 
-Tell the user to go to https://discord.com/developers/applications
+Tell the user to open https://discord.com/developers/applications in their browser.
 
 **For each bot (repeat 2 times minimum):**
-1. Click **"New Application"** → name it (e.g. "Lead", "Worker")
-2. Click **"Bot"** in the left sidebar
-3. Click **"Reset Token"** → **copy the token immediately** (it only shows once — if lost, reset again)
-4. Scroll down to **"Privileged Gateway Intents"** → enable **"Message Content Intent"** → click Save
+1. **Top right** of the page → click the blue **"New Application"** button → name it (e.g. "Lead", "Worker") → click Create
+2. You land on the "General Information" page. **Left sidebar** → click **"Bot"** (has a puzzle piece icon)
+3. **Bot page, top section** → click **"Reset Token"** → confirm in the popup → **copy the token immediately** and save it somewhere (it only shows once — if lost, click Reset Token again to generate a new one)
+4. **Bot page, scroll down** to the **"Privileged Gateway Intents"** section (below "Authorization Flow") → find **"Message Content Intent"** → toggle it **ON** (turns blue) → scroll to bottom → click **"Save Changes"**
 
 **Done when:** User has 2 or more bot tokens saved somewhere (notepad, clipboard, etc.). Ask them to confirm: "Do you have your bot tokens ready? How many did you create?"
 
@@ -76,15 +77,16 @@ Verify: `cat fleet.yaml` should show your agents listed.
 
 **Why:** Bots need permission to join your Discord server. Each bot gets an invite URL.
 
-`fleet init` printed invite URLs at the end. Tell the user:
-1. Open each URL in their browser
-2. Select their Discord server from the dropdown
-3. Click **"Authorize"**
-4. Repeat for each bot
+`fleet init` printed invite URLs at the end. Tell the user to do this for each URL:
+1. Open the URL in browser — it goes to a Discord authorization page
+2. **"Add to Server"** dropdown (middle of the page) → select their fleet server
+3. Click **"Continue"** → then **"Authorize"**
+4. Complete the captcha if shown
+5. Repeat for each bot
 
-If they lost the URLs, they can rebuild them: `https://discord.com/oauth2/authorize?client_id=BOT_ID&scope=bot&permissions=68608` (replace BOT_ID with the bot's application ID from the Developer Portal).
+If they lost the URLs, rebuild: `https://discord.com/oauth2/authorize?client_id=BOT_ID&scope=bot&permissions=68608` (replace BOT_ID — find it on the Developer Portal → General Information → Application ID).
 
-**Done when:** User sees all bots appear as members in their Discord server (they'll show as offline for now — that's normal).
+**Done when:** User opens Discord, clicks their server name, and sees all bots listed under "Members" in the right sidebar (they'll show as offline — that's normal until Step 6).
 
 ### Step 6: Start the team
 
