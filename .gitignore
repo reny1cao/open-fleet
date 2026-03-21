@@ -1,0 +1,6 @@
+.env
+bot-pool.json
+identities/*.md
+!identities/_discord-formatting.md
+!identities/roles/
+.DS_Store

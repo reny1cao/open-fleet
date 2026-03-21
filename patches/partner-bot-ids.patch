@@ -1,0 +1,14 @@
+--- a/server.ts
++++ b/server.ts
+@@ -638,1 +638,8 @@
++// Allow messages from partner bots to enable cross-bot collaboration.
++// Loop safety: requireMention in group config means only explicit @mentions trigger responses.
++const PARTNER_BOT_IDS = new Set([
++  'BOT_ID_1', // Bot 1
++  'BOT_ID_2', // Bot 2
++  // Add all your bot IDs here
++])
++
+ client.on('messageCreate', msg => {
+-  if (msg.author.bot) return
++  if (msg.author.bot && !PARTNER_BOT_IDS.has(msg.author.id)) return

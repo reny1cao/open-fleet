@@ -1,0 +1,47 @@
+[
+  {
+    "name": "sentinel",
+    "bot_id": "YOUR_SENTINEL_BOT_ID",
+    "token_env": "DISCORD_BOT_TOKEN_SENTINEL",
+    "state_dir": "",
+    "default_dir": "~/workspace",
+    "location": "local",
+    "role": "hub"
+  },
+  {
+    "name": "pilot",
+    "bot_id": "YOUR_PILOT_BOT_ID",
+    "token_env": "DISCORD_BOT_TOKEN_PILOT",
+    "state_dir": "~/.claude/channels/discord-pilot",
+    "default_dir": "~/workspace",
+    "location": "local",
+    "role": "guide"
+  },
+  {
+    "name": "archon",
+    "bot_id": "YOUR_ARCHON_BOT_ID",
+    "token_env": "DISCORD_BOT_TOKEN_ARCHON",
+    "state_dir": "",
+    "default_dir": "~/workspace",
+    "location": "singapore",
+    "role": "field-agent"
+  },
+  {
+    "name": "forge",
+    "bot_id": "YOUR_FORGE_BOT_ID",
+    "token_env": "DISCORD_BOT_TOKEN_FORGE",
+    "state_dir": "~/.claude/channels/discord-forge",
+    "default_dir": "~/workspace",
+    "location": "singapore",
+    "role": "dev-worker"
+  },
+  {
+    "name": "citadel",
+    "bot_id": "YOUR_CITADEL_BOT_ID",
+    "token_env": "DISCORD_BOT_TOKEN_CITADEL",
+    "state_dir": "~/.claude/channels/discord-citadel",
+    "default_dir": "~/workspace",
+    "location": "germany",
+    "role": "infra-worker"
+  }
+]
