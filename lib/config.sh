@@ -137,13 +137,21 @@ runtime_binary() {
 
 require_config() {
   if [[ -z "$FLEET_YAML" || ! -f "$FLEET_YAML" ]]; then
-    echo "Error: fleet.yaml not found."
-    echo "Run 'fleet init' to create one, or set FLEET_CONFIG=/path/to/fleet.yaml"
-    exit 1
+    if $JSON_OUTPUT; then
+      echo '{"error": "fleet.yaml not found"}' >&2
+    else
+      echo "Error: fleet.yaml not found." >&2
+      echo "Run 'fleet init' to create one, or set FLEET_CONFIG=/path/to/fleet.yaml" >&2
+    fi
+    exit 2
   fi
   if ! python3 -c "import yaml" 2>/dev/null; then
-    echo "Error: Python3 + PyYAML required for fleet.yaml parsing."
-    echo "Install: pip3 install pyyaml"
-    exit 1
+    if $JSON_OUTPUT; then
+      echo '{"error": "PyYAML not installed"}' >&2
+    else
+      echo "Error: Python3 + PyYAML required for fleet.yaml parsing." >&2
+      echo "Install: pip3 install pyyaml" >&2
+    fi
+    exit 2
   fi
 }
