@@ -100,6 +100,15 @@ else
   fi
 fi
 
+# ── Skip onboarding wizard ──
+# Claude Code shows a theme/setup wizard on first run if settings.json is missing.
+# Pre-creating an empty one skips it for headless/automated use.
+if [[ ! -f "$HOME/.claude/settings.json" ]]; then
+  mkdir -p "$HOME/.claude"
+  echo '{}' > "$HOME/.claude/settings.json"
+  info "Created ~/.claude/settings.json (skips onboarding wizard)"
+fi
+
 # ══════════════════════════════════════════
 # Phase 2: Claude Code login
 # ══════════════════════════════════════════
