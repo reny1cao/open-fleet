@@ -758,3 +758,168 @@ do_init_noninteractive() {
 
   echo "fleet.yaml, .env, and identities generated in $target_dir"
 }
+
+# ── Add agent to existing fleet ──────────────────────────────────────────────
+# Usage:
+#   fleet add-agent                          # interactive
+#   fleet add-agent --token TOKEN --name worker-2 --role worker
+
+do_add_agent() {
+  require_config
+
+  local flag_token="" flag_name="" flag_role="" flag_server="local"
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --token)  flag_token="$2"; shift 2 ;;
+      --name)   flag_name="$2"; shift 2 ;;
+      --role)   flag_role="$2"; shift 2 ;;
+      --server) flag_server="$2"; shift 2 ;;
+      *)        shift ;;
+    esac
+  done
+
+  echo ""
+  printf "${bold}fleet add-agent${reset} — Add a new agent to your fleet\n"
+  echo "──────────────────────────────────────"
+
+  # Get token
+  local token="$flag_token"
+  if [[ -z "$token" ]]; then
+    echo ""
+    echo "  Create a new bot at https://discord.com/developers/applications"
+    echo "    1. Click 'New Application' → name it"
+    echo "    2. Bot tab → Reset Token → copy"
+    echo "    3. Enable Message Content Intent → Save"
+    echo ""
+    token=$(prompt_secret "Bot token")
+  fi
+
+  if [[ -z "$token" ]]; then
+    fail "No token provided"
+    exit 2
+  fi
+
+  # Validate token
+  echo "  Validating..."
+  local bot_json
+  if ! bot_json=$(validate_token "$token") || [[ -z "$bot_json" ]]; then
+    fail "Token rejected"
+    exit 2
+  fi
+
+  local bot_info bot_name bot_id app_id
+  bot_info=$(get_bot_info "$bot_json")
+  bot_name="${bot_info%%:*}"
+  bot_id="${bot_info##*:}"
+  app_id=$(get_application_id "$token")
+  [[ -z "$app_id" ]] && app_id="$bot_id"
+  ok "Bot \"$bot_name\" (App ID: $app_id)"
+
+  # Get agent name
+  local agent_name="${flag_name:-$(prompt "Agent name" "$bot_name")}"
+
+  # Check if agent already exists
+  if list_agents | grep -qx "$agent_name"; then
+    fail "Agent '$agent_name' already exists in fleet.yaml"
+    exit 1
+  fi
+
+  # Get role
+  local agent_role="${flag_role:-$(prompt "Role" "worker")}"
+
+  # Build token env name
+  local token_env="DISCORD_BOT_TOKEN_$(echo "$agent_name" | tr '[:lower:]-' '[:upper:]_')"
+
+  # Check if same server needs state_dir
+  local state_dir=""
+  local same_server_agents
+  same_server_agents=$(python3 -c "
+import yaml, sys
+with open(sys.argv[1]) as f:
+    data = yaml.safe_load(f)
+count = sum(1 for a in data.get('agents', {}).values() if a.get('server','local') == sys.argv[2])
+print(count)
+" "$FLEET_YAML" "$flag_server" 2>/dev/null || echo "0")
+
+  if [[ "$same_server_agents" -gt 0 ]]; then
+    state_dir="~/.fleet/state/discord-$agent_name"
+    info "Auto-set state_dir: $state_dir (multi-instance on $flag_server)"
+  fi
+
+  # Append to fleet.yaml
+  {
+    echo "  $agent_name:"
+    echo "    token_env: $token_env"
+    echo "    role: $agent_role"
+    echo "    server: $flag_server"
+    echo "    identity: identities/$agent_name.md"
+    [[ -n "$state_dir" ]] && echo "    state_dir: $state_dir"
+  } >> "$FLEET_YAML"
+  ok "Added $agent_name to fleet.yaml"
+
+  # Append to .env
+  echo "$token_env=$token" >> "$FLEET_ENV"
+  ok "Token saved to .env"
+
+  # Generate identity file
+  local id_file="$FLEET_DIR/identities/$agent_name.md"
+  mkdir -p "$FLEET_DIR/identities"
+  if [[ ! -f "$id_file" ]]; then
+    {
+      echo "You are **$agent_name**, a $agent_role in the fleet. Bot ID \`$app_id\`."
+      echo ""
+      echo "## Team"
+      echo ""
+      for existing in $(list_agents); do
+        [[ "$existing" == "$agent_name" ]] && continue
+        local peer_role
+        peer_role=$(agent_get "$existing" "role" 2>/dev/null || echo "")
+        echo "- $existing — $peer_role"
+      done
+      echo ""
+      echo "## Rules"
+      echo ""
+      echo "- **Always reply via Discord reply tool** — terminal output does not reach Discord"
+      echo "- Report concisely, conclusions first"
+    } > "$id_file"
+    ok "Identity file: identities/$agent_name.md"
+  fi
+
+  # Generate access.json
+  if [[ -n "$state_dir" ]]; then
+    local expanded_state="${state_dir/#\~/$HOME}"
+    mkdir -p "$expanded_state"
+    local user_id
+    user_id=$(yaml_get "discord.user_id" 2>/dev/null || echo "")
+    local access_file="$expanded_state/access.json"
+    if [[ ! -f "$access_file" ]]; then
+      local allowed="["
+      local first=true
+      [[ -n "$user_id" ]] && { allowed="$allowed\"$user_id\""; first=false; }
+      for existing in $(list_agents); do
+        [[ "$existing" == "$agent_name" ]] && continue
+        local peer_id
+        peer_id=$(agent_get "$existing" "token_env" 2>/dev/null)
+        # We don't have peer bot IDs easily, skip for now
+      done
+      allowed="$allowed]"
+      cat > "$access_file" <<EOACCESS
+{
+  "policy": "whitelist",
+  "requireMention": true,
+  "allowedUserIds": $allowed
+}
+EOACCESS
+      ok "access.json created"
+    fi
+  fi
+
+  # Print invite URL
+  echo ""
+  echo "  Invite the bot to your server:"
+  echo "  https://discord.com/oauth2/authorize?client_id=$app_id&scope=bot&permissions=68608"
+  echo ""
+  echo "  Then start it:"
+  echo "    fleet start $agent_name"
+}

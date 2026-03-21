@@ -406,6 +406,7 @@ Usage:
   fleet start <agent> [--role <r>] [--wait] [--json]  Start an agent
   fleet stop <agent> [--at <server>] [--json]    Stop an agent
   fleet inject <agent> <role>                    Hot-inject role
+  fleet add-agent [--token T --name N --role R]    Add agent to existing fleet
   fleet apply [--json]                            Start all agents from fleet.yaml
   fleet status [--json]                          Fleet overview
   fleet doctor [--json]                          Health check
@@ -547,6 +548,10 @@ case "$ACTION" in
   init)
     shift 1
     do_init "$@"
+    ;;
+  add-agent)
+    shift 1
+    do_add_agent "$@"
     ;;
   doctor)
     shift

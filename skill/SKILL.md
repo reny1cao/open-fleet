@@ -135,6 +135,24 @@ fleet status
 
 **Done when:** `fleet status` shows `[on]` for each agent. The bots show as online in Discord. User can message @Lead in Discord and get a response.
 
+### Adding more agents later
+
+To add an agent to an existing fleet:
+
+```bash
+# Interactive — guides through bot creation + token
+fleet add-agent
+
+# Non-interactive
+fleet add-agent --token TOKEN --name reviewer --role reviewer
+```
+
+This appends to fleet.yaml, saves the token to .env, generates an identity file, and prints the invite URL. The user needs to:
+1. Create a new Application at https://discord.com/developers/applications (same steps as initial setup)
+2. Paste the token
+3. Invite the bot using the printed URL
+4. `fleet start <new-agent>`
+
 ## Discovery
 
 ```bash
