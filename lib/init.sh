@@ -54,12 +54,33 @@ prompt() {
 
 prompt_secret() {
   local message="$1"
-  local ans
-  # Use visible input — read -s breaks paste in many SSH terminals
-  read -rp "  $message: " ans
-  # Show masked version so user knows it was received
+  local ans=""
+  local char=""
+
+  printf "  %s: " "$message" >&2
+
+  # Read char-by-char: show ● for each character, support backspace + paste
+  while IFS= read -rs -n1 char; do
+    # Enter → done
+    [[ -z "$char" ]] && break
+    # Backspace
+    if [[ "$char" == $'\x7f' || "$char" == $'\b' ]]; then
+      if [[ -n "$ans" ]]; then
+        ans="${ans%?}"
+        printf '\b \b' >&2
+      fi
+    else
+      ans+="$char"
+      printf '●' >&2
+    fi
+  done
+  echo "" >&2
+
+  # Show masked confirmation
   if [[ ${#ans} -gt 8 ]]; then
-    printf "  → received: %s...%s (%d chars)\n" "${ans:0:4}" "${ans: -4}" "${#ans}" >&2
+    printf "  → received: %s●●●●%s (%d chars)\n" "${ans:0:4}" "${ans: -4}" "${#ans}" >&2
+  elif [[ -n "$ans" ]]; then
+    printf "  → received: ●●●● (%d chars)\n" "${#ans}" >&2
   fi
   echo "$ans"
 }
@@ -176,9 +197,24 @@ do_init() {
   guild_count=$(echo "$guilds_json" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
 
   if [[ "$guild_count" == "0" ]]; then
-    fail "Bot is not in any server."
-    echo "  Invite it first: https://discord.com/oauth2/authorize?client_id=$bot_id&scope=bot&permissions=68608"
-    exit 1
+    warn "Bot is not in any server yet."
+    echo ""
+    echo "  Invite it now — open this link in your browser:"
+    echo "  https://discord.com/oauth2/authorize?client_id=$bot_id&scope=bot&permissions=68608"
+    echo ""
+    echo "  Select your server, click Authorize, then come back here."
+    read -rp "  Press Enter after inviting the bot... "
+
+    # Retry discovery
+    guilds_json=$(get_guilds "$token")
+    guild_count=$(echo "$guilds_json" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+
+    if [[ "$guild_count" == "0" ]]; then
+      fail "Still not in any server. Check the invite link and try again."
+      echo "  You can re-run: fleet init"
+      exit 1
+    fi
+    ok "Bot joined a server!"
   fi
 
   if [[ "$guild_count" == "1" ]]; then
