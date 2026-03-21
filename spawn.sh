@@ -1,4 +1,8 @@
 #!/bin/bash
+# spawn.sh — LEGACY: use `fleet` CLI instead
+# Kept for backward compatibility with bot-pool.json configs.
+# See: ./fleet help
+#
 # spawn.sh — HQ bot lifecycle manager
 # Config from bot-pool.json, tokens from .env
 #

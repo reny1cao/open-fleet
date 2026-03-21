@@ -65,13 +65,13 @@ else
   skip ".env"
 fi
 
-# bot-pool.json
-if [ ! -f bot-pool.json ]; then
-  cp bot-pool.json.example bot-pool.json
-  ok "Created bot-pool.json from bot-pool.json.example"
-  files_created+=("bot-pool.json")
+# fleet.yaml (primary) or bot-pool.json (legacy fallback)
+if [ ! -f fleet.yaml ]; then
+  cp fleet.yaml.example fleet.yaml
+  ok "Created fleet.yaml from fleet.yaml.example"
+  files_created+=("fleet.yaml")
 else
-  skip "bot-pool.json"
+  skip "fleet.yaml"
 fi
 
 # identities — copy all .example files that don't have a non-example counterpart
@@ -108,10 +108,10 @@ else
   echo "  1. .env — already configured"
 fi
 
-if [[ " ${files_created[*]} " == *" bot-pool.json "* ]]; then
-  printf "  2. ${yellow}Edit bot-pool.json${reset} — replace YOUR_*_BOT_ID with real bot IDs\n"
+if [[ " ${files_created[*]} " == *" fleet.yaml "* ]]; then
+  printf "  2. ${yellow}Edit fleet.yaml${reset} — configure agents, servers, and Discord IDs\n"
 else
-  echo "  2. bot-pool.json — already configured"
+  echo "  2. fleet.yaml — already configured"
 fi
 
 has_new_identity=false
@@ -129,5 +129,5 @@ else
 fi
 
 echo "  4. Apply the Discord plugin patch (see README.md)"
-echo "  5. Start your first bot:  ./spawn.sh start sentinel"
+echo "  5. Start your first agent:  ./fleet start hub"
 echo ""

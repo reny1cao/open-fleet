@@ -141,4 +141,9 @@ require_config() {
     echo "Run 'fleet init' to create one, or set FLEET_CONFIG=/path/to/fleet.yaml"
     exit 1
   fi
+  if ! python3 -c "import yaml" 2>/dev/null; then
+    echo "Error: Python3 + PyYAML required for fleet.yaml parsing."
+    echo "Install: pip3 install pyyaml"
+    exit 1
+  fi
 }
