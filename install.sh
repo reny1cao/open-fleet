@@ -18,7 +18,7 @@
 
 set -eo pipefail
 
-REPO_URL="https://github.com/reny1cao/discord-hq-fleet.git"
+REPO_URL="https://github.com/reny1cao/fleet.git"
 INSTALL_DIR="${FLEET_INSTALL_DIR:-$HOME/.fleet}"
 BIN_DIR="${BIN_DIR:-$HOME/.local/bin}"
 COMP_DIR_BASH="${BASH_COMPLETION_DIR:-$HOME/.local/share/bash-completion/completions}"
