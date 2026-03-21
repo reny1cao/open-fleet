@@ -145,6 +145,60 @@ do_deps() {
     ok "Created ~/.claude/settings.json (skips onboarding wizard)"
   fi
 
+  # ── Discord plugin ──
+  step "[Discord Plugin]"
+
+  local plugin_dir="$HOME/.claude/plugins/cache/claude-plugins-official/discord/0.0.1"
+  if [[ -f "$plugin_dir/server.ts" ]]; then
+    ok "Discord plugin installed"
+  else
+    if $auto_install; then
+      echo "  Installing Discord plugin..."
+      # Try official install first
+      if claude plugin install discord@claude-plugins-official 2>/dev/null; then
+        ok "Discord plugin installed"
+      elif command -v git &>/dev/null; then
+        # Fallback: clone from GitHub
+        echo "  Official install failed, trying GitHub..."
+        local tmp_plugin="/tmp/fleet-discord-plugin-$$"
+        if git clone --depth=1 https://github.com/anthropics/claude-code-plugins.git "$tmp_plugin" 2>/dev/null; then
+          mkdir -p "$plugin_dir"
+          cp -r "$tmp_plugin/discord/0.0.1/"* "$plugin_dir/" 2>/dev/null
+          rm -rf "$tmp_plugin"
+          if [[ -f "$plugin_dir/server.ts" ]]; then
+            ok "Discord plugin installed from GitHub"
+          else
+            fail "Discord plugin install failed"
+            missing+=("discord-plugin")
+          fi
+        else
+          fail "Could not download Discord plugin"
+          missing+=("discord-plugin")
+        fi
+      else
+        fail "Discord plugin — could not install"
+        missing+=("discord-plugin")
+      fi
+    else
+      fail "Discord plugin not installed"
+      echo "    Run: fleet deps --install"
+      missing+=("discord-plugin")
+    fi
+  fi
+
+  # ── Claude Code auth ──
+  step "[Claude Code Auth]"
+
+  if command -v claude &>/dev/null; then
+    if claude auth status 2>/dev/null | grep -q '"loggedIn": true'; then
+      ok "Claude Code logged in"
+    else
+      warn "Claude Code not logged in"
+      echo "    Run: claude auth login"
+      echo "    On remote server: copy the URL, open in local browser, complete login"
+    fi
+  fi
+
   # ── Summary ──
   echo ""
   if [[ ${#missing[@]} -eq 0 ]]; then
