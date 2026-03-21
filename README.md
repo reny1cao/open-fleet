@@ -72,12 +72,18 @@ fleet start worker-remote    # Starts on the remote server via SSH
 
 ## Contribute
 
-Open Fleet currently works with Claude Code. The goal: **support every coding agent** — Codex, Aider, Gemini CLI, and whatever comes next.
+Open Fleet currently works with Claude Code. The goal: **support every agent, every platform.**
+
+Agents we want to support:
+- Codex, Kimi, OpenCode, Aider, Gemini CLI, and more
+
+Platforms beyond Discord:
+- Slack, Teams, Telegram, and more
 
 Ways to contribute:
 - **Agent adapters** — make fleet work with other coding agents
+- **Platform adapters** — bring fleet to Slack, Teams, Telegram
 - **Roles** — add domain expertise (`identities/roles/<name>.md`)
-- **Channel adapters** — Slack, Teams, beyond Discord
 - **Bug reports and feedback** — especially on the setup experience
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
