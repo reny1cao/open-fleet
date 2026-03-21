@@ -121,9 +121,9 @@ do_init() {
     esac
   done
 
-  # Non-interactive mode: all required flags provided
+  # Non-interactive mode: triggered when --token is provided (channel auto-detected)
   local non_interactive=false
-  if [[ -n "$flag_tokens" && -n "$flag_channel" ]]; then
+  if [[ -n "$flag_tokens" ]]; then
     non_interactive=true
   fi
 
