@@ -8,6 +8,29 @@ user_invocable: true
 
 You manage a fleet of AI coding agents across multiple servers. Each agent is a Claude Code session with a Discord channel plugin. All operations go through the `fleet` CLI.
 
+## First-Time Setup
+
+If fleet is not installed, run:
+```bash
+curl -fsSL https://raw.githubusercontent.com/reny1cao/open-fleet/master/install.sh | bash
+```
+
+Then configure (non-interactive — provide tokens and channel):
+```bash
+fleet init --token $DISCORD_BOT_TOKEN_1 --token $DISCORD_BOT_TOKEN_2 --channel $CHANNEL_ID --name my-fleet
+```
+
+Or interactive:
+```bash
+fleet init
+```
+
+Start agents:
+```bash
+fleet start lead
+fleet start worker
+```
+
 ## Discovery
 
 ```bash

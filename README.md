@@ -8,9 +8,9 @@ Built on [Claude Code Channels](https://docs.anthropic.com/en/docs/claude-code).
 
 ## Get Started
 
-**Tell your Claude Code:**
+**Paste this into your Claude Code:**
 
-> Install Open Fleet and set up a 2-agent team on this machine. Repo: https://github.com/reny1cao/open-fleet
+> Install Open Fleet and set up a 2-agent team: run `curl -fsSL https://raw.githubusercontent.com/reny1cao/open-fleet/master/install.sh | bash` then run `fleet init` to configure tokens and Discord, and `fleet start` to launch.
 
 **Or do it yourself:**
 
