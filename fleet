@@ -402,7 +402,7 @@ usage() {
 fleet — Agent fleet CLI
 
 Usage:
-  fleet init                                     First-time setup wizard
+  fleet init [--remote]                           First-time setup wizard
   fleet start <agent> [--role <r>] [--wait] [--json]  Start an agent
   fleet stop <agent> [--at <server>] [--json]    Stop an agent
   fleet inject <agent> <role>                    Hot-inject role

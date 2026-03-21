@@ -95,8 +95,9 @@ confirm() {
 # ── Main init flow ────────────────────────────────────────────────────────────
 
 do_init() {
-  # ── Parse flags for non-interactive mode ──
+  # ── Parse flags ──
   local flag_name="" flag_channel="" flag_tokens="" flag_agents="" flag_force=false
+  local flag_remote=false
   local target_dir="$(pwd)"
 
   while [[ $# -gt 0 ]]; do
@@ -106,6 +107,7 @@ do_init() {
       --token)   flag_tokens="${flag_tokens:+$flag_tokens,}$2"; shift 2 ;;
       --agent)   flag_agents="${flag_agents:+$flag_agents,}$2"; shift 2 ;;
       --force)   flag_force=true; shift ;;
+      --remote)  flag_remote=true; shift ;;
       --dir)     target_dir="$2"; shift 2 ;;
       *)         shift ;;
     esac
@@ -334,8 +336,10 @@ for g in guilds:
   agent_name=$(prompt "Agent 1 name" "hub")
   local agent_role
   agent_role=$(prompt "Agent 1 role" "hub")
-  local agent_server
-  agent_server=$(prompt "Agent 1 server" "local")
+  local agent_server="local"
+  if $flag_remote; then
+    agent_server=$(prompt "Agent 1 server" "local")
+  fi
   local agent_token_env="DISCORD_BOT_TOKEN_$(echo "$agent_name" | tr '[:lower:]-' '[:upper:]_')"
 
   agent_names+=("$agent_name")
@@ -371,7 +375,10 @@ for g in guilds:
     fi
 
     agent_role=$(prompt "Agent $agent_index role" "worker")
-    agent_server=$(prompt "Agent $agent_index server" "local")
+    agent_server="local"
+    if $flag_remote; then
+      agent_server=$(prompt "Agent $agent_index server" "local")
+    fi
     agent_token_env="DISCORD_BOT_TOKEN_$(echo "$agent_name" | tr '[:lower:]-' '[:upper:]_')"
 
     # State dir needed if same machine has multiple bots

@@ -163,13 +163,9 @@ if is_logged_in; then
 else
   fail "Claude Code is not logged in"
   echo ""
-  echo "  Run this command to log in:"
+  echo "  Run:  claude auth login"
   echo ""
-  echo "    claude auth login"
-  echo ""
-  echo "  On a remote server: copy the URL it shows, open in your local browser,"
-  echo "  complete login, then re-run ./install.sh to continue."
-  echo ""
+  echo "  Then re-run ./install.sh"
   exit 1
 fi
 
