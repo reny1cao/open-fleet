@@ -26,7 +26,7 @@ fleet doctor
 ```
 
 Check the output for:
-- **Claude Code version** — must be recent enough to support `--channels` flag. Run `claude --version` — needs 1.0.0+
+- **Claude Code version** — must support the `--channels` flag. Run `claude --version` to check. If the version doesn't support `--channels`, tell user to update: `npm update -g @anthropic-ai/claude-code`
 - **Discord plugin** — `fleet doctor` checks if `server.ts` exists at the plugin path
 - **Patches** — STATE_DIR and PARTNER_BOT_IDS must show as applied
 
@@ -43,7 +43,7 @@ If `fleet doctor` shows failures:
 **Why:** Discord is where your agents communicate. Each agent joins as a bot in your server. You see their conversations in real time.
 
 Ask: "Do you have a Discord server for your fleet?"
-- If yes → ask for the server name to confirm, then continue
+- If yes → continue to Step 3
 - If no → tell them:
   1. Open https://discord.com in browser (or Discord app) — log in or create a free account
   2. **Left sidebar, very bottom** → click the green **"+"** button (below all existing servers)
@@ -51,7 +51,7 @@ Ask: "Do you have a Discord server for your fleet?"
   4. Name it anything (e.g. "My Fleet") → click **"Create"**
   5. You're now inside your new server. There's a default `#general` channel — that's enough.
 
-**Done when:** User tells you the server name and confirms they can see the `#general` channel.
+**Done when:** User confirms they have a Discord server with at least one text channel.
 
 ### Step 3: Create bots, configure, and invite
 
@@ -74,58 +74,61 @@ Tell the user to open https://discord.com/developers/applications in their brows
 
 **For each bot in the team:**
 1. **Top right** of the page → click the blue **"New Application"** button → name it based on its role (e.g. "Lead", "Worker", "Reviewer"). This name becomes the bot's display name in Discord.
-2. You land on the "General Information" page. **Left sidebar** → click **"Bot"** (puzzle piece icon)
-3. **Bot page, top section** → click **"Reset Token"** → confirm → **copy the token immediately**
-4. **Bot page, scroll down** to **"Privileged Gateway Intents"** section → toggle **"Message Content Intent" ON** (turns blue) → click **"Save Changes"** at bottom
-5. Ask the user to paste the token to you now. Save it.
-6. Repeat for each bot in the team.
+2. You land on the "General Information" page. Note the **Application ID** shown on this page — you'll need it for the invite link.
+3. **Left sidebar** → click **"Bot"**
+4. **Bot page, top section** → click **"Reset Token"** → confirm → **copy the token immediately**
+5. **Bot page, scroll down** to **"Privileged Gateway Intents"** section → toggle **"Message Content Intent" ON** (turns blue) → click **"Save Changes"** at bottom. **This is critical** — without it the bot cannot read messages.
+6. Ask the user to paste the token to you now. Save it.
+7. Repeat for each bot in the team.
+
+**Invite bots to server BEFORE running fleet init:**
+
+`fleet init` needs the bots to be in the server to auto-detect it. For each bot, build the invite URL using the Application ID from step 2:
+```
+https://discord.com/oauth2/authorize?client_id=APPLICATION_ID&scope=bot&permissions=68608
+```
+Give the user each URL. For each:
+1. Open in browser → **"Add to Server"** dropdown → select their fleet server
+2. Click **"Continue"** → **"Authorize"** → complete captcha if shown
+
+**Done when:** User confirms all bots appear as members in their Discord server.
 
 **Run fleet init (generates config + invite links):**
 
-As an agent, prefer non-interactive mode:
+Ask the user what they want to name their fleet (this becomes the tmux session prefix). Then run:
+
+For a simple setup (one server, one channel — most common):
 ```bash
-fleet init --token FIRST_TOKEN --token SECOND_TOKEN --name my-fleet
+fleet init --token FIRST_TOKEN --token SECOND_TOKEN --name USER_CHOSEN_NAME
 ```
-Fleet auto-detects the Discord server and channel from the token. If multiple servers/channels exist, it picks the first — use interactive `fleet init` instead if the user wants to choose.
+Fleet auto-detects the server and picks the first text channel. If the user has multiple servers or wants a specific channel, use interactive mode instead:
+```bash
+fleet init
+```
+
+To specify agent names and roles explicitly:
+```bash
+fleet init --token T1 --token T2 --name my-fleet --agent lead:local:lead --agent worker:local:worker
+```
 
 **Done when:** Output shows "Fleet initialized!" and prints invite URLs for each bot. Verify:
 ```bash
 cat fleet.yaml    # should list your agents
 ```
 
-**Invite the bots using the URLs from fleet init:**
-
-Give the user each invite URL that `fleet init` printed. For each one:
-1. Open the URL in browser → Discord authorization page
-2. **"Add to Server"** dropdown (middle of page) → select their fleet server
-3. Click **"Continue"** → **"Authorize"** → complete captcha if shown
-
-**Done when:** User confirms they see all bots as members in their Discord server (right sidebar → Members list). Bots show as offline — that's normal until Step 4.
+**Verify:** `fleet init` should show "Bot joined a server!" for each token. If it says "Bot is not in any server," the user missed the invite step above — go back and invite first.
 
 ### Step 4: Start the team
 
 **Why:** This launches each agent as a Claude Code process connected to Discord. They'll come online and start listening.
 
-**Before starting:** Claude Code needs `--dangerously-skip-permissions` to run unattended. To avoid a first-run confirmation prompt, pre-configure it:
+**Before starting:** Claude Code needs `--dangerously-skip-permissions` to run unattended. Fleet auto-handles the first-run confirmation prompt (sends "y" automatically via tmux). But if a bot doesn't come online after `fleet start`:
 
-```bash
-# Check if settings already allow it
-cat ~/.claude/settings.json
-
-# If not, the agent can add the permission:
-# Read the current settings, add the bypass permission, write back
-```
-
-If the user hasn't run Claude Code with `--dangerously-skip-permissions` before, help them:
-1. Run `claude --dangerously-skip-permissions` once in their terminal
-2. Accept the one-time confirmation when prompted
-3. Exit Claude Code (`/exit`)
-4. Now `fleet start` will work without prompts
-
-Alternatively, if `fleet start` succeeds but the bot doesn't come online:
-1. Run `tmux attach -t <session-name>` (shown in fleet start output)
-2. If there's a confirmation prompt, accept it
-3. Detach with `Ctrl+B, D`
+1. Check: `fleet status` — is it `[on]` or `[off]`?
+2. If `[off]`: run `tmux attach -t <session-name>` (shown in `fleet start` output) to see what's happening
+3. If there's a confirmation prompt stuck: type `y` and Enter
+4. If Claude Code crashed: check the error, fix it, then `fleet stop <agent>` and `fleet start <agent>`
+5. Detach from tmux: `Ctrl+B, D`
 
 ```bash
 fleet start lead
@@ -148,10 +151,11 @@ fleet add-agent --token TOKEN --name reviewer --role reviewer
 ```
 
 This appends to fleet.yaml, saves the token to .env, generates an identity file, and prints the invite URL. The user needs to:
-1. Create a new Application at https://discord.com/developers/applications (same steps as initial setup)
-2. Paste the token
-3. Invite the bot using the printed URL
-4. `fleet start <new-agent>`
+1. Create a new Application at https://discord.com/developers/applications
+2. Go to Bot tab → Reset Token → copy
+3. **Enable Message Content Intent** (Privileged Gateway Intents section) — critical, without this the bot can't read messages
+4. Invite the bot using the invite URL from `fleet add-agent`
+5. `fleet start <new-agent>`
 
 ## Discovery
 
@@ -211,10 +215,17 @@ fleet status
 ```
 
 ### "start all"
-Run `start` for each agent sequentially. Skip agents already running.
+```bash
+fleet apply
+```
+Starts all agents from fleet.yaml. Skips already-running agents. Use `--json` for machine output.
 
-### "stop all"
-Run `stop` for each agent sequentially.
+### "add agent"
+```bash
+fleet add-agent
+fleet add-agent --token TOKEN --name reviewer --role reviewer
+```
+Add a new agent to an existing fleet.
 
 ### "diagnose"
 ```bash
