@@ -133,83 +133,24 @@ fi
 
 step "Phase 2: Claude Code login"
 
-LOGIN_SESSION="fleet-login-$$"
-LOGIN_TIMEOUT=300  # 5 minutes
-
 is_logged_in() {
   claude auth status 2>/dev/null | grep -q '"loggedIn": true'
-}
-
-open_url() {
-  local url="$1"
-  if [[ "$(uname)" == "Darwin" ]]; then
-    open "$url" 2>/dev/null && return 0
-  elif command -v xdg-open &>/dev/null; then
-    xdg-open "$url" 2>/dev/null && return 0
-  fi
-  return 1
 }
 
 if is_logged_in; then
   info "Claude Code is authenticated"
 else
-  echo "  Not logged in. Starting login flow..."
-  echo ""
-  echo "  Auth method: $AUTH_METHOD"
-  echo "  Override with: ./install.sh --console  or  ./install.sh --sso"
+  echo "  Not logged in."
+  echo "  Auth method: $AUTH_METHOD (override: ./install.sh --console or --sso)"
   echo ""
 
-  # Start login in background tmux with wide window (prevents URL truncation)
-  tmux new-session -d -s "$LOGIN_SESSION" -x 250 -y 50 "claude auth login $AUTH_METHOD 2>&1; echo ''; echo 'Login complete. This window will close automatically.'; sleep 5"
+  # Run login interactively — it prints the URL, waits for token, handles everything
+  claude auth login $AUTH_METHOD
 
-  # Poll tmux pane to capture the login URL before attaching
-  # -J joins wrapped lines so URLs split across lines are captured whole
-  url_found=""
-  waited=0
-  echo "  Waiting for login URL..."
-
-  while [[ $waited -lt 30 && -z "$url_found" ]]; do
-    sleep 2
-    waited=$((waited + 2))
-    pane=$(tmux capture-pane -t "$LOGIN_SESSION" -p -J 2>/dev/null || true)
-    url_found=$(echo "$pane" | tr -d '[:space:]' | grep -oE 'https://[^[:space:]]+' | head -1 || true)
-    if [[ -z "$url_found" ]]; then
-      url_found=$(echo "$pane" | grep -oE 'https://[^ ]+' | head -1 || true)
-    fi
-  done
-
-  # Always print the full URL clearly before attaching
-  echo ""
-  echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  if [[ -n "$url_found" ]]; then
-    echo "  Open this URL in your browser:"
-    echo ""
-    echo "  $url_found"
-    open_url "$url_found" && echo "" && info "Browser opened automatically" || true
-  else
-    echo "  Could not capture URL automatically."
-    echo "  Look for the URL in the login session below."
-  fi
-  echo ""
-  echo "  After logging in, paste the token into the session below."
-  echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo ""
-
-  # tmux attach blocks until the session ends (login complete + sleep 5)
-  tmux attach -t "$LOGIN_SESSION" 2>/dev/null || true
-
-  echo ""
-  echo "  ─── Back to installer ───"
-  echo ""
-
-  # Clean up in case session is still around
-  tmux kill-session -t "$LOGIN_SESSION" 2>/dev/null || true
-
-  # Verify login succeeded
   if is_logged_in; then
     info "Login successful!"
   else
-    warn "Login not detected after session ended"
+    warn "Login failed or was cancelled"
     echo "  Run 'claude auth login' manually, then re-run this script"
     exit 1
   fi
