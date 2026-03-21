@@ -101,33 +101,95 @@ else
 fi
 
 # ══════════════════════════════════════════
-# Phase 2: Claude Code login check
+# Phase 2: Claude Code login
 # ══════════════════════════════════════════
 
 step "Phase 2: Claude Code login"
 
-# Check if Claude is authenticated by running a quick command
-if claude --version &>/dev/null 2>&1; then
-  # Try a lightweight operation that requires auth
-  if claude -p "echo ok" --max-turns 1 &>/dev/null 2>&1; then
-    info "Claude Code is authenticated"
-  else
-    warn "Claude Code is installed but not logged in"
-    echo ""
-    echo "  ┌─────────────────────────────────────────────┐"
-    echo "  │  ACTION REQUIRED: Log in to Claude Code     │"
-    echo "  │                                             │"
-    echo "  │  Run in another terminal:                   │"
-    echo "  │    claude                                   │"
-    echo "  │                                             │"
-    echo "  │  Complete the login flow, then press Enter  │"
-    echo "  │  here to continue.                          │"
-    echo "  └─────────────────────────────────────────────┘"
-    echo ""
-    read -rp "  Press Enter after logging in..."
+LOGIN_SESSION="fleet-login-$$"
+LOGIN_TIMEOUT=300  # 5 minutes
+
+is_logged_in() {
+  claude auth status 2>/dev/null | grep -q '"loggedIn": true'
+}
+
+open_url() {
+  local url="$1"
+  if [[ "$(uname)" == "Darwin" ]]; then
+    open "$url" 2>/dev/null && return 0
+  elif command -v xdg-open &>/dev/null; then
+    xdg-open "$url" 2>/dev/null && return 0
   fi
+  return 1
+}
+
+if is_logged_in; then
+  info "Claude Code is authenticated"
 else
-  warn "Cannot verify Claude Code — continuing anyway"
+  echo "  Not logged in. Starting login flow..."
+
+  # Start claude login in a background tmux session
+  tmux new-session -d -s "$LOGIN_SESSION" "claude login 2>&1; sleep 5"
+
+  # Poll tmux pane for a URL
+  url_found=""
+  waited=0
+  echo "  Waiting for login URL..."
+
+  while [[ $waited -lt 30 && -z "$url_found" ]]; do
+    sleep 2
+    waited=$((waited + 2))
+    pane=$(tmux capture-pane -t "$LOGIN_SESSION" -p 2>/dev/null || true)
+    url_found=$(echo "$pane" | grep -oE 'https://[^ ]+' | head -1 || true)
+  done
+
+  if [[ -n "$url_found" ]]; then
+    echo ""
+    if open_url "$url_found"; then
+      info "Browser opened automatically"
+    else
+      # Remote or headless — print URL for user
+      echo "  ┌─────────────────────────────────────────────┐"
+      echo "  │  Open this URL in your browser:             │"
+      echo "  └─────────────────────────────────────────────┘"
+      echo ""
+      echo "  $url_found"
+    fi
+    echo ""
+    echo "  Complete the login in your browser."
+    echo "  This script will detect it automatically..."
+    echo ""
+  else
+    warn "Could not capture login URL from tmux"
+    echo "  Try running 'claude login' manually in another terminal"
+    echo "  This script will detect when you're logged in..."
+    echo ""
+  fi
+
+  # Poll auth status until logged in or timeout
+  waited=0
+  while [[ $waited -lt $LOGIN_TIMEOUT ]]; do
+    if is_logged_in; then
+      info "Login detected!"
+      # Clean up tmux session
+      tmux kill-session -t "$LOGIN_SESSION" 2>/dev/null || true
+      break
+    fi
+    sleep 3
+    waited=$((waited + 3))
+
+    # Show a dot every 15 seconds so user knows we're alive
+    if (( waited % 15 == 0 )); then
+      echo "  ... still waiting (${waited}s / ${LOGIN_TIMEOUT}s)"
+    fi
+  done
+
+  if ! is_logged_in; then
+    tmux kill-session -t "$LOGIN_SESSION" 2>/dev/null || true
+    warn "Login timed out after ${LOGIN_TIMEOUT}s"
+    echo "  Run 'claude login' manually, then re-run this script"
+    exit 1
+  fi
 fi
 
 # ══════════════════════════════════════════
