@@ -2,15 +2,21 @@
 # fleet — Agent fleet CLI
 #
 # Usage:
-#   fleet start <agent> [workspace] [--role <role>] [--at <server>]
-#   fleet stop <agent> [--at <server>]
+#   fleet start <agent> [workspace] [--role <role>] [--at <server>] [--wait] [--json]
+#   fleet stop <agent> [--at <server>] [--json]
 #   fleet inject <agent> <role>
-#   fleet status
+#   fleet status [--json]
 #   fleet init
-#   fleet doctor
+#   fleet doctor [--json]
 #   fleet deps [--install]
 #   fleet patch [patch-name]
 #   fleet help
+#
+# Exit codes:
+#   0  success
+#   1  usage error (bad arguments, unknown command)
+#   2  config error (missing fleet.yaml, missing token, invalid YAML)
+#   3  runtime error (SSH unreachable, tmux failure, token rejected)
 
 set -eo pipefail
 
@@ -18,6 +24,9 @@ set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FLEET_DIR="${FLEET_DIR:-$(pwd)}"
+
+# Global flags (set before sourcing libs so they're available everywhere)
+JSON_OUTPUT=false
 
 source "$SCRIPT_DIR/lib/ui.sh"
 source "$SCRIPT_DIR/lib/config.sh"
@@ -28,18 +37,43 @@ source "$SCRIPT_DIR/lib/doctor.sh"
 source "$SCRIPT_DIR/lib/deps.sh"
 source "$SCRIPT_DIR/lib/patch.sh"
 
+# ── JSON helpers ──────────────────────────────────────────────────────────────
+
+json_kv() {
+  # json_kv key value — outputs "key": "value" (escapes quotes in value)
+  local v="${2//\"/\\\"}"
+  printf '"%s": "%s"' "$1" "$v"
+}
+
+json_obj() {
+  # json_obj "k1" "v1" "k2" "v2" ... — outputs { "k1": "v1", "k2": "v2" }
+  local out="{"
+  local first=true
+  while [[ $# -ge 2 ]]; do
+    $first || out="$out,"
+    out="$out $(json_kv "$1" "$2")"
+    first=false
+    shift 2
+  done
+  echo "$out }"
+}
+
 # ── Commands ──────────────────────────────────────────────────────────────────
 
 do_start() {
-  local agent="$1" custom_dir="$2" role="$3" server_override="$4"
+  local agent="$1" custom_dir="$2" role="$3" server_override="$4" wait_flag="$5"
   require_config
 
   # Validate agent exists
   local agents
   agents=$(list_agents)
   if ! echo "$agents" | grep -qx "$agent"; then
-    echo "Error: unknown agent '$agent'"
-    echo "Available: $(echo "$agents" | tr '\n' ' ')"
+    if $JSON_OUTPUT; then
+      json_obj "error" "unknown agent" "agent" "$agent"
+    else
+      echo "Error: unknown agent '$agent'"
+      echo "Available: $(echo "$agents" | tr '\n' ' ')"
+    fi
     exit 1
   fi
 
@@ -55,8 +89,12 @@ do_start() {
   if [[ -z "$token" ]]; then
     local env_name
     env_name=$(agent_get "$agent" "token_env" 2>/dev/null || echo "?")
-    echo "Error: $env_name not set. Check .env"
-    exit 1
+    if $JSON_OUTPUT; then
+      json_obj "error" "token not set" "agent" "$agent" "token_env" "$env_name"
+    else
+      echo "Error: $env_name not set. Check .env"
+    fi
+    exit 2
   fi
 
   if [[ "$server" == "local" ]]; then
@@ -65,12 +103,20 @@ do_start() {
     local expanded_state="${state_dir/#\~/$HOME}"
 
     if [[ ! -d "$expanded_work" ]]; then
-      echo "Error: directory does not exist: $expanded_work"
-      exit 1
+      if $JSON_OUTPUT; then
+        json_obj "error" "directory not found" "path" "$expanded_work"
+      else
+        echo "Error: directory does not exist: $expanded_work"
+      fi
+      exit 2
     fi
 
     if tmux has-session -t "$session" 2>/dev/null; then
-      echo "$agent is already running. Attach: tmux attach -t $session"
+      if $JSON_OUTPUT; then
+        json_obj "agent" "$agent" "state" "already_running" "session" "$session"
+      else
+        echo "$agent is already running. Attach: tmux attach -t $session"
+      fi
       exit 0
     fi
 
@@ -78,20 +124,44 @@ do_start() {
     [[ -n "$expanded_state" ]] && cmd="$cmd DISCORD_STATE_DIR=$expanded_state"
     cmd="$cmd $runtime --dangerously-skip-permissions --channels $plugin"
 
-    echo "Starting $agent (local)..."
-    echo "  Workspace: $expanded_work"
+    if ! $JSON_OUTPUT; then
+      echo "Starting $agent (local)..."
+      echo "  Workspace: $expanded_work"
+    fi
     tmux new-session -d -s "$session" -c "$expanded_work" "$cmd"
-    echo "  ✔ $agent started. Attach: tmux attach -t $session"
-    inject_identity "$agent" "$session" "local" "$role" &
+
+    if [[ "$wait_flag" == "true" ]]; then
+      if ! $JSON_OUTPUT; then echo "  Waiting for identity injection..."; fi
+      inject_identity "$agent" "$session" "local" "$role"
+    else
+      inject_identity "$agent" "$session" "local" "$role" &
+    fi
+
+    if $JSON_OUTPUT; then
+      json_obj "agent" "$agent" "state" "started" "server" "local" "session" "$session" "workspace" "$expanded_work"
+    else
+      echo "  ✔ $agent started. Attach: tmux attach -t $session"
+    fi
 
   else
     # ── Remote start ──
     local ssh_host remote_user
-    ssh_host=$(server_ssh_host "$server") || { echo "Error: no ssh_host for server '$server'"; exit 1; }
+    ssh_host=$(server_ssh_host "$server") || {
+      if $JSON_OUTPUT; then
+        json_obj "error" "no ssh_host" "server" "$server"
+      else
+        echo "Error: no ssh_host for server '$server'"
+      fi
+      exit 3
+    }
     remote_user=$(server_user "$server")
 
     if session_exists "$session" "$server"; then
-      echo "$agent is already running at $server"
+      if $JSON_OUTPUT; then
+        json_obj "agent" "$agent" "state" "already_running" "server" "$server"
+      else
+        echo "$agent is already running at $server"
+      fi
       exit 0
     fi
 
@@ -99,11 +169,24 @@ do_start() {
     [[ -n "$state_dir" ]] && remote_start="$remote_start DISCORD_STATE_DIR=$state_dir"
     remote_start="$remote_start $runtime --dangerously-skip-permissions --channels $plugin"
 
-    echo "Starting $agent ($server via SSH)..."
-    echo "  Workspace: $workspace"
+    if ! $JSON_OUTPUT; then
+      echo "Starting $agent ($server via SSH)..."
+      echo "  Workspace: $workspace"
+    fi
     remote_cmd "$ssh_host" "$remote_user" "tmux new-session -d -s $session -c $workspace \"$remote_start\"" 2>&1
-    echo "  ✔ $agent started at $server"
-    inject_identity "$agent" "$session" "$server" "$role" &
+
+    if [[ "$wait_flag" == "true" ]]; then
+      if ! $JSON_OUTPUT; then echo "  Waiting for identity injection..."; fi
+      inject_identity "$agent" "$session" "$server" "$role"
+    else
+      inject_identity "$agent" "$session" "$server" "$role" &
+    fi
+
+    if $JSON_OUTPUT; then
+      json_obj "agent" "$agent" "state" "started" "server" "$server" "session" "$session"
+    else
+      echo "  ✔ $agent started at $server"
+    fi
   fi
 }
 
@@ -115,7 +198,11 @@ do_stop() {
   local agents
   agents=$(list_agents)
   if ! echo "$agents" | grep -qx "$agent"; then
-    echo "Error: unknown agent '$agent'"
+    if $JSON_OUTPUT; then
+      json_obj "error" "unknown agent" "agent" "$agent"
+    else
+      echo "Error: unknown agent '$agent'"
+    fi
     exit 1
   fi
 
@@ -124,14 +211,43 @@ do_stop() {
   session=$(session_name "$agent")
 
   if [[ "$server" == "local" ]]; then
-    tmux kill-session -t "$session" 2>/dev/null && echo "✔ $agent stopped" || echo "$agent is not running"
+    if tmux kill-session -t "$session" 2>/dev/null; then
+      if $JSON_OUTPUT; then
+        json_obj "agent" "$agent" "state" "stopped" "server" "local"
+      else
+        echo "✔ $agent stopped"
+      fi
+    else
+      if $JSON_OUTPUT; then
+        json_obj "agent" "$agent" "state" "not_running" "server" "local"
+      else
+        echo "$agent is not running"
+      fi
+    fi
   else
     local ssh_host remote_user
-    ssh_host=$(server_ssh_host "$server") || { echo "Error: no ssh_host for server '$server'"; exit 1; }
+    ssh_host=$(server_ssh_host "$server") || {
+      if $JSON_OUTPUT; then
+        json_obj "error" "no ssh_host" "server" "$server"
+      else
+        echo "Error: no ssh_host for server '$server'"
+      fi
+      exit 3
+    }
     remote_user=$(server_user "$server")
-    remote_cmd "$ssh_host" "$remote_user" "tmux kill-session -t $session" 2>/dev/null \
-      && echo "✔ $agent stopped at $server" \
-      || echo "$agent is not running at $server"
+    if remote_cmd "$ssh_host" "$remote_user" "tmux kill-session -t $session" 2>/dev/null; then
+      if $JSON_OUTPUT; then
+        json_obj "agent" "$agent" "state" "stopped" "server" "$server"
+      else
+        echo "✔ $agent stopped at $server"
+      fi
+    else
+      if $JSON_OUTPUT; then
+        json_obj "agent" "$agent" "state" "not_running" "server" "$server"
+      else
+        echo "$agent is not running at $server"
+      fi
+    fi
   fi
 }
 
@@ -140,15 +256,34 @@ do_status() {
 
   local prefix
   prefix=$(yaml_get "fleet.name" 2>/dev/null || echo "fleet")
+
+  if $JSON_OUTPUT; then
+    local first=true
+    echo "["
+    for agent in $(list_agents); do
+      local server session state role
+      server=$(agent_get "$agent" "server" 2>/dev/null || echo "local")
+      session=$(session_name "$agent")
+      state=$(session_state "$session" "$server")
+      role=$(agent_get "$agent" "role" 2>/dev/null || echo "")
+
+      $first || echo ","
+      json_obj "name" "$agent" "server" "$server" "state" "$state" "role" "$role" "session" "$session"
+      first=false
+    done
+    echo ""
+    echo "]"
+    return
+  fi
+
   echo "=== $prefix Fleet ==="
 
   for agent in $(list_agents); do
-    local server session state role note
+    local server session state role
     server=$(agent_get "$agent" "server" 2>/dev/null || echo "local")
     session=$(session_name "$agent")
     state=$(session_state "$session" "$server")
     role=$(agent_get "$agent" "role" 2>/dev/null || echo "")
-    note=$(agent_get "$agent" "note" 2>/dev/null || echo "")
 
     local label="$agent ($server)"
     [[ -n "$role" ]] && label="$agent ($server, $role)"
@@ -188,14 +323,24 @@ fleet — Agent fleet CLI
 
 Usage:
   fleet init                                     First-time setup wizard
-  fleet start <agent> [workspace] [--role <r>]   Start an agent
-  fleet stop <agent> [--at <server>]             Stop an agent
+  fleet start <agent> [--role <r>] [--wait] [--json]  Start an agent
+  fleet stop <agent> [--at <server>] [--json]    Stop an agent
   fleet inject <agent> <role>                    Hot-inject role
-  fleet status                                   Fleet overview
-  fleet doctor                                   Health check
+  fleet status [--json]                          Fleet overview
+  fleet doctor [--json]                          Health check
   fleet deps [--install]                         Check/install dependencies
   fleet patch [name]                             Apply Discord plugin patches
   fleet help                                     This help
+
+Flags:
+  --json    Machine-readable JSON output (for agent/script consumption)
+  --wait    Block until identity injection completes (fleet start)
+
+Exit codes:
+  0  success
+  1  usage error (bad arguments, unknown agent/command)
+  2  config error (missing fleet.yaml, missing token, bad YAML)
+  3  runtime error (SSH unreachable, tmux failure)
 
 Agents: $agents
 Roles:  ${roles:-"(none)"}
@@ -203,16 +348,13 @@ Roles:  ${roles:-"(none)"}
 Examples:
   fleet init                                   # Interactive setup
   fleet start hub                              # Default server + workspace
-  fleet start hub ~/workspace/project          # Custom workspace
+  fleet start hub --wait --json                # Agent-friendly: wait + JSON
   fleet start worker --role writer             # Start with role overlay
-  fleet start worker --at singapore            # Override server location
-  fleet inject worker reviewer                 # Hot-inject role (no restart)
   fleet stop worker                            # Stop at default server
-  fleet status                                 # Fleet overview
-  fleet doctor                                 # Verify config + connectivity
+  fleet status --json                          # JSON for agent parsing
+  fleet doctor --json                          # JSON diagnostics
   fleet deps --install                         # Auto-install missing deps
   fleet patch                                  # Apply all Discord patches
-  fleet patch state-dir                        # Apply specific patch
 EOF
 }
 
@@ -220,26 +362,32 @@ EOF
 
 parse_start_args() {
   local agent="$1"; shift
-  local custom_dir="" role="" at=""
+  local custom_dir="" role="" at="" wait_flag="false"
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --role) role="$2"; shift 2 ;;
-      --at)   at="$2"; shift 2 ;;
-      *)      custom_dir="$1"; shift ;;
+      --role)  role="$2"; shift 2 ;;
+      --at)    at="$2"; shift 2 ;;
+      --wait)  wait_flag="true"; shift ;;
+      --json)  JSON_OUTPUT=true; shift ;;
+      *)       custom_dir="$1"; shift ;;
     esac
   done
 
   # Validate --at against known servers
   if [[ -n "$at" && "$at" != "local" ]]; then
     if ! list_servers | grep -qx "$at"; then
-      echo "Error: unknown server '$at'"
-      echo "Available: local $(list_servers | tr '\n' ' ')"
+      if $JSON_OUTPUT; then
+        json_obj "error" "unknown server" "server" "$at"
+      else
+        echo "Error: unknown server '$at'"
+        echo "Available: local $(list_servers | tr '\n' ' ')"
+      fi
       exit 1
     fi
   fi
 
-  do_start "$agent" "$custom_dir" "$role" "$at"
+  do_start "$agent" "$custom_dir" "$role" "$at" "$wait_flag"
 }
 
 parse_stop_args() {
@@ -248,12 +396,33 @@ parse_stop_args() {
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --at) at="$2"; shift 2 ;;
-      *)    shift ;;
+      --at)   at="$2"; shift 2 ;;
+      --json) JSON_OUTPUT=true; shift ;;
+      *)      shift ;;
     esac
   done
 
   do_stop "$agent" "$at"
+}
+
+parse_status_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --json) JSON_OUTPUT=true; shift ;;
+      *)      shift ;;
+    esac
+  done
+  do_status
+}
+
+parse_doctor_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --json) JSON_OUTPUT=true; shift ;;
+      *)      shift ;;
+    esac
+  done
+  do_doctor
 }
 
 # ── Route ─────────────────────────────────────────────────────────────────────
@@ -263,12 +432,12 @@ AGENT="${2:-}"
 
 case "$ACTION" in
   start)
-    [[ -z "$AGENT" ]] && { echo "Usage: fleet start <agent> [workspace] [--role <role>] [--at <server>]"; exit 1; }
+    [[ -z "$AGENT" ]] && { echo "Usage: fleet start <agent> [workspace] [--role <role>] [--at <server>] [--wait] [--json]"; exit 1; }
     shift 2
     parse_start_args "$AGENT" "$@"
     ;;
   stop)
-    [[ -z "$AGENT" ]] && { echo "Usage: fleet stop <agent> [--at <server>]"; exit 1; }
+    [[ -z "$AGENT" ]] && { echo "Usage: fleet stop <agent> [--at <server>] [--json]"; exit 1; }
     shift 2
     parse_stop_args "$AGENT" "$@"
     ;;
@@ -277,13 +446,15 @@ case "$ACTION" in
     do_inject "$AGENT" "${3:-}"
     ;;
   status)
-    do_status
+    shift
+    parse_status_args "$@"
     ;;
   init)
     do_init
     ;;
   doctor)
-    do_doctor
+    shift
+    parse_doctor_args "$@"
     ;;
   deps)
     do_deps "${2:-}"
