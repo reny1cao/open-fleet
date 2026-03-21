@@ -1,67 +1,63 @@
 ---
-name: hq
-description: Manage the Discord HQ bot fleet — start, stop, inject roles, relocate bots, and check status across multiple locations
+name: fleet
+description: Manage an AI coding agent fleet — start, stop, inject roles, check status, and diagnose issues across local and remote servers
 user_invocable: true
 ---
 
-# HQ Bot Fleet Manager
+# Fleet — Agent Fleet Manager
 
-You manage a fleet of Discord bots across multiple locations. Each bot is a Claude Code session with `--channels`. Any bot can run at any location.
+You manage a fleet of AI coding agents across multiple servers. Each agent is a Claude Code session with a Discord channel plugin. All operations go through the `fleet` CLI.
 
-## Bot Registry
+## Discovery
 
-Read `bot-pool.json` for the current fleet configuration. Each entry has:
-- **name**: Bot identifier (used for tmux session `hq-<name>` and identity file lookup)
-- **location**: Default location (`local` / `singapore` / `germany`)
-- **role**: Fleet role (hub, guide, field-agent, dev-worker, infra-worker)
-- **default_dir**: Working directory when none specified
-
-## Script
-
-All operations go through: `fleet`
+```bash
+fleet status          # Who's online, who's offline
+fleet help            # Available commands
+fleet doctor          # Full health check
+```
 
 ## Commands
 
-### "start <bot>"
+### "start <agent>"
 ```bash
-fleet start <bot>
+fleet start <agent>
 ```
 
-### "start <bot> at <path>"
+### "start <agent> at <path>"
 ```bash
-fleet start <bot> <path>
+fleet start <agent> <path>
 ```
 
-### "start <bot> as <role>"
+### "start <agent> as <role>"
 ```bash
-fleet start <bot> --role <role>
+fleet start <agent> --role <role>
 ```
 
-### "relocate <bot> to <location>"
+### "relocate <agent> to <server>"
 ```bash
-fleet start <bot> --at <location>
+fleet start <agent> --at <server>
 ```
-Override the bot's default location. `<location>` = `local` / `singapore` / `germany`.
+Override the agent's default server location.
 
 ### Combine flags
 ```bash
-fleet start pilot --at singapore ~/workspace/project --role writer
+fleet start worker --at staging ~/workspace/project --role writer
 ```
-`--at`, `--role`, and work-dir can be combined freely.
+`--at`, `--role`, and workspace can be combined freely.
 
-### "inject <bot> <role>"
+### "inject <agent> <role>"
 ```bash
-fleet inject <bot> <role>
+fleet inject <agent> <role>
 ```
-Hot-inject a role into a running bot without restart.
+Hot-inject a role into a running agent without restart.
 
-### "stop <bot>"
+### "stop <agent>"
 ```bash
-fleet stop <bot>
+fleet stop <agent>
 ```
-If the bot was started with `--at`, also pass `--at`:
+If the agent was started with `--at`, also pass `--at`:
 ```bash
-fleet stop <bot> --at <location>
+fleet stop <agent> --at <server>
 ```
 
 ### "status"
@@ -70,10 +66,22 @@ fleet status
 ```
 
 ### "start all"
-Run `start` for each bot sequentially. Skip bots already running.
+Run `start` for each agent sequentially. Skip agents already running.
 
 ### "stop all"
-Run `stop` for each bot sequentially.
+Run `stop` for each agent sequentially.
+
+### "diagnose"
+```bash
+fleet doctor
+```
+Full health check: prerequisites, config, tokens, patches, SSH, remote nodes, identities.
+
+### "initialize"
+```bash
+fleet init
+```
+Interactive setup: creates fleet.yaml + .env + identity files.
 
 ## Roles
 
@@ -86,8 +94,8 @@ Add new roles by creating `identities/roles/<name>.md`.
 
 ## Rules
 
-1. **Don't start/stop yourself** — If you are Sentinel, don't `stop sentinel`
-2. **Remote bots use SSH** — spawn.sh handles this automatically; `--at` overrides default location
-3. **Report after start/stop** — Concisely state which bots started/stopped and where
-4. **Pass status output directly** — Don't reformat it, the script output is clear enough
-5. **Use --at for non-default locations** — Stopping without it will look at the default location
+1. **Don't operate on $FLEET_SELF** — Never start, stop, or inject yourself
+2. **Report after start/stop** — Concisely state which agents started/stopped and where
+3. **Pass status output directly** — Don't reformat it, the script output is clear enough
+4. **Use --at for non-default servers** — Stopping without it looks at the default server
+5. **Run doctor for issues** — If something seems wrong, `fleet doctor` before manual debugging
