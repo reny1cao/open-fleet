@@ -90,8 +90,8 @@ Guide the user through creating **one bot at a time**:
 **For the first bot:**
 1. Tell the user: "Open https://discord.com/developers/applications"
 2. "Click 'New Application' at the top right. Name it [the name you agreed on]. Click Create."
-3. "Now click 'Bot' in the left sidebar."
-4. "Click 'Reset Token', confirm, and paste the token to me."
+3. "Now click 'Bot' in the left sidebar. (The Application ID and Public Key on the current page are NOT the token.)"
+4. "Click 'Reset Token', confirm, and paste the token to me. This is the bot token — different from the Application ID."
 5. After receiving the token, verify it, then say: "One more thing on that page — scroll down to 'Privileged Gateway Intents', turn on 'Message Content Intent', and click Save."
 6. "Now note the Application ID from the General Information page. I'll use it for the invite link."
 7. Give them the invite URL: `https://discord.com/oauth2/authorize?client_id=APPLICATION_ID&scope=bot&permissions=68608`
