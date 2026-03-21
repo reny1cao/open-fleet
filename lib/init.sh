@@ -583,7 +583,7 @@ for g in guilds:
 {
   "policy": "whitelist",
   "requireMention": true,
-  "allowedUserIds": $allowed_json
+  "allowedFrom": $allowed_json
 }
 EOACCESS
       ok "access.json for ${agent_names[$i]}"
@@ -770,7 +770,44 @@ print(channels[0]['id'] if channels else '')
     fi
   done
 
-  echo "fleet.yaml, .env, and identities generated in $target_dir"
+  # Generate access.json for each agent
+  for i in "${!agent_names[@]}"; do
+    local state_dir=""
+    # Second+ agent on same server needs state_dir
+    if [[ $i -gt 0 ]]; then
+      state_dir="$HOME/.fleet/state/discord-${agent_names[$i]}"
+    else
+      state_dir="$HOME/.claude/channels/discord"
+    fi
+    mkdir -p "$state_dir"
+
+    local access_file="$state_dir/access.json"
+    if [[ ! -f "$access_file" ]]; then
+      local allowed="["
+      local first=true
+      # Add user
+      [[ -n "$user_id" ]] && { allowed="$allowed\"$user_id\""; first=false; }
+      # Add all bot IDs except self
+      for j in "${!bot_ids[@]}"; do
+        if [[ $j -ne $i ]]; then
+          $first || allowed="$allowed,"
+          allowed="$allowed\"${bot_ids[$j]}\""
+          first=false
+        fi
+      done
+      allowed="$allowed]"
+
+      cat > "$access_file" <<EOACCESS
+{
+  "policy": "whitelist",
+  "requireMention": true,
+  "allowedFrom": $allowed
+}
+EOACCESS
+    fi
+  done
+
+  echo "fleet.yaml, .env, identities, and access.json generated in $target_dir"
 }
 
 # ── Add agent to existing fleet ──────────────────────────────────────────────
@@ -922,7 +959,7 @@ print(count)
 {
   "policy": "whitelist",
   "requireMention": true,
-  "allowedUserIds": $allowed
+  "allowedFrom": $allowed
 }
 EOACCESS
       ok "access.json created"
