@@ -12,6 +12,24 @@ CLI_NAME="fleet"
 PLUGIN_DIR="$HOME/.claude/plugins/cache/claude-plugins-official/discord/0.0.1"
 PATCHES_DIR="$SCRIPT_DIR/patches"
 
+# Parse install.sh arguments
+AUTH_METHOD="--claudeai"
+for arg in "$@"; do
+  case "$arg" in
+    --console) AUTH_METHOD="--console" ;;
+    --sso)     AUTH_METHOD="--sso" ;;
+    --claudeai) AUTH_METHOD="--claudeai" ;;
+    --help|-h)
+      echo "Usage: ./install.sh [--claudeai | --console | --sso]"
+      echo ""
+      echo "Options:"
+      echo "  --claudeai   Claude subscription login (default)"
+      echo "  --console    Anthropic Console / API billing login"
+      echo "  --sso        SSO enterprise login"
+      exit 0 ;;
+  esac
+done
+
 # ── Helpers ──
 
 info()  { echo "  [ok] $1"; }
@@ -137,20 +155,15 @@ if is_logged_in; then
 else
   echo "  Not logged in. Starting login flow..."
   echo ""
-  echo "  Claude Code supports multiple auth methods:"
-  echo "    1) Claude subscription (claude.ai) — default"
-  echo "    2) Anthropic Console (API billing) — use: claude auth login --console"
-  echo "    3) SSO — use: claude auth login --sso"
-  echo ""
-  echo "  Proceeding with Claude subscription (--claudeai)..."
-  echo "  To use a different method, Ctrl+C and run the command above manually."
+  echo "  Auth method: $AUTH_METHOD"
+  echo "  Override with: ./install.sh --console  or  ./install.sh --sso"
   echo ""
 
-  # --claudeai skips the interactive method picker
-  # The login process outputs a URL that the user must open in a browser
-  tmux new-session -d -s "$LOGIN_SESSION" "claude auth login --claudeai 2>&1; sleep 10"
+  # Wide tmux window prevents URL truncation at default 80-col width
+  tmux new-session -d -s "$LOGIN_SESSION" -x 250 -y 50 "claude auth login $AUTH_METHOD 2>&1; sleep 10"
 
   # Poll tmux pane for a URL
+  # -J joins wrapped lines so URLs split across lines are captured whole
   url_found=""
   waited=0
   echo "  Waiting for login URL..."
@@ -158,8 +171,12 @@ else
   while [[ $waited -lt 30 && -z "$url_found" ]]; do
     sleep 2
     waited=$((waited + 2))
-    pane=$(tmux capture-pane -t "$LOGIN_SESSION" -p 2>/dev/null || true)
-    url_found=$(echo "$pane" | grep -oE 'https://[^ ]+' | head -1 || true)
+    pane=$(tmux capture-pane -t "$LOGIN_SESSION" -p -J 2>/dev/null || true)
+    url_found=$(echo "$pane" | tr -d '[:space:]' | grep -oE 'https://[^[:space:]]+' | head -1 || true)
+    # Fallback: try without tr in case URL has no wrapping
+    if [[ -z "$url_found" ]]; then
+      url_found=$(echo "$pane" | grep -oE 'https://[^ ]+' | head -1 || true)
+    fi
   done
 
   if [[ -n "$url_found" ]]; then
