@@ -1,0 +1,55 @@
+# Fleet configuration — define your agent topology
+# Copy to fleet.yaml and customize
+
+fleet:
+  name: hq
+  channel: discord  # communication platform
+
+servers:
+  local:
+    ssh_host: null  # no SSH needed
+    user: null
+  singapore:
+    ssh_host: your-ssh-alias-1
+    user: dev
+  germany:
+    ssh_host: your-ssh-alias-2
+    user: dev
+
+defaults:
+  workspace: ~/workspace
+  permissions: dangerously-skip  # required for unattended bots
+  channel_plugin: plugin:discord@claude-plugins-official
+
+agents:
+  sentinel:
+    role: hub
+    server: local
+    identity: identities/sentinel.md
+    workspace: ~/workspace
+    note: "Hub — dispatches only, never does heavy work"
+
+  pilot:
+    role: guide
+    server: local
+    identity: identities/pilot.md
+    workspace: ~/workspace
+    note: "Reads codebase, writes specs, reviews code"
+
+  archon:
+    role: field-agent
+    server: singapore
+    identity: identities/archon.md
+    note: "General-purpose execution on Singapore"
+
+  forge:
+    role: dev-worker
+    server: singapore
+    identity: identities/forge.md
+    note: "Focused coding execution"
+
+  citadel:
+    role: infra-worker
+    server: germany
+    identity: identities/citadel.md
+    note: "Infrastructure and ops"
