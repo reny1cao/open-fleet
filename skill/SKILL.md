@@ -46,7 +46,7 @@ Ask: "Do you have a Discord server for your fleet?"
 Tell the user to open https://discord.com/developers/applications in their browser.
 
 **Create the first bot (lead):**
-1. **Top right** of the page → click the blue **"New Application"** button → name it (e.g. "Lead") → click Create
+1. **Top right** of the page → click the blue **"New Application"** button → name it (e.g. "Lead") → click Create. This name is what the bot will be called in Discord — users will see it as the bot's display name.
 2. You land on the "General Information" page. **Left sidebar** → click **"Bot"** (has a puzzle piece icon)
 3. **Bot page, top section** → click **"Reset Token"** → confirm in the popup → **copy the token immediately**
 4. **Bot page, scroll down** to **"Privileged Gateway Intents"** section → find **"Message Content Intent"** → toggle it **ON** (turns blue) → scroll to bottom → click **"Save Changes"**
