@@ -2,9 +2,9 @@
 
 Let your agents work as a team — anywhere.
 
-One agent talks to you and understands what needs to happen. The others do the work — coding, reviewing, deploying — across any number of machines. They coordinate through Discord.
+Open Fleet puts a team of AI agents in your Discord. You talk, they work — across any number of machines, but it feels like one room.
 
-Currently supports [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Designed to support any coding agent.
+Built on [Claude Code Channels](https://docs.anthropic.com/en/docs/claude-code). Currently supports Claude Code, designed to support any agent.
 
 ## Get Started
 
