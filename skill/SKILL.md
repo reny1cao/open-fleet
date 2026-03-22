@@ -81,43 +81,29 @@ Once the user agrees on the team, move to Step 4.
 
 ### Step 4: Create bots, configure, and invite
 
-**Why:** Each agent needs a Discord bot identity (token). `fleet add-agent` handles the rest — it validates the token, generates the identity file, writes `access.json` with the correct schema, and prints the invite URL.
+**Why:** Each agent needs a Discord bot identity (token). The CLI handles everything else.
 
-**What the user provides:** Only bot tokens. Everything else is handled by the CLI.
+**What the user provides:** Only bot tokens. Everything else is auto-detected or generated.
 
 **Create one bot at a time. For each bot:**
 
 1. Tell user: "Open https://discord.com/developers/applications"
 2. "Click 'New Application' at the top right. Name it [agreed name]. Click Create."
-3. "Click 'Bot' in the left sidebar. (The Application ID and Public Key on this page are NOT the token.)"
+3. "Click 'Bot' in the left sidebar."
 4. "Click 'Reset Token', confirm, and paste the token to me."
-5. After receiving the token, run:
-   ```bash
-   fleet add-agent --token TOKEN --name AGENT_NAME --role ROLE
-   ```
-   The CLI validates the token against the Discord API, generates `identities/<name>.md`, updates `fleet.yaml`, and prints the invite URL.
-6. "One more thing — scroll down to 'Privileged Gateway Intents', turn on 'Message Content Intent', click Save."
-7. Share the invite URL from `fleet add-agent` output: "Open this link, select your server, click Authorize."
+5. "Scroll down to 'Privileged Gateway Intents', turn on 'Message Content Intent', click Save."
 
-Repeat for each bot.
-
-**After all bots are created and invited — initialize the fleet:**
-
-If starting fresh (no existing `fleet.yaml`), use `fleet init` to set up the fleet config all at once:
+Collect all tokens, then run `fleet init`:
 
 ```bash
-# First, get channel ID
-curl -sf -H "Authorization: Bot FIRST_TOKEN" https://discord.com/api/v10/users/@me/guilds
-curl -sf -H "Authorization: Bot FIRST_TOKEN" https://discord.com/api/v10/guilds/GUILD_ID/channels
+fleet init --token T1 --token T2 --name FLEET_NAME --agent lead:local:lead --agent worker:local:worker
 ```
 
-Show the text channels to the user and ask which one the fleet should use. Then:
+The CLI auto-detects the Discord server and channel, validates tokens, generates fleet.yaml, .env, identity files, access.json, and prints invite URLs.
 
-```bash
-fleet init --token T1 --token T2 --name FLEET_NAME --channel CHANNEL_ID --agent name1:local:role1 --agent name2:local:role2
-```
+Share each invite URL with the user: "Open this link, select your server, click Authorize."
 
-**Done when:** Output shows "Fleet initialized!" Verify: `cat fleet.yaml` shows agents and a non-empty `channel_id`.
+**Done when:** `cat fleet.yaml` shows agents and a non-empty `channel_id`. All bots are in the server.
 
 
 ### Step 5: Start the team
@@ -174,27 +160,10 @@ fleet doctor          # Full health check
 fleet start <agent>
 ```
 
-### "start <agent> at <path>"
-```bash
-fleet start <agent> <path>
-```
-
 ### "start <agent> as <role>"
 ```bash
 fleet start <agent> --role <role>
 ```
-
-### "relocate <agent> to <server>"
-```bash
-fleet start <agent> --at <server>
-```
-Override the agent's default server location.
-
-### Combine flags
-```bash
-fleet start worker --at staging ~/workspace/project --role writer
-```
-`--at`, `--role`, and workspace can be combined freely.
 
 ### "inject <agent> <role>"
 ```bash
@@ -205,10 +174,6 @@ Hot-inject a role into a running agent without restart.
 ### "stop <agent>"
 ```bash
 fleet stop <agent>
-```
-If the agent was started with `--at`, also pass `--at`:
-```bash
-fleet stop <agent> --at <server>
 ```
 
 ### "status"
@@ -290,5 +255,4 @@ Add new roles by creating `identities/roles/<name>.md`.
 2. **Use --json for parsing** — Never parse human-readable output; always use `--json`
 3. **Use --wait on start** — Ensures the agent is ready to receive messages before returning
 4. **Report after start/stop** — Concisely state which agents started/stopped and where
-5. **Use --at for non-default servers** — Stopping without it looks at the default server
-6. **Run doctor for issues** — If something seems wrong, `fleet doctor --json` before manual debugging
+5. **Run doctor for issues** — If something seems wrong, `fleet doctor --json` before manual debugging
