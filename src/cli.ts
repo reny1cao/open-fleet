@@ -2,6 +2,8 @@ import { start } from "./commands/start"
 import { stop } from "./commands/stop"
 import { status } from "./commands/status"
 import { init } from "./commands/init"
+import { doctor } from "./commands/doctor"
+import { patch } from "./commands/patch"
 
 function usage(): void {
   console.log(`fleet-next — Agent fleet CLI (TypeScript)
@@ -11,6 +13,8 @@ Usage:
   fleet-next start <agent> [--wait] [--role <r>]
   fleet-next stop <agent> [--force]
   fleet-next status [--json]
+  fleet-next doctor [--json]
+  fleet-next patch [--json]
   fleet-next help
 
 Flags:
@@ -65,6 +69,12 @@ export async function main(argv: string[]): Promise<void> {
       }
       case "status":
         await status({ json: parseFlag(args, "--json") })
+        break
+      case "doctor":
+        await doctor({ json: parseFlag(args, "--json") })
+        break
+      case "patch":
+        await patch({ json: parseFlag(args, "--json") })
         break
       case "help":
       case "--help":

@@ -1,0 +1,377 @@
+import { existsSync, readFileSync } from "fs"
+import { join } from "path"
+import { homedir } from "os"
+import { findConfigDir, loadConfig, loadEnv, resolveStateDir, sessionName } from "../core/config"
+import { DiscordApi } from "../channel/discord/api"
+import { TmuxLocal } from "../runtime/tmux"
+
+export interface CheckResult {
+  check: string
+  status: "pass" | "warn" | "fail" | "info"
+  message: string
+}
+
+// ── helpers ────────────────────────────────────────────────────────────────────
+
+function expandHome(p: string): string {
+  if (p.startsWith("~/")) return join(homedir(), p.slice(2))
+  if (p === "~") return homedir()
+  return p
+}
+
+async function runWithTimeout(
+  cmd: string[],
+  timeoutMs: number
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  const proc = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe" })
+
+  const timer = setTimeout(() => {
+    proc.kill()
+  }, timeoutMs)
+
+  try {
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ])
+    return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+// ── color helpers ──────────────────────────────────────────────────────────────
+
+const COLORS = {
+  pass: "\x1b[32m",   // green
+  warn: "\x1b[33m",   // yellow
+  fail: "\x1b[31m",   // red
+  info: "\x1b[36m",   // cyan
+  reset: "\x1b[0m",
+}
+
+function colorLabel(status: CheckResult["status"]): string {
+  return `${COLORS[status]}[${status}]${COLORS.reset}`
+}
+
+// ── checks ────────────────────────────────────────────────────────────────────
+
+/** Check 1: Prerequisites — bun, claude, tmux */
+async function checkPrerequisites(): Promise<CheckResult[]> {
+  const tools = ["bun", "claude", "tmux"]
+  const results: CheckResult[] = []
+
+  for (const tool of tools) {
+    try {
+      const { exitCode } = await runWithTimeout(["which", tool], 5000)
+      if (exitCode === 0) {
+        results.push({ check: `prereq:${tool}`, status: "pass", message: `${tool} found` })
+      } else {
+        results.push({ check: `prereq:${tool}`, status: "fail", message: `${tool} not found in PATH` })
+      }
+    } catch {
+      results.push({ check: `prereq:${tool}`, status: "fail", message: `${tool} not found in PATH` })
+    }
+  }
+
+  return results
+}
+
+/** Check 2: Claude Code version >= 2.1.80 */
+async function checkClaudeVersion(): Promise<CheckResult> {
+  try {
+    const { stdout, exitCode } = await runWithTimeout(["claude", "--version"], 5000)
+    if (exitCode !== 0) {
+      return { check: "claude:version", status: "warn", message: "could not get claude version" }
+    }
+
+    // Parse version string like "2.1.81" or "Claude Code 2.1.81"
+    const match = stdout.match(/(\d+)\.(\d+)\.(\d+)/)
+    if (!match) {
+      return { check: "claude:version", status: "warn", message: `could not parse version from: ${stdout}` }
+    }
+
+    const [, major, minor, patch] = match.map(Number)
+    const version = `${major}.${minor}.${patch}`
+
+    // Compare against 2.1.80
+    const isOk =
+      major > 2 ||
+      (major === 2 && minor > 1) ||
+      (major === 2 && minor === 1 && patch >= 80)
+
+    if (isOk) {
+      return { check: "claude:version", status: "pass", message: `claude v${version}` }
+    } else {
+      return {
+        check: "claude:version",
+        status: "warn",
+        message: `claude v${version} is below minimum 2.1.80`,
+      }
+    }
+  } catch {
+    return { check: "claude:version", status: "warn", message: "could not run claude --version" }
+  }
+}
+
+/** Check 3: Claude Code auth */
+async function checkClaudeAuth(): Promise<CheckResult> {
+  try {
+    const { exitCode } = await runWithTimeout(["claude", "auth", "status"], 5000)
+    if (exitCode === 0) {
+      return { check: "claude:auth", status: "pass", message: "claude auth: logged in" }
+    } else {
+      return { check: "claude:auth", status: "warn", message: "claude auth: not logged in" }
+    }
+  } catch {
+    return { check: "claude:auth", status: "warn", message: "claude auth: not checked" }
+  }
+}
+
+/** Check 4: Config validation */
+async function checkConfig(): Promise<{ result: CheckResult; configDir?: string }> {
+  try {
+    const configDir = findConfigDir()
+    loadConfig(configDir)
+    return {
+      result: { check: "config", status: "pass", message: "fleet.yaml valid" },
+      configDir,
+    }
+  } catch (err) {
+    return {
+      result: {
+        check: "config",
+        status: "fail",
+        message: `fleet.yaml: ${err instanceof Error ? err.message : err}`,
+      },
+    }
+  }
+}
+
+/** Check 5: Token validation — per agent */
+async function checkTokens(configDir: string): Promise<CheckResult[]> {
+  const config = loadConfig(configDir)
+  const envVars = loadEnv(configDir)
+  const discord = new DiscordApi()
+  const results: CheckResult[] = []
+
+  for (const [name, def] of Object.entries(config.agents)) {
+    const tokenEnv = def.tokenEnv
+    const token = process.env[tokenEnv] ?? envVars[tokenEnv]
+
+    if (!token) {
+      results.push({
+        check: `token:${name}`,
+        status: "fail",
+        message: `Token: ${name} — ${tokenEnv} not set`,
+      })
+      continue
+    }
+
+    try {
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("timeout")), 5000)
+      )
+      const botInfo = await Promise.race([discord.validateToken(token), timeoutPromise])
+      results.push({
+        check: `token:${name}`,
+        status: "pass",
+        message: `Token: ${name} (${botInfo.name})`,
+      })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      results.push({
+        check: `token:${name}`,
+        status: "fail",
+        message: `Token: ${name} — ${msg}`,
+      })
+    }
+  }
+
+  return results
+}
+
+/** Check 6: Discord plugin installed */
+async function checkPluginInstalled(): Promise<CheckResult> {
+  const pluginPath = expandHome(
+    "~/.claude/plugins/cache/claude-plugins-official/discord/0.0.1/server.ts"
+  )
+  if (existsSync(pluginPath)) {
+    return { check: "plugin:installed", status: "pass", message: "Discord plugin installed" }
+  }
+  return { check: "plugin:installed", status: "fail", message: "Discord plugin not found" }
+}
+
+/** Check 7: Patches applied */
+async function checkPatches(): Promise<CheckResult[]> {
+  const pluginPath = expandHome(
+    "~/.claude/plugins/cache/claude-plugins-official/discord/0.0.1/server.ts"
+  )
+
+  if (!existsSync(pluginPath)) {
+    return [
+      {
+        check: "patch:STATE_DIR",
+        status: "fail",
+        message: "Cannot check patches — plugin not installed",
+      },
+      {
+        check: "patch:PARTNER_BOT_IDS",
+        status: "fail",
+        message: "Cannot check patches — plugin not installed",
+      },
+    ]
+  }
+
+  let content: string
+  try {
+    content = readFileSync(pluginPath, "utf8")
+  } catch {
+    return [
+      { check: "patch:STATE_DIR", status: "fail", message: "Cannot read plugin server.ts" },
+      { check: "patch:PARTNER_BOT_IDS", status: "fail", message: "Cannot read plugin server.ts" },
+    ]
+  }
+
+  const hasStateDir = content.includes("DISCORD_STATE_DIR")
+  const hasPartnerBotIds = content.includes("PARTNER_BOT_IDS")
+
+  return [
+    {
+      check: "patch:STATE_DIR",
+      status: hasStateDir ? "pass" : "fail",
+      message: hasStateDir ? "STATE_DIR patch applied" : "DISCORD_STATE_DIR patch missing",
+    },
+    {
+      check: "patch:PARTNER_BOT_IDS",
+      status: hasPartnerBotIds ? "pass" : "fail",
+      message: hasPartnerBotIds ? "PARTNER_BOT_IDS patch applied" : "PARTNER_BOT_IDS patch missing",
+    },
+  ]
+}
+
+/** Check 8: access.json schema — per agent */
+async function checkAccessJson(configDir: string): Promise<CheckResult[]> {
+  const config = loadConfig(configDir)
+  const results: CheckResult[] = []
+
+  for (const [name] of Object.entries(config.agents)) {
+    const stateDir = resolveStateDir(name, config)
+    const accessPath = join(stateDir, "access.json")
+
+    if (!existsSync(accessPath)) {
+      results.push({
+        check: `access:${name}`,
+        status: "warn",
+        message: `access.json: ${name} — file missing (${accessPath})`,
+      })
+      continue
+    }
+
+    try {
+      const raw = JSON.parse(readFileSync(accessPath, "utf8")) as Record<string, unknown>
+      const hasRequired =
+        "dmPolicy" in raw && "allowFrom" in raw && "groups" in raw && "pending" in raw
+
+      if (hasRequired) {
+        results.push({
+          check: `access:${name}`,
+          status: "pass",
+          message: `access.json: ${name} (valid)`,
+        })
+      } else {
+        const missing = ["dmPolicy", "allowFrom", "groups", "pending"].filter((k) => !(k in raw))
+        results.push({
+          check: `access:${name}`,
+          status: "fail",
+          message: `access.json: ${name} — missing fields: ${missing.join(", ")}`,
+        })
+      }
+    } catch (err) {
+      results.push({
+        check: `access:${name}`,
+        status: "fail",
+        message: `access.json: ${name} — parse error: ${err instanceof Error ? err.message : err}`,
+      })
+    }
+  }
+
+  return results
+}
+
+/** Check 9: Running sessions — per agent (informational) */
+async function checkSessions(configDir: string): Promise<CheckResult[]> {
+  const config = loadConfig(configDir)
+  const runtime = new TmuxLocal()
+  const results: CheckResult[] = []
+
+  for (const [name] of Object.entries(config.agents)) {
+    const session = sessionName(config.fleet.name, name)
+    const running = await runtime.isRunning(session)
+    results.push({
+      check: `session:${name}`,
+      status: "info",
+      message: `${name}: ${running ? "running" : "stopped"}`,
+    })
+  }
+
+  return results
+}
+
+// ── main export ────────────────────────────────────────────────────────────────
+
+export async function doctor(opts: { json?: boolean }): Promise<void> {
+  const allResults: CheckResult[] = []
+
+  // 1. Prerequisites
+  const prereqResults = await checkPrerequisites()
+  allResults.push(...prereqResults)
+
+  // 2. Claude version
+  const versionResult = await checkClaudeVersion()
+  allResults.push(versionResult)
+
+  // 3. Claude auth
+  const authResult = await checkClaudeAuth()
+  allResults.push(authResult)
+
+  // 4. Config validation
+  const { result: configResult, configDir } = await checkConfig()
+  allResults.push(configResult)
+
+  if (configDir) {
+    // 5. Token validation
+    const tokenResults = await checkTokens(configDir)
+    allResults.push(...tokenResults)
+  }
+
+  // 6. Plugin installed
+  const pluginResult = await checkPluginInstalled()
+  allResults.push(pluginResult)
+
+  // 7. Patches applied
+  const patchResults = await checkPatches()
+  allResults.push(...patchResults)
+
+  if (configDir) {
+    // 8. access.json schema
+    const accessResults = await checkAccessJson(configDir)
+    allResults.push(...accessResults)
+
+    // 9. Running sessions
+    const sessionResults = await checkSessions(configDir)
+    allResults.push(...sessionResults)
+  }
+
+  if (opts.json) {
+    console.log(JSON.stringify(allResults, null, 2))
+    return
+  }
+
+  // Plain output
+  console.log("=== Fleet Doctor ===")
+  for (const r of allResults) {
+    console.log(`  ${colorLabel(r.status)} ${r.message}`)
+  }
+}
