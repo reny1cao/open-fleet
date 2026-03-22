@@ -163,6 +163,14 @@ export function loadConfig(dir?: string): FleetConfig {
     }
   }
 
+  // ── Validate server references ────────────────────────────────────────────
+  const serverNames = servers ? Object.keys(servers) : []
+  for (const [name, agent] of Object.entries(agents)) {
+    if (agent.server !== "local" && !serverNames.includes(agent.server)) {
+      throw new Error(`fleet.yaml: agent "${name}" references server "${agent.server}" which is not defined in servers`)
+    }
+  }
+
   return {
     fleet: { name: fleetSection.name as string, mission: fleetSection.mission as string | undefined },
     structure,

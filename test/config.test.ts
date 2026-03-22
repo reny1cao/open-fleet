@@ -482,6 +482,59 @@ describe("writeGlobalConfig", () => {
   })
 })
 
+describe("server validation", () => {
+  let dir: string
+
+  beforeEach(() => {
+    dir = makeTempDir()
+  })
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it("throws when agent server is not local and not in servers", () => {
+    const yaml = `\
+fleet:
+  name: test-fleet
+discord:
+  channel_id: "123"
+defaults:
+  workspace: ~/workspace
+agents:
+  ops:
+    role: worker
+    server: singapore
+    identity: identities/ops.md
+`
+    writeFileSync(join(dir, "fleet.yaml"), yaml)
+    expect(() => loadConfig(dir)).toThrow("singapore")
+  })
+
+  it("accepts agent server that exists in servers config", () => {
+    const yaml = `\
+fleet:
+  name: test-fleet
+discord:
+  channel_id: "123"
+defaults:
+  workspace: ~/workspace
+servers:
+  singapore:
+    ssh_host: sg-server
+    user: deploy
+agents:
+  ops:
+    role: worker
+    server: singapore
+    identity: identities/ops.md
+`
+    writeFileSync(join(dir, "fleet.yaml"), yaml)
+    const config = loadConfig(dir)
+    expect(config.agents.ops.server).toBe("singapore")
+  })
+})
+
 describe("saveConfig", () => {
   let dir: string
 
