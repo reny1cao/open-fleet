@@ -3,7 +3,7 @@ import { TmuxLocal } from "../runtime/tmux"
 
 export async function stop(
   agentName: string,
-  opts?: { force?: boolean }
+  opts?: { force?: boolean; json?: boolean }
 ): Promise<void> {
   // 1. Load config; throw if agent unknown
   const configDir = findConfigDir()
@@ -26,11 +26,19 @@ export async function stop(
   const runtime = new TmuxLocal()
 
   if (!(await runtime.isRunning(session))) {
-    console.log(`Agent "${agentName}" is not running`)
+    if (opts?.json) {
+      console.log(JSON.stringify({ agent: agentName, status: "not_running" }))
+    } else {
+      console.log(`Agent "${agentName}" is not running`)
+    }
     return
   }
 
   // 4. Stop the session
   await runtime.stop(session)
-  console.log(`Stopped ${agentName}`)
+  if (opts?.json) {
+    console.log(JSON.stringify({ agent: agentName, status: "stopped" }))
+  } else {
+    console.log(`Stopped ${agentName}`)
+  }
 }

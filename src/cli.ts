@@ -57,7 +57,7 @@ export async function main(argv: string[]): Promise<void> {
         if (tokens.length === 0) {
           await interactiveInit(process.cwd())
         } else {
-          await init({ tokens, name, agents: agents.length > 0 ? agents : undefined, channel, force: parseFlag(args, "--force") })
+          await init({ tokens, name, agents: agents.length > 0 ? agents : undefined, channel, force: parseFlag(args, "--force"), json: parseFlag(args, "--json") })
         }
         break
       }
@@ -67,13 +67,14 @@ export async function main(argv: string[]): Promise<void> {
         await start(agent, {
           wait: parseFlag(args, "--wait"),
           role: parseFlagValue(args, "--role"),
+          json: parseFlag(args, "--json"),
         })
         break
       }
       case "stop": {
         const agent = args[1]
         if (!agent || agent.startsWith("--")) throw new Error("Usage: fleet-next stop <agent>")
-        await stop(agent, { force: parseFlag(args, "--force") })
+        await stop(agent, { force: parseFlag(args, "--force"), json: parseFlag(args, "--json") })
         break
       }
       case "status":
@@ -90,7 +91,7 @@ export async function main(argv: string[]): Promise<void> {
         const role = args[2]
         if (!agent || agent.startsWith("--")) throw new Error("Usage: fleet-next inject <agent> <role>")
         if (!role || role.startsWith("--")) throw new Error("Usage: fleet-next inject <agent> <role>")
-        await inject(agent, role)
+        await inject(agent, role, { json: parseFlag(args, "--json") })
         break
       }
       case "apply":
@@ -104,7 +105,7 @@ export async function main(argv: string[]): Promise<void> {
         if (!token || !name || !role) {
           throw new Error("Usage: fleet-next add-agent --token T --name N --role R [--server S]")
         }
-        await addAgent({ token, name, role, server })
+        await addAgent({ token, name, role, server, json: parseFlag(args, "--json") })
         break
       }
       case "help":

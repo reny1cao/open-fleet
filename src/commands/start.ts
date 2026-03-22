@@ -14,7 +14,7 @@ function expandHome(p: string): string {
 
 export async function start(
   agentName: string,
-  opts: { wait?: boolean; role?: string }
+  opts: { wait?: boolean; role?: string; json?: boolean }
 ): Promise<void> {
   // 1. Find config dir and load config; throw if agent unknown
   const configDir = findConfigDir()
@@ -37,7 +37,11 @@ export async function start(
   // 5. Check if already running
   const runtime = new TmuxLocal()
   if (await runtime.isRunning(session)) {
-    console.log(`Agent "${agentName}" is already running (session: ${session})`)
+    if (opts.json) {
+      console.log(JSON.stringify({ agent: agentName, session, status: "already_running" }))
+    } else {
+      console.log(`Agent "${agentName}" is already running (session: ${session})`)
+    }
     return
   }
 
@@ -126,5 +130,9 @@ export async function start(
   }
 
   // 13. Done
-  console.log(`Done: ${session}`)
+  if (opts.json) {
+    console.log(JSON.stringify({ agent: agentName, session, status: "started" }))
+  } else {
+    console.log(`Done: ${session}`)
+  }
 }

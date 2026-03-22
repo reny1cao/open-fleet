@@ -45,8 +45,11 @@ export async function init(opts: {
   agents?: string[]
   channel?: string
   force?: boolean
+  json?: boolean
 }): Promise<void> {
   const { tokens, name, force } = opts
+  const log = opts.json ? () => {} : console.log
+  const write = opts.json ? () => {} : (s: string) => process.stdout.write(s)
 
   // ── 1. Check existing config ──────────────────────────────────────────────
   const configDir = process.cwd()
@@ -59,13 +62,13 @@ export async function init(opts: {
 
   // ── 2. Validate tokens ────────────────────────────────────────────────────
   const discord = new DiscordApi()
-  console.log(`Validating ${tokens.length} token(s)…`)
+  log(`Validating ${tokens.length} token(s)…`)
 
   const botInfos: Array<{ id: string; name: string; appId: string }> = []
   for (let i = 0; i < tokens.length; i++) {
-    process.stdout.write(`  [${i + 1}/${tokens.length}] validating… `)
+    write(`  [${i + 1}/${tokens.length}] validating… `)
     const info = await discord.validateToken(tokens[i])
-    console.log(`OK  (${info.name} / ${info.id})`)
+    log(`OK  (${info.name} / ${info.id})`)
     botInfos.push(info)
   }
 
@@ -88,7 +91,7 @@ export async function init(opts: {
   }
 
   // ── 4. Detect guild ───────────────────────────────────────────────────────
-  console.log("Detecting guild…")
+  log("Detecting guild…")
   const servers = await discord.listServers(tokens[0])
   if (servers.length === 0) {
     throw new Error(
@@ -99,15 +102,15 @@ export async function init(opts: {
   const guild = servers[0]
   const guildId = guild.id
   const ownerId = guild.ownerId
-  console.log(`  Using guild: ${guild.name} (${guildId})`)
+  log(`  Using guild: ${guild.name} (${guildId})`)
 
   // ── 5. Detect channel ─────────────────────────────────────────────────────
   let channelId: string
   if (opts.channel) {
     channelId = opts.channel
-    console.log(`  Using channel (override): ${channelId}`)
+    log(`  Using channel (override): ${channelId}`)
   } else {
-    console.log("Detecting channel…")
+    log("Detecting channel…")
     const channels = await discord.listChannels(tokens[0], guildId)
     const textChannel = channels.find((ch) => ch.type === "text")
     if (!textChannel) {
@@ -117,7 +120,7 @@ export async function init(opts: {
       )
     }
     channelId = textChannel.id
-    console.log(`  Using channel: #${textChannel.name} (${channelId})`)
+    log(`  Using channel: #${textChannel.name} (${channelId})`)
   }
 
   // ── 6. Build FleetConfig and generate fleet.yaml ──────────────────────────
@@ -151,7 +154,7 @@ export async function init(opts: {
   }
 
   saveConfig(config, configDir)
-  console.log("  Wrote fleet.yaml")
+  log("  Wrote fleet.yaml")
 
   // ── 7. Generate .env ──────────────────────────────────────────────────────
   const envLines: string[] = []
@@ -160,7 +163,7 @@ export async function init(opts: {
     envLines.push(`${envVar}=${tokens[i]}`)
   }
   writeFileSync(join(configDir, ".env"), envLines.join("\n") + "\n", "utf8")
-  console.log("  Wrote .env")
+  log("  Wrote .env")
 
   // ── 8 & 9. Identity files and access.json ─────────────────────────────────
   // Build botIds map for identity prompts
@@ -169,7 +172,8 @@ export async function init(opts: {
     botIds[agentSpecs[i].name] = botInfos[i].id
   }
 
-  console.log("Writing identity and access files…")
+  const writtenFiles: string[] = ["fleet.yaml", ".env"]
+  log("Writing identity and access files…")
   for (let i = 0; i < agentSpecs.length; i++) {
     const agentName = agentSpecs[i].name
     const stateDir = resolveStateDir(agentName, config)
@@ -180,7 +184,8 @@ export async function init(opts: {
 
     // 8. Write identity.md into stateDir (writeBootIdentity creates stateDir)
     writeBootIdentity(agentName, config, botIds, stateDir)
-    console.log(`  ${agentName}: identity.md → ${stateDir}`)
+    log(`  ${agentName}: identity.md → ${stateDir}`)
+    writtenFiles.push(`identities/${agentName}.md`)
 
     // 9. Write access.json — partnerBotIds = all other bot IDs
     const partnerBotIds = agentSpecs
@@ -192,10 +197,20 @@ export async function init(opts: {
       partnerBotIds,
       requireMention: true,
     })
-    console.log(`  ${agentName}: access.json → ${stateDir}`)
+    log(`  ${agentName}: access.json → ${stateDir}`)
   }
 
   // ── 10. Print summary ─────────────────────────────────────────────────────
+  if (opts.json) {
+    console.log(JSON.stringify({
+      fleet: name,
+      agents: agentSpecs.map((s) => s.name),
+      channel_id: channelId,
+      files: writtenFiles,
+    }))
+    return
+  }
+
   console.log("\n── Fleet initialized ──────────────────────────────────────")
   console.log(`Fleet name : ${name}`)
   console.log(`Guild      : ${guild.name} (${guildId})`)

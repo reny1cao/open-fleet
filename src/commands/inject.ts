@@ -4,7 +4,7 @@ import { TmuxLocal } from "../runtime/tmux"
 import { readdirSync, existsSync } from "fs"
 import { join } from "path"
 
-export async function inject(agentName: string, roleName: string): Promise<void> {
+export async function inject(agentName: string, roleName: string, opts?: { json?: boolean }): Promise<void> {
   // 1. Load config, verify agent exists
   const configDir = findConfigDir()
   const config = loadConfig(configDir)
@@ -48,5 +48,9 @@ export async function inject(agentName: string, roleName: string): Promise<void>
   await runtime.sendKeys(session, prompt)
 
   // 7. Print confirmation
-  console.log(`Injected role '${roleName}' into ${agentName}`)
+  if (opts?.json) {
+    console.log(JSON.stringify({ agent: agentName, role: roleName, status: "injected" }))
+  } else {
+    console.log(`Injected role '${roleName}' into ${agentName}`)
+  }
 }

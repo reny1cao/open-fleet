@@ -15,8 +15,11 @@ export async function addAgent(opts: {
   name: string
   role: string
   server?: string
+  json?: boolean
 }): Promise<void> {
   const { token, name, role, server = "local" } = opts
+  const log = opts.json ? () => {} : console.log
+  const write = opts.json ? () => {} : (s: string) => process.stdout.write(s)
 
   // 1. Load existing config
   const configDir = findConfigDir()
@@ -29,9 +32,9 @@ export async function addAgent(opts: {
 
   // 3. Validate token via DiscordApi
   const discord = new DiscordApi()
-  process.stdout.write(`Validating token for "${name}"… `)
+  write(`Validating token for "${name}"… `)
   const botInfo = await discord.validateToken(token)
-  console.log(`OK  (${botInfo.name} / ${botInfo.id})`)
+  log(`OK  (${botInfo.name} / ${botInfo.id})`)
 
   // 4. Add agent to config.agents, save fleet.yaml via saveConfig
   const tokenEnv = tokenEnvName(name)
@@ -44,7 +47,7 @@ export async function addAgent(opts: {
   }
   config.agents[name] = agentDef
   saveConfig(config, configDir)
-  console.log("  Updated fleet.yaml")
+  log("  Updated fleet.yaml")
 
   // 5. Append token to .env
   const envLine = `${tokenEnv}=${token}\n`
@@ -54,7 +57,7 @@ export async function addAgent(opts: {
   } else {
     writeFileSync(envPath, envLine, "utf8")
   }
-  console.log("  Updated .env")
+  log("  Updated .env")
 
   // 6. Generate identity file via writeBootIdentity
   // Build botIds map from existing agents (best effort: use "unknown" for others)
@@ -79,7 +82,7 @@ export async function addAgent(opts: {
 
   const stateDir = resolveStateDir(name, config)
   writeBootIdentity(name, config, botIds, stateDir)
-  console.log(`  Wrote identity.md → ${stateDir}`)
+  log(`  Wrote identity.md → ${stateDir}`)
 
   // 7. Generate access.json via writeAccessConfig
   const partnerBotIds = Object.entries(botIds)
@@ -92,14 +95,26 @@ export async function addAgent(opts: {
     partnerBotIds,
     requireMention: true,
   })
-  console.log(`  Wrote access.json → ${stateDir}`)
+  log(`  Wrote access.json → ${stateDir}`)
 
   // 7b. Update ALL agents' roster CLAUDE.md (running agents pick this up on next turn)
   updateAllRosters(config, botIds, resolveStateDir)
-  console.log(`  Updated roster for all ${Object.keys(config.agents).length} agents`)
+  log(`  Updated roster for all ${Object.keys(config.agents).length} agents`)
 
   // 8. Print invite URL and next steps
   const inviteUrl = discord.inviteUrl(botInfo.appId)
+
+  if (opts.json) {
+    console.log(JSON.stringify({
+      agent: name,
+      bot: botInfo.name,
+      bot_id: botInfo.id,
+      invite_url: inviteUrl,
+      status: "added",
+    }))
+    return
+  }
+
   console.log(`\n── Agent "${name}" added ──────────────────────────────────`)
   console.log(`Bot     : ${botInfo.name} (${botInfo.id})`)
   console.log(`Role    : ${role}`)
