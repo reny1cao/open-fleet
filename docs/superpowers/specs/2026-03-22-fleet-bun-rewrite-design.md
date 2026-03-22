@@ -522,9 +522,28 @@ Fleet-managed agents should default to `DISCORD_ACCESS_MODE=static` in their env
 1. **Plugin fork timing** — When does fleet need enough plugin control to justify forking discord plugin into the repo?
 2. **Org structure in practice** — The `structure` field in fleet.yaml is forward-looking. For v1, only `topology: star` with `lead` is implemented. Hierarchy/mesh/squad come with govern + adapt layers.
 
+## Verified Assumptions (2026-03-22)
+
+All critical assumptions tested against Claude Code v2.1.81 and Bun v1.3.8:
+
+| Assumption | Status | Notes |
+|---|---|---|
+| `--append-system-prompt-file` | Verified | Not in `--help` flags but works. Tested: loads identity correctly |
+| `--channels <plugin>` | Verified | Undocumented flag, confirmed working with `plugin:discord@claude-plugins-official` |
+| `bun build --compile` with yaml pkg | Verified | 73 modules, 158ms compile, single binary runs correctly |
+| `DISCORD_ACCESS_MODE=static` | Verified | Plugin reads env var at boot (server.ts:48), snapshots access.json |
+| Cross-compile to Linux | Verified | `bun build --compile --target=bun-linux-x64-modern` works (downloads runtime) |
+| `--permission-mode bypassPermissions` | Exists | Alternative to `--dangerously-skip-permissions`. Both work. Prefer `--dangerously-skip-permissions` for now (fleet's current convention) |
+
+**First-run confirmation prompt:** When `--dangerously-skip-permissions` is used for the first time, Claude Code shows a bypass permissions confirmation. The current bash version auto-accepts it via tmux polling. The TS version should do the same via `RuntimeAdapter.waitFor` + `sendKeys`. This is NOT eliminated by `--append-system-prompt-file` — it's a separate concern.
+
+**Binary distribution:** `bun build --compile` produces a platform-specific binary. For remote Linux servers, cross-compile with `--target=bun-linux-x64-modern`. The install script should detect platform and download the right binary, or build from source if bun is available.
+
 ## Resolved Questions
 
-1. ~~`--project-dir` behavior~~ — **Resolved.** Claude Code has `--append-system-prompt-file <path>` which loads identity before the session starts. No CLAUDE.md conflicts, no race condition.
+1. ~~`--project-dir` behavior~~ — **Resolved.** `--append-system-prompt-file <path>` loads identity before the session starts. No CLAUDE.md conflicts, no race condition.
+2. ~~`bun build --compile` viability~~ — **Resolved.** Single binary works with yaml dependency. Cross-compilation to Linux supported.
+3. ~~`DISCORD_ACCESS_MODE=static`~~ — **Resolved.** Plugin supports it. Fleet agents should set this by default.
 
 ## Success Criteria
 
