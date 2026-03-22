@@ -5,7 +5,7 @@ Thanks for your interest in contributing! Fleet is a shell-native tool for orche
 ## Getting Started
 
 1. Fork and clone the repo
-2. Run `./setup.sh` to set up dependencies
+2. Run `./install.sh` to set up dependencies
 3. Create a `fleet.yaml` (see `fleet.yaml.example`)
 4. Test with `fleet doctor`
 

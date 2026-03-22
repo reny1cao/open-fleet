@@ -6,6 +6,53 @@
 
 PLUGIN_DIR="$HOME/.claude/plugins/cache/claude-plugins-official/discord/0.0.1"
 
+# Sync PARTNER_BOT_IDS in server.ts with all bot IDs from fleet.yaml + .env
+# Called after patch, init, and add-agent to keep bot-to-bot messaging working
+sync_partner_bot_ids() {
+  local server_ts="$PLUGIN_DIR/server.ts"
+  [[ -f "$server_ts" ]] || return 0
+  grep -q "PARTNER_BOT_IDS" "$server_ts" || return 0
+
+  # Collect bot IDs by validating tokens from .env
+  local env_file="${FLEET_ENV:-$FLEET_DIR/.env}"
+  [[ -f "$env_file" ]] || return 0
+
+  local ids=()
+  while IFS='=' read -r key val; do
+    [[ "$key" == DISCORD_BOT_TOKEN_* && -n "$val" && "$val" != "PASTE_TOKEN_HERE" ]] || continue
+    local bot_json
+    bot_json=$(curl -sf -H "Authorization: Bot $val" "https://discord.com/api/v10/users/@me" 2>/dev/null) || continue
+    local bot_id
+    bot_id=$(echo "$bot_json" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])" 2>/dev/null) || continue
+    [[ -n "$bot_id" ]] && ids+=("$bot_id")
+  done < "$env_file"
+
+  [[ ${#ids[@]} -eq 0 ]] && return 0
+
+  # Build the new Set content
+  local set_content=""
+  for id in "${ids[@]}"; do
+    set_content="${set_content}  '${id}',\n"
+  done
+
+  # Replace the PARTNER_BOT_IDS block
+  python3 -c "
+import re, sys
+with open(sys.argv[1], 'r') as f:
+    content = f.read()
+# Match: const PARTNER_BOT_IDS = new Set([\n...\n])
+pattern = r'const PARTNER_BOT_IDS = new Set\(\[.*?\]\)'
+replacement = 'const PARTNER_BOT_IDS = new Set([\n${set_content}])'
+new_content = re.sub(pattern, replacement, content, flags=re.DOTALL)
+with open(sys.argv[1], 'w') as f:
+    f.write(new_content)
+" "$server_ts"
+
+  $JSON_OUTPUT 2>/dev/null && return 0
+  $QUIET_OUTPUT 2>/dev/null && return 0
+  echo "  Updated PARTNER_BOT_IDS with ${#ids[@]} bot ID(s)"
+}
+
 do_patch() {
   local specific="${1:-all}"  # all, state-dir, partner-bot-ids, presence
 
@@ -97,6 +144,11 @@ const PARTNER_BOT_IDS = new Set([\\
 
   # Clean up backup files
   rm -f "$PLUGIN_DIR/server.ts.bak"
+
+  # If fleet.yaml exists, auto-populate PARTNER_BOT_IDS with all fleet bot IDs
+  if [[ -f "${FLEET_YAML:-}" ]] && grep -q "PARTNER_BOT_IDS" "$server_ts" 2>/dev/null; then
+    sync_partner_bot_ids
+  fi
 
   # ── Summary ──
   echo ""

@@ -540,6 +540,15 @@ for g in guilds:
         echo ""
         echo "- **Always reply via Discord reply tool** — terminal output does not reach Discord"
         echo "- Report concisely, conclusions first"
+        echo "- When you receive a task, acknowledge briefly (react or short reply) before starting work — so the user knows you received it"
+        echo ""
+        echo "## Discord Formatting"
+        echo ""
+        echo "- Do NOT use markdown tables — Discord doesn't render them"
+        echo "- Do NOT use HTML tags or image syntax"
+        echo "- OK to use: **bold**, *italic*, \`code\`, \`\`\`code blocks\`\`\`, > quotes, - lists, # headings"
+        echo "- @mention teammates with \`<@BOT_ID>\`"
+        echo "- Max 2000 chars per message — split longer messages"
       } > "$id_file"
       ok "identities/${agent_names[$i]}.md"
     else
@@ -617,6 +626,9 @@ print(json.dumps(data, indent=2))
   else
     warn "Discord plugin not installed — run: claude plugin install discord@claude-plugins-official"
   fi
+
+  # Sync PARTNER_BOT_IDS in Discord plugin with all fleet bot IDs
+  FLEET_DIR="$target_dir" FLEET_ENV="$target_dir/.env" sync_partner_bot_ids 2>/dev/null || true
 
   # ── Done ──
   echo ""
@@ -763,8 +775,20 @@ print(channels[0]['id'] if channels else '')
     done
   } > "$target_dir/.env"
 
-  # Generate identity stubs
+  # Generate identity files (full — same as interactive mode)
   mkdir -p "$target_dir/identities"
+  # Resolve channel name from API if possible
+  local fleet_channel_name=""
+  if [[ -n "$channel_id" && -n "$guild_id" ]]; then
+    fleet_channel_name=$(get_channels "${tokens[0]}" "$guild_id" 2>/dev/null | python3 -c "
+import json, sys
+channels = json.load(sys.stdin)
+for c in channels:
+    if c['id'] == sys.argv[1]:
+        print(c['name'])
+        break
+" "$channel_id" 2>/dev/null || echo "")
+  fi
   for i in "${!agent_names[@]}"; do
     local id_file="$target_dir/identities/${agent_names[$i]}.md"
     if [[ ! -f "$id_file" || "$force" == "true" ]]; then
@@ -773,10 +797,43 @@ print(channels[0]['id'] if channels else '')
       {
         echo "You are **${agent_names[$i]}**, a ${agent_roles[$i]} in the fleet. Bot ID \`${display_bot_id:-YOUR_BOT_ID}\`."
         echo ""
+        echo "## Role"
+        echo ""
+        echo "${agent_roles[$i]}"
+        echo ""
+        echo "## Team"
+        echo ""
+        for j in "${!agent_names[@]}"; do
+          if [[ $j -ne $i ]]; then
+            local peer_id=""
+            [[ $j -lt ${#bot_ids[@]} ]] && peer_id="${bot_ids[$j]}"
+            echo "- ${agent_names[$j]} (\`${peer_id:-BOT_ID}\`) — ${agent_servers[$j]} — ${agent_roles[$j]}"
+          fi
+        done
+        echo ""
+        [[ -n "$user_id" ]] && echo "User: \`$user_id\`"
+        echo ""
+        echo "## Channel"
+        echo ""
+        if [[ -n "$fleet_channel_name" ]]; then
+          echo "- #$fleet_channel_name (\`$channel_id\`)"
+        elif [[ -n "$channel_id" ]]; then
+          echo "- \`$channel_id\`"
+        fi
+        echo ""
         echo "## Rules"
         echo ""
         echo "- **Always reply via Discord reply tool** — terminal output does not reach Discord"
         echo "- Report concisely, conclusions first"
+        echo "- When you receive a task, acknowledge briefly (react or short reply) before starting work — so the user knows you received it"
+        echo ""
+        echo "## Discord Formatting"
+        echo ""
+        echo "- Do NOT use markdown tables — Discord doesn't render them"
+        echo "- Do NOT use HTML tags or image syntax"
+        echo "- OK to use: **bold**, *italic*, \`code\`, \`\`\`code blocks\`\`\`, > quotes, - lists, # headings"
+        echo "- @mention teammates with \`<@BOT_ID>\`"
+        echo "- Max 2000 chars per message — split longer messages"
       } > "$id_file"
     fi
   done
@@ -829,6 +886,9 @@ print(json.dumps(data, indent=2))
 " > "$access_file"
     fi
   done
+
+  # Sync PARTNER_BOT_IDS in Discord plugin with all fleet bot IDs
+  FLEET_DIR="$target_dir" FLEET_ENV="$target_dir/.env" sync_partner_bot_ids 2>/dev/null || true
 
   echo "fleet.yaml, .env, identities, and access.json generated in $target_dir"
 }
@@ -940,54 +1000,107 @@ print(count)
   local id_file="$FLEET_DIR/identities/$agent_name.md"
   mkdir -p "$FLEET_DIR/identities"
   if [[ ! -f "$id_file" ]]; then
+    local fleet_channel_id
+    fleet_channel_id=$(yaml_get "discord.channel_id" 2>/dev/null || echo "")
+    local user_id
+    user_id=$(yaml_get "discord.user_id" 2>/dev/null || echo "")
     {
       echo "You are **$agent_name**, a $agent_role in the fleet. Bot ID \`$app_id\`."
+      echo ""
+      echo "## Role"
+      echo ""
+      echo "$agent_role"
       echo ""
       echo "## Team"
       echo ""
       for existing in $(list_agents); do
         [[ "$existing" == "$agent_name" ]] && continue
-        local peer_role
+        local peer_role peer_server
         peer_role=$(agent_get "$existing" "role" 2>/dev/null || echo "")
-        echo "- $existing — $peer_role"
+        peer_server=$(agent_get "$existing" "server" 2>/dev/null || echo "local")
+        # Try to get peer bot ID from its identity file
+        local peer_bot_id=""
+        local peer_id_file="$FLEET_DIR/identities/$existing.md"
+        if [[ -f "$peer_id_file" ]]; then
+          peer_bot_id=$(grep -oP 'Bot ID `\K[0-9]+' "$peer_id_file" 2>/dev/null || echo "")
+        fi
+        echo "- $existing (\`${peer_bot_id:-BOT_ID}\`) — $peer_server — $peer_role"
       done
+      echo ""
+      [[ -n "$user_id" ]] && echo "User: \`$user_id\`"
+      echo ""
+      echo "## Channel"
+      echo ""
+      [[ -n "$fleet_channel_id" ]] && echo "- \`$fleet_channel_id\`"
       echo ""
       echo "## Rules"
       echo ""
       echo "- **Always reply via Discord reply tool** — terminal output does not reach Discord"
       echo "- Report concisely, conclusions first"
+      echo ""
+      echo "## Discord Formatting"
+      echo ""
+      echo "- Do NOT use markdown tables — Discord doesn't render them"
+      echo "- Do NOT use HTML tags or image syntax"
+      echo "- OK to use: **bold**, *italic*, \`code\`, \`\`\`code blocks\`\`\`, > quotes, - lists, # headings"
+      echo "- @mention teammates with \`<@BOT_ID>\`"
+      echo "- Max 2000 chars per message — split longer messages"
     } > "$id_file"
     ok "Identity file: identities/$agent_name.md"
   fi
 
-  # Generate access.json
+  # Generate access.json with correct schema (must match gate() function)
+  local expanded_state=""
   if [[ -n "$state_dir" ]]; then
-    local expanded_state="${state_dir/#\~/$HOME}"
-    mkdir -p "$expanded_state"
-    local user_id
-    user_id=$(yaml_get "discord.user_id" 2>/dev/null || echo "")
-    local access_file="$expanded_state/access.json"
-    if [[ ! -f "$access_file" ]]; then
-      local allowed="["
-      local first=true
-      [[ -n "$user_id" ]] && { allowed="$allowed\"$user_id\""; first=false; }
-      for existing in $(list_agents); do
-        [[ "$existing" == "$agent_name" ]] && continue
-        local peer_id
-        peer_id=$(agent_get "$existing" "token_env" 2>/dev/null)
-        # We don't have peer bot IDs easily, skip for now
-      done
-      allowed="$allowed]"
-      cat > "$access_file" <<EOACCESS
-{
-  "policy": "whitelist",
-  "requireMention": true,
-  "allowedFrom": $allowed
-}
-EOACCESS
-      ok "access.json created"
-    fi
+    expanded_state="${state_dir/#\~/$HOME}"
+  else
+    expanded_state="$HOME/.claude/channels/discord"
   fi
+  mkdir -p "$expanded_state"
+  local user_id
+  user_id=$(yaml_get "discord.user_id" 2>/dev/null || echo "")
+  local fleet_channel_id
+  fleet_channel_id=$(yaml_get "discord.channel_id" 2>/dev/null || echo "")
+  local access_file="$expanded_state/access.json"
+  if [[ ! -f "$access_file" ]]; then
+    # Build allowFrom: user + all other bot IDs
+    local dm_allow="["
+    local first=true
+    [[ -n "$user_id" ]] && { dm_allow="$dm_allow\"$user_id\""; first=false; }
+    # Read peer bot IDs from their identity files
+    for existing in $(list_agents); do
+      [[ "$existing" == "$agent_name" ]] && continue
+      local peer_bot_id=""
+      local peer_id_file="$FLEET_DIR/identities/$existing.md"
+      if [[ -f "$peer_id_file" ]]; then
+        peer_bot_id=$(grep -oP 'Bot ID `\K[0-9]+' "$peer_id_file" 2>/dev/null || echo "")
+      fi
+      if [[ -n "$peer_bot_id" ]]; then
+        $first || dm_allow="$dm_allow,"
+        dm_allow="$dm_allow\"$peer_bot_id\""
+        first=false
+      fi
+    done
+    dm_allow="$dm_allow]"
+
+    local groups="{}"
+    [[ -n "$fleet_channel_id" ]] && groups="{\"$fleet_channel_id\":{\"requireMention\":true,\"allowFrom\":[]}}"
+
+    python3 -c "
+import json
+data = {
+    'dmPolicy': 'allowlist',
+    'allowFrom': json.loads('$dm_allow'),
+    'groups': json.loads('$groups'),
+    'pending': {}
+}
+print(json.dumps(data, indent=2))
+" > "$access_file"
+    ok "access.json created"
+  fi
+
+  # Sync PARTNER_BOT_IDS with the new bot
+  sync_partner_bot_ids 2>/dev/null || true
 
   # Print invite URL
   echo ""
