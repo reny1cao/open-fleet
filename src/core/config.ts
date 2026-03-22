@@ -1,5 +1,5 @@
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml"
-import { readFileSync, writeFileSync, existsSync } from "fs"
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs"
 import { join, dirname } from "path"
 import { homedir } from "os"
 import type { FleetConfig, AgentDef, ServerConfig, OrgStructure } from "./types"
@@ -34,10 +34,14 @@ function deriveTokenEnv(agentName: string): string {
  *   1. $FLEET_CONFIG env var (must point to a fleet.yaml file)
  *   2. startDir (default: cwd)
  *   3. $FLEET_DIR env var
+ *   4. ~/.fleet/config.json → defaultFleet (global fallback)
+ *
+ * @param startDir   Override CWD for location 2.
+ * @param globalConfigDir  Override ~/.fleet for location 4 (used in tests).
  *
  * Throws "fleet.yaml not found" if none of the locations have fleet.yaml.
  */
-export function findConfigDir(startDir?: string): string {
+export function findConfigDir(startDir?: string, globalConfigDir?: string): string {
   // 1. $FLEET_CONFIG
   const fleetConfig = process.env.FLEET_CONFIG
   if (fleetConfig && existsSync(fleetConfig)) {
@@ -56,7 +60,31 @@ export function findConfigDir(startDir?: string): string {
     return fleetDir
   }
 
-  throw new Error("fleet.yaml not found")
+  // 4. ~/.fleet/config.json → defaultFleet
+  const configJsonDir = globalConfigDir ?? join(process.env.HOME ?? homedir(), ".fleet")
+  const configJsonPath = join(configJsonDir, "config.json")
+  if (existsSync(configJsonPath)) {
+    try {
+      const { defaultFleet } = JSON.parse(readFileSync(configJsonPath, "utf8"))
+      if (defaultFleet && existsSync(join(defaultFleet, "fleet.yaml"))) {
+        return defaultFleet
+      }
+    } catch {}
+  }
+
+  throw new Error("fleet.yaml not found. Run 'fleet init' to create one.")
+}
+
+// ── writeGlobalConfig ─────────────────────────────────────────────────────────
+
+/** Write ~/.fleet/config.json so fleet commands work from any directory. */
+export function writeGlobalConfig(fleetDir: string): void {
+  const globalDir = join(process.env.HOME ?? homedir(), ".fleet")
+  mkdirSync(globalDir, { recursive: true })
+  writeFileSync(
+    join(globalDir, "config.json"),
+    JSON.stringify({ defaultFleet: fleetDir }, null, 2) + "\n"
+  )
 }
 
 // ── loadConfig ────────────────────────────────────────────────────────────────

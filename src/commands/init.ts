@@ -2,7 +2,7 @@ import { existsSync, writeFileSync, mkdirSync } from "fs"
 import { join } from "path"
 import { homedir } from "os"
 import { createInterface } from "readline"
-import { saveConfig, resolveStateDir } from "../core/config"
+import { saveConfig, resolveStateDir, writeGlobalConfig } from "../core/config"
 import type { FleetConfig, AgentDef } from "../core/types"
 import { writeBootIdentity } from "../core/identity"
 import { DiscordApi } from "../channel/discord/api"
@@ -157,6 +157,8 @@ export async function init(opts: {
 
   saveConfig(config, configDir)
   log("  Wrote fleet.yaml")
+  writeGlobalConfig(configDir)
+  if (!opts.json) console.log("  Wrote global config → ~/.fleet/config.json")
 
   // ── 7. Generate .env ──────────────────────────────────────────────────────
   const envLines: string[] = []

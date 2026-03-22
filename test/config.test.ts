@@ -10,6 +10,7 @@ import {
   resolveStateDir,
   sessionName,
   findConfigDir,
+  writeGlobalConfig,
 } from "../src/core/config"
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -400,6 +401,84 @@ describe("sessionName", () => {
   it("returns fleetName-agentName format", () => {
     expect(sessionName("my-fleet", "hub")).toBe("my-fleet-hub")
     expect(sessionName("my-fleet", "worker-1")).toBe("my-fleet-worker-1")
+  })
+})
+
+describe("findConfigDir with global config", () => {
+  let fleetDir: string
+  let globalConfigDir: string
+  let origEnv: Record<string, string | undefined>
+
+  beforeEach(() => {
+    fleetDir = makeTempDir()
+    globalConfigDir = makeTempDir()
+    origEnv = {
+      FLEET_CONFIG: process.env.FLEET_CONFIG,
+      FLEET_DIR: process.env.FLEET_DIR,
+    }
+    delete process.env.FLEET_CONFIG
+    delete process.env.FLEET_DIR
+  })
+
+  afterEach(() => {
+    rmSync(fleetDir, { recursive: true, force: true })
+    rmSync(globalConfigDir, { recursive: true, force: true })
+    for (const [k, v] of Object.entries(origEnv)) {
+      if (v === undefined) delete process.env[k]
+      else process.env[k] = v
+    }
+  })
+
+  it("falls back to global config.json when no other source has fleet.yaml", () => {
+    writeFileSync(join(fleetDir, "fleet.yaml"), VALID_FLEET_YAML)
+    writeFileSync(
+      join(globalConfigDir, "config.json"),
+      JSON.stringify({ defaultFleet: fleetDir }, null, 2) + "\n"
+    )
+    // startDir has no fleet.yaml, env vars cleared
+    const nonexistent = join(globalConfigDir, "nonexistent-startdir")
+    const found = findConfigDir(nonexistent, globalConfigDir)
+    expect(found).toBe(fleetDir)
+  })
+
+  it("ignores global config if the pointed fleet dir has no fleet.yaml", () => {
+    // globalConfigDir/config.json points to fleetDir but fleetDir has no fleet.yaml
+    writeFileSync(
+      join(globalConfigDir, "config.json"),
+      JSON.stringify({ defaultFleet: fleetDir }, null, 2) + "\n"
+    )
+    const nonexistent = join(globalConfigDir, "nonexistent-startdir")
+    expect(() => findConfigDir(nonexistent, globalConfigDir)).toThrow("fleet.yaml not found")
+  })
+
+})
+
+describe("writeGlobalConfig", () => {
+  let fleetDir: string
+  let fakeHome: string
+  let origHome: string | undefined
+
+  beforeEach(() => {
+    fleetDir = makeTempDir()
+    fakeHome = makeTempDir()
+    origHome = process.env.HOME
+  })
+
+  afterEach(() => {
+    rmSync(fleetDir, { recursive: true, force: true })
+    rmSync(fakeHome, { recursive: true, force: true })
+    if (origHome === undefined) delete process.env.HOME
+    else process.env.HOME = origHome
+  })
+
+  it("writes ~/.fleet/config.json with defaultFleet set to the given dir", () => {
+    process.env.HOME = fakeHome
+    writeGlobalConfig(fleetDir)
+    const { readFileSync: rfs, existsSync: efs } = require("fs")
+    const configPath = join(fakeHome, ".fleet", "config.json")
+    expect(efs(configPath)).toBe(true)
+    const parsed = JSON.parse(rfs(configPath, "utf8"))
+    expect(parsed.defaultFleet).toBe(fleetDir)
   })
 })
 
