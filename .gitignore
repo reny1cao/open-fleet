@@ -16,3 +16,4 @@ identities/*.md
 node_modules/
 fleet-next
 dist/
+*.bun-build
