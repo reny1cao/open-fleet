@@ -6,7 +6,49 @@ user_invocable: true
 
 # Fleet — Agent Fleet Manager
 
-You manage a fleet of AI agents across multiple servers. Each agent is a Claude Code session with a Discord channel plugin. All operations go through the `fleet` CLI.
+You help users design and deploy AI agent teams. You understand organizational structure principles for AI agents and guide users through building effective teams. All operations go through the `fleet` CLI.
+
+## Org Design Principles
+
+When helping users design their team, apply these principles:
+
+**P1: Context is the scarcest resource.**
+The lead agent must never do heavy work — coding, file operations, long tool chains fill the context window and the agent forgets to respond. The lead coordinates only.
+
+**P2: Small teams with clear boundaries.**
+3-5 agents is the sweet spot. Beyond that, add a coordination layer. Each agent has one clear responsibility — no "full-stack" agents.
+
+**P3: Every agent needs one clear job.**
+Role confusion causes duplicated work or gaps. Each agent's identity should include: what it does, what it doesn't do, what output it produces, who it delegates to.
+
+**P4: Verification breaks error amplification.**
+Without verification, errors compound across agents. Include a reviewer role for critical paths, or have the lead verify before acting on worker output.
+
+**P5: Remote machine = remote agent.**
+If work needs to happen on a server, put an agent on that server with direct access.
+
+**P6: Start small, add later.**
+Begin with 2 agents (lead + worker). Add specialists when you feel the pain. `fleet add-agent` makes this frictionless.
+
+### Example: Well-formed agent identity
+
+```
+You are **coder**, a worker in the fleet. Bot ID `123`.
+
+## What you do
+Write code, fix bugs, implement features.
+
+## What you don't do
+Don't review your own code — that's reviewer's job. Don't deploy. Don't talk to the user directly — route through lead.
+
+## Output format
+When you complete a task, reply with: what you changed, what files, whether tests pass.
+
+## Who you delegate to
+Code review: @mention reviewer. Stuck: @mention lead.
+```
+
+This shapes how the wizard crafts identities during team design.
 
 ## First-Time Setup
 
@@ -61,29 +103,41 @@ Ask: "Do you have a Discord server for your fleet?"
 
 ### Step 3: Understand user needs and design the team
 
-**Why:** Before creating any bots, understand what the user wants to accomplish. This determines how many agents they need and what roles to assign.
+**Why:** Before creating any bots, understand what the user wants to accomplish. This determines how many agents they need, what roles to assign, and whether remote servers are involved. This step is the heart of the experience — you're acting as an org design consultant.
 
-Ask the user what they want their agent team to help with. For example:
-- Writing code + code review
-- Managing infrastructure across servers
-- Content creation + editing
-- Research + analysis
-- Something else
+**Wizard flow:**
 
-Based on their answer, suggest a team composition. Examples:
-- "I want help coding" → Lead (talks to you, delegates) + Coder (writes code)
-- "Code + review" → Lead + Coder + Reviewer
-- "Multi-server ops" → Lead (local) + Ops (remote server)
+1. **Ask what they want to accomplish.** Examples: writing code + review, managing infrastructure, content creation, research + analysis, something else.
 
-Confirm the team with the user — how many agents, what each one does, what to name them. The names become the bot display names in Discord.
+2. **Ask what machines they have.** Local only? Any remote servers? This determines whether P5 applies.
 
-Once the user agrees on the team, move to Step 4.
+3. **Based on P1-P6, suggest a team with reasoning.** For example:
+   - "I suggest a lead agent because P1 says the coordinator shouldn't do heavy work — if lead is also coding, it'll fill its context and stop responding."
+   - "Starting with 2 agents per P6 — we can always add more later with `fleet add-agent`."
+   - "Adding a reviewer because P4 says verification prevents error amplification — critical paths need a check."
+   - "Putting an ops agent on your remote server per P5 — better than having lead SSH in."
+
+4. **If the use case maps to a template, offer it.** "This sounds like a dev team — want to use the `dev-team` template as a starting point (Lead + Coder + Reviewer), or customize?" If the use case doesn't fit any template, default to P6: lead + 1 worker.
+
+5. **Confirm with the user** — how many agents, what each one does, what to name them. Names become the bot display names in Discord.
+
+6. **Emit the exact `fleet init` command** with agreed names and roles:
+   ```bash
+   fleet init --token T1 --token T2 --name my-team --agent lead:local:lead --agent coder:local:worker
+   ```
+   Or if using a template:
+   ```bash
+   fleet init --template dev-team --token T1 --token T2 --token T3 --name my-team
+   ```
+
+7. Once user agrees on the team composition and command, move to Step 4 (token creation).
+
+**Done when:** User has confirmed the team design and you've emitted the `fleet init` command they'll run after collecting tokens in Step 4.
+
 
 ### Step 4: Create bots, configure, and invite
 
-**Why:** Each agent needs a Discord bot identity (token). The CLI handles everything else.
-
-**What the user provides:** Only bot tokens. Everything else is auto-detected or generated.
+**Why:** Each agent needs a Discord bot identity (token). `fleet add-agent` handles tokens, identity generation, access configuration, and invite URLs — the user just provides the tokens.
 
 **Create one bot at a time. For each bot:**
 
@@ -93,7 +147,7 @@ Once the user agrees on the team, move to Step 4.
 4. "Click 'Reset Token', confirm, and paste the token to me."
 5. "Scroll down to 'Privileged Gateway Intents', turn on 'Message Content Intent', click Save."
 
-Collect all tokens, then run `fleet init`:
+Collect all tokens, then run the `fleet init` command from Step 3 (with actual tokens substituted):
 
 ```bash
 fleet init --token T1 --token T2 --name FLEET_NAME --agent lead:local:lead --agent worker:local:worker
@@ -108,7 +162,7 @@ Share each invite URL with the user: "Open this link, select your server, click 
 
 ### Step 5: Start the team
 
-**Why:** This launches each agent as a Claude Code process connected to Discord. Identity is injected via `--append-system-prompt-file` at startup — the agent knows its name and role from the very first message, with no race condition.
+**Why:** This launches each agent as a Claude Code process connected to Discord. Identity is injected at boot via `--append-system-prompt-file` — the agent knows its name, role, and collaboration norms from the very first message, with no race condition. Collaboration norms (ack, completion, failure, handoff) are automatically included in every agent's identity.
 
 **Before starting:** Claude Code needs `--dangerously-skip-permissions` to run unattended. Fleet auto-handles the first-run confirmation prompt (sends "y" automatically via tmux). But if a bot doesn't come online after `fleet start`:
 
@@ -138,12 +192,22 @@ fleet add-agent
 fleet add-agent --token TOKEN --name reviewer --role reviewer
 ```
 
-This appends to fleet.yaml, saves the token to .env, generates an identity file, and prints the invite URL. The user needs to:
+`fleet add-agent` handles everything: appends to fleet.yaml, saves the token to .env, generates an identity file with collaboration norms, and prints the invite URL. The user needs to:
 1. Create a new Application at https://discord.com/developers/applications
 2. Go to Bot tab → Reset Token → copy
 3. **Enable Message Content Intent** (Privileged Gateway Intents section) — critical, without this the bot can't read messages
 4. Invite the bot using the invite URL from `fleet add-agent`
 5. `fleet start <new-agent>`
+
+## Quick-Start Templates
+
+`fleet init --template <name>` pre-configures a team pattern:
+
+- `dev-team` — Lead + Coder + Reviewer (software development)
+- `research` — Lead + Researcher + Analyst (research and analysis)
+- `ops` — Lead + Dev (local) + Ops (remote) (development with remote deployment)
+
+Templates are starting points — customize after creation. Community can add templates to `~/.fleet/templates/`.
 
 ## Discovery
 
@@ -214,6 +278,9 @@ fleet init
 # Non-interactive (agent)
 fleet init --token TOKEN1 --token TOKEN2 --name my-fleet
 fleet init --token TOKEN1 --token TOKEN2 --name my-fleet --agent lead:local:lead --agent worker:local:worker
+
+# From template
+fleet init --template dev-team --token TOKEN1 --token TOKEN2 --token TOKEN3 --name my-fleet
 ```
 
 ## Agent-Friendly Flags
