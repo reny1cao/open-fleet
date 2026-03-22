@@ -95,9 +95,10 @@ fi
 step "Step 1/6: Installing fleet CLI"
 
 mkdir -p "$BIN_DIR"
+# Bash version as fallback until TS binary is built in Step 2
 chmod +x "$SCRIPT_DIR/fleet"
-ln -sf "$SCRIPT_DIR/fleet" "$BIN_DIR/$CLI_NAME"
-ok "fleet → $SCRIPT_DIR/fleet"
+ln -sf "$SCRIPT_DIR/fleet" "$BIN_DIR/fleet-bash"
+ok "fleet-bash → $SCRIPT_DIR/fleet"
 
 # Bash completion
 if [[ -n "$BASH_VERSION" ]] || command -v bash &>/dev/null; then
@@ -125,18 +126,20 @@ fi
 # Step 2: Build fleet-next (TypeScript)
 # ════════════════════════════════════════
 
-step "Step 2/6: Building fleet-next (TypeScript)"
+step "Step 2/6: Building fleet (TypeScript)"
 
 if command -v bun &>/dev/null; then
   (cd "$SCRIPT_DIR" && bun install --frozen-lockfile 2>/dev/null && bun build --compile --outfile fleet-next src/index.ts 2>/dev/null)
   if [[ -f "$SCRIPT_DIR/fleet-next" ]]; then
-    ln -sf "$SCRIPT_DIR/fleet-next" "$BIN_DIR/fleet-next"
-    ok "fleet-next built and linked"
+    ln -sf "$SCRIPT_DIR/fleet-next" "$BIN_DIR/$CLI_NAME"
+    ok "fleet → fleet-next (TypeScript)"
   else
-    warn "fleet-next build failed — bash fleet still available"
+    ln -sf "$SCRIPT_DIR/fleet" "$BIN_DIR/$CLI_NAME"
+    warn "TS build failed — falling back to bash fleet"
   fi
 else
-  warn "bun not found — fleet-next will be built after bun is installed"
+  ln -sf "$SCRIPT_DIR/fleet" "$BIN_DIR/$CLI_NAME"
+  warn "bun not found — using bash fleet, will rebuild after bun install"
 fi
 
 # ════════════════════════════════════════
@@ -164,13 +167,13 @@ else
   ok "bun installed"
 fi
 
-# Retry fleet-next build if bun was just installed
+# Retry fleet build if bun was just installed
 if [[ ! -f "$SCRIPT_DIR/fleet-next" ]] && command -v bun &>/dev/null; then
-  echo "  Building fleet-next (bun now available)..."
+  echo "  Building fleet (bun now available)..."
   (cd "$SCRIPT_DIR" && bun install --frozen-lockfile 2>/dev/null && bun build --compile --outfile fleet-next src/index.ts 2>/dev/null)
   if [[ -f "$SCRIPT_DIR/fleet-next" ]]; then
-    ln -sf "$SCRIPT_DIR/fleet-next" "$BIN_DIR/fleet-next"
-    ok "fleet-next built and linked"
+    ln -sf "$SCRIPT_DIR/fleet-next" "$BIN_DIR/$CLI_NAME"
+    ok "fleet → fleet-next (TypeScript)"
   fi
 fi
 
@@ -286,7 +289,7 @@ echo "  Next:"
 echo "    fleet init         # Configure tokens + agents"
 echo "    fleet start hub    # Launch your first agent"
 echo ""
-echo "  Both 'fleet' (bash) and 'fleet-next' (TypeScript) are available."
-echo "  fleet-next is recommended — faster, no Python dependency."
+echo "  'fleet' runs the TypeScript binary (fleet-next)."
+echo "  'fleet-bash' is available as fallback."
 echo "════════════════════════════════════════"
 echo ""
