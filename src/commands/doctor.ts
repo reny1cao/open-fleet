@@ -319,6 +319,72 @@ async function checkSessions(configDir: string): Promise<CheckResult[]> {
   return results
 }
 
+/** Check 10: Remote server connectivity and prerequisites */
+async function checkRemoteServers(configDir: string): Promise<CheckResult[]> {
+  const config = loadConfig(configDir)
+  const results: CheckResult[] = []
+
+  if (!config.servers || Object.keys(config.servers).length === 0) {
+    return results
+  }
+
+  for (const [name, server] of Object.entries(config.servers)) {
+    const target = `${server.user}@${server.sshHost}`
+
+    // 1. SSH connectivity
+    let sshPassed = false
+    try {
+      const { exitCode } = await runWithTimeout(
+        ["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes", target, "echo ok"],
+        5000
+      )
+      sshPassed = exitCode === 0
+      results.push({
+        check: `remote:${name}:ssh`,
+        status: sshPassed ? "pass" : "fail",
+        message: sshPassed ? `${name} SSH: reachable` : `${name} SSH: unreachable`,
+      })
+    } catch {
+      results.push({
+        check: `remote:${name}:ssh`,
+        status: "fail",
+        message: `${name} SSH: unreachable`,
+      })
+    }
+
+    // 2. Remote prerequisites (only if SSH passed)
+    if (sshPassed) {
+      const prereqs: Array<{ tool: string }> = [
+        { tool: "tmux" },
+        { tool: "claude" },
+        { tool: "bun" },
+      ]
+
+      for (const { tool } of prereqs) {
+        try {
+          const { exitCode } = await runWithTimeout(
+            ["ssh", target, `which ${tool}`],
+            5000
+          )
+          results.push({
+            check: `remote:${name}:${tool}`,
+            status: exitCode === 0 ? "pass" : "warn",
+            message: exitCode === 0 ? `${name} ${tool}: found` : `${name} ${tool}: not found`,
+          })
+        } catch {
+          results.push({
+            check: `remote:${name}:${tool}`,
+            status: "warn",
+            message: `${name} ${tool}: not found`,
+          })
+        }
+      }
+    }
+  }
+
+  return results
+}
+
 // ── main export ────────────────────────────────────────────────────────────────
 
 export async function doctor(opts: { json?: boolean }): Promise<void> {
@@ -362,6 +428,10 @@ export async function doctor(opts: { json?: boolean }): Promise<void> {
     // 9. Running sessions
     const sessionResults = await checkSessions(configDir)
     allResults.push(...sessionResults)
+
+    // 10. Remote server connectivity and prerequisites
+    const remoteResults = await checkRemoteServers(configDir)
+    allResults.push(...remoteResults)
   }
 
   if (opts.json) {
