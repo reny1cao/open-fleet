@@ -135,7 +135,7 @@ export class DiscordApi implements ChannelAdapter {
     ]
 
     return {
-      dmPolicy: "disabled",
+      dmPolicy: "allowlist",
       allowFrom,
       groups: {
         [channelId]: {

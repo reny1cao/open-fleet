@@ -38,13 +38,13 @@ describe("pluginId", () => {
 // ── generateAccessConfig ──────────────────────────────────────────────────────
 
 describe("generateAccessConfig", () => {
-  it("sets dmPolicy to disabled by default", () => {
+  it("sets dmPolicy to allowlist", () => {
     const cfg = api.generateAccessConfig({
       channelId: "chan-001",
       partnerBotIds: [],
       requireMention: false,
     })
-    expect(cfg.dmPolicy).toBe("disabled")
+    expect(cfg.dmPolicy).toBe("allowlist")
   })
 
   it("allowFrom is empty array when no userId", () => {
