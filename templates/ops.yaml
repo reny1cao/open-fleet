@@ -1,0 +1,12 @@
+name: ops
+description: "Lead + Dev (local) + Ops (remote) — for development with remote deployment"
+agents:
+  - name: lead
+    role: lead
+    server: local
+  - name: dev
+    role: worker
+    server: local
+  - name: ops
+    role: ops
+    server: remote

@@ -1,0 +1,12 @@
+name: research
+description: "Lead + Researcher + Analyst — for research and analysis"
+agents:
+  - name: lead
+    role: lead
+    server: local
+  - name: researcher
+    role: worker
+    server: local
+  - name: analyst
+    role: reviewer
+    server: local

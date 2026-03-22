@@ -54,10 +54,11 @@ export async function main(argv: string[]): Promise<void> {
         }
         const name = parseFlagValue(args, "--name") ?? "my-fleet"
         const channel = parseFlagValue(args, "--channel")
+        const template = parseFlagValue(args, "--template")
         if (tokens.length === 0) {
           await interactiveInit(process.cwd())
         } else {
-          await init({ tokens, name, agents: agents.length > 0 ? agents : undefined, channel, force: parseFlag(args, "--force"), json: parseFlag(args, "--json") })
+          await init({ tokens, name, agents: agents.length > 0 ? agents : undefined, channel, force: parseFlag(args, "--force"), json: parseFlag(args, "--json"), template })
         }
         break
       }

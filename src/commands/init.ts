@@ -1,7 +1,8 @@
-import { existsSync, writeFileSync, mkdirSync } from "fs"
+import { existsSync, writeFileSync, mkdirSync, readFileSync } from "fs"
 import { join } from "path"
 import { homedir } from "os"
 import { createInterface } from "readline"
+import { parse as parseYaml } from "yaml"
 import { saveConfig, resolveStateDir, writeGlobalConfig } from "../core/config"
 import type { FleetConfig, AgentDef } from "../core/types"
 import { writeBootIdentity } from "../core/identity"
@@ -40,6 +41,20 @@ function parseAgentSpec(spec: string): AgentSpec {
   return { name, server, role }
 }
 
+function loadTemplate(name: string): { agents: Array<{ name: string; role: string; server: string }> } | null {
+  // Check ~/.fleet/templates/ first (user overrides), then repo templates/
+  const paths = [
+    join(process.env.HOME ?? "", ".fleet", "templates", `${name}.yaml`),
+    join(__dirname, "..", "..", "templates", `${name}.yaml`),
+  ]
+  for (const p of paths) {
+    if (existsSync(p)) {
+      return parseYaml(readFileSync(p, "utf8"))
+    }
+  }
+  return null
+}
+
 export async function init(opts: {
   tokens: string[]
   name: string
@@ -47,6 +62,7 @@ export async function init(opts: {
   channel?: string
   force?: boolean
   json?: boolean
+  template?: string
 }): Promise<void> {
   const { tokens, name, force } = opts
   const log = opts.json ? () => {} : console.log
@@ -59,6 +75,15 @@ export async function init(opts: {
     throw new Error(
       `fleet.yaml already exists in ${configDir}. Use --force to overwrite.`
     )
+  }
+
+  // ── 1b. Apply template if requested ──────────────────────────────────────
+  if (opts.template) {
+    const tmpl = loadTemplate(opts.template)
+    if (!tmpl) throw new Error(`Template not found: ${opts.template}. Available: dev-team, research, ops`)
+    if (!opts.agents || opts.agents.length === 0) {
+      opts.agents = tmpl.agents.map(a => `${a.name}:${a.server}:${a.role}`)
+    }
   }
 
   // ── 2. Validate tokens ────────────────────────────────────────────────────

@@ -1,0 +1,12 @@
+name: dev-team
+description: "Lead + Coder + Reviewer — for software development"
+agents:
+  - name: lead
+    role: lead
+    server: local
+  - name: coder
+    role: worker
+    server: local
+  - name: reviewer
+    role: reviewer
+    server: local
