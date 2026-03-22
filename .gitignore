@@ -11,3 +11,7 @@ identities/*.md
 !identities/roles/
 
 .DS_Store
+
+# Bun/TS build artifacts
+node_modules/
+fleet-next
