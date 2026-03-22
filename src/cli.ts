@@ -4,6 +4,9 @@ import { status } from "./commands/status"
 import { init } from "./commands/init"
 import { doctor } from "./commands/doctor"
 import { patch } from "./commands/patch"
+import { inject } from "./commands/inject"
+import { apply } from "./commands/apply"
+import { addAgent } from "./commands/add-agent"
 
 function usage(): void {
   console.log(`fleet-next — Agent fleet CLI (TypeScript)
@@ -15,6 +18,9 @@ Usage:
   fleet-next status [--json]
   fleet-next doctor [--json]
   fleet-next patch [--json]
+  fleet-next inject <agent> <role>
+  fleet-next apply [--json]
+  fleet-next add-agent --token T --name N --role R [--server S]
   fleet-next help
 
 Flags:
@@ -76,6 +82,28 @@ export async function main(argv: string[]): Promise<void> {
       case "patch":
         await patch({ json: parseFlag(args, "--json") })
         break
+      case "inject": {
+        const agent = args[1]
+        const role = args[2]
+        if (!agent || agent.startsWith("--")) throw new Error("Usage: fleet-next inject <agent> <role>")
+        if (!role || role.startsWith("--")) throw new Error("Usage: fleet-next inject <agent> <role>")
+        await inject(agent, role)
+        break
+      }
+      case "apply":
+        await apply({ json: parseFlag(args, "--json") })
+        break
+      case "add-agent": {
+        const token = parseFlagValue(args, "--token")
+        const name = parseFlagValue(args, "--name")
+        const role = parseFlagValue(args, "--role")
+        const server = parseFlagValue(args, "--server")
+        if (!token || !name || !role) {
+          throw new Error("Usage: fleet-next add-agent --token T --name N --role R [--server S]")
+        }
+        await addAgent({ token, name, role, server })
+        break
+      }
       case "help":
       case "--help":
       case undefined:
