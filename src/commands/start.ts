@@ -1,5 +1,5 @@
 import { findConfigDir, loadConfig, getToken, resolveStateDir, sessionName } from "../core/config"
-import { writeBootIdentity } from "../core/identity"
+import { writeBootIdentity, writeRoster } from "../core/identity"
 import { DiscordApi } from "../channel/discord/api"
 import { writeAccessConfig } from "../channel/discord/access"
 import { TmuxLocal } from "../runtime/tmux"
@@ -55,8 +55,11 @@ export async function start(
     }
   }
 
-  // 7. Write identity.md
+  // 7. Write identity.md (fixed, loaded once via --append-system-prompt-file)
   writeBootIdentity(agentName, config, botIds, expandedStateDir)
+
+  // 7b. Write roster CLAUDE.md (dynamic, re-read every turn)
+  writeRoster(agentName, config, botIds, expandedStateDir)
 
   // 8. Write access.json — partnerBotIds = all other bot IDs
   const partnerBotIds = Object.entries(botIds)
@@ -70,19 +73,23 @@ export async function start(
     requireMention: true,
   })
 
-  // 9. Build command
+  // 9. Determine workspace (for --add-dir)
+  const workspace = agentDef.workspace ?? config.defaults.workspace ?? process.cwd()
+  const expandedWorkspace = expandHome(workspace)
+
+  // 10. Build command
+  //   CWD = stateDir (so Claude Code reads .claude/CLAUDE.md for dynamic roster)
+  //   --add-dir = workspace (so agent can access the actual codebase)
+  //   --append-system-prompt-file = fixed identity (role, rules, formatting)
   const command = [
     "claude",
     "--dangerously-skip-permissions",
     `--append-system-prompt-file ${expandedStateDir}/identity.md`,
+    `--add-dir ${expandedWorkspace}`,
     `--channels ${discord.pluginId()}`,
   ].join(" ")
 
-  // 10. Determine workspace
-  const workspace = agentDef.workspace ?? config.defaults.workspace ?? process.cwd()
-  const expandedWorkspace = expandHome(workspace)
-
-  // 11. Start the session
+  // 11. Start the session (CWD = stateDir for CLAUDE.md discovery)
   await runtime.start({
     session,
     env: {
@@ -91,18 +98,26 @@ export async function start(
       DISCORD_ACCESS_MODE: "static",
       FLEET_SELF: agentName,
     },
-    workDir: expandedWorkspace,
+    workDir: expandedStateDir,
     command,
   })
 
-  // 11. Handle first-run permissions prompt
-  const permMatched = await runtime.waitFor(
-    session,
-    /bypass|dangerous|permission|y\/n/i,
-    10_000
-  )
-  if (permMatched) {
-    await runtime.sendKeys(session, "y")
+  // 11. Handle trust prompt (new workspace directory) and permissions prompt
+  //     Both require pressing Enter or "y" + Enter. Poll for either.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const output = await runtime.captureOutput(session)
+    if (/Listening for channel messages/.test(output)) break
+    if (/trust this folder|safety check/i.test(output)) {
+      await runtime.sendKeys(session, "")  // press Enter to accept
+      await Bun.sleep(3000)
+      continue
+    }
+    if (/bypass|dangerous|permission|y\/n/i.test(output)) {
+      await runtime.sendKeys(session, "y")
+      await Bun.sleep(3000)
+      continue
+    }
+    await Bun.sleep(2000)
   }
 
   // 12. Optionally wait for "Listening for channel messages"

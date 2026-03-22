@@ -1,5 +1,8 @@
 import { describe, it, expect } from "bun:test"
-import { buildIdentityPrompt } from "../src/core/identity"
+import { buildIdentityPrompt, buildRosterClaudeMd, writeRoster, updateAllRosters } from "../src/core/identity"
+import { resolveStateDir } from "../src/core/config"
+import { readFileSync, mkdirSync, rmSync } from "fs"
+import { join } from "path"
 import type { FleetConfig } from "../src/core/types"
 
 const config: FleetConfig = {
@@ -21,23 +24,14 @@ describe("buildIdentityPrompt", () => {
     expect(prompt).toContain("111")
   })
 
-  it("contains team roster with peer bot IDs but not self", () => {
+  it("does NOT contain team roster (roster is in CLAUDE.md now)", () => {
     const prompt = buildIdentityPrompt("pm", config, botIds)
-    // peer worker should appear with their bot ID
-    expect(prompt).toContain("worker")
-    expect(prompt).toContain("222")
-    // self bot ID should only appear in header, not duplicated as a peer entry
-    // Verify the peer section lists worker but not pm as a peer
-    const teamSection = prompt.split("## Team")[1]?.split("##")[0] ?? ""
-    expect(teamSection).toContain("worker")
-    expect(teamSection).not.toContain("- pm")
+    expect(prompt).not.toContain("## Team")
   })
 
   it("contains channel info", () => {
     const prompt = buildIdentityPrompt("pm", config, botIds)
     expect(prompt).toContain("chan123")
-    const channelSection = prompt.split("## Channel")[1]?.split("##")[0] ?? ""
-    expect(channelSection).toContain("chan123")
   })
 
   it("contains Discord formatting rules", () => {
@@ -49,5 +43,57 @@ describe("buildIdentityPrompt", () => {
   it("contains reply-via-Discord rule", () => {
     const prompt = buildIdentityPrompt("pm", config, botIds)
     expect(prompt.toLowerCase()).toContain("discord reply")
+  })
+})
+
+describe("buildRosterClaudeMd", () => {
+  it("contains peer names and bot IDs", () => {
+    const roster = buildRosterClaudeMd("pm", config, botIds)
+    expect(roster).toContain("worker")
+    expect(roster).toContain("222")
+  })
+
+  it("does not contain self as a peer", () => {
+    const roster = buildRosterClaudeMd("pm", config, botIds)
+    // pm should be in the header but not as a teammate entry
+    expect(roster).toContain("pm")
+    expect(roster).not.toContain("- **pm**")
+  })
+
+  it("contains mention syntax", () => {
+    const roster = buildRosterClaudeMd("pm", config, botIds)
+    expect(roster).toContain("<@222>")
+  })
+})
+
+describe("writeRoster", () => {
+  const TMP = join(import.meta.dir, ".tmp-roster-test")
+
+  it("writes .claude/CLAUDE.md to stateDir", () => {
+    mkdirSync(TMP, { recursive: true })
+    writeRoster("pm", config, botIds, TMP)
+    const content = readFileSync(join(TMP, ".claude", "CLAUDE.md"), "utf8")
+    expect(content).toContain("worker")
+    expect(content).toContain("222")
+    rmSync(TMP, { recursive: true })
+  })
+})
+
+describe("updateAllRosters", () => {
+  const TMP = join(import.meta.dir, ".tmp-all-roster-test")
+
+  it("updates roster for every agent", () => {
+    const mockResolve = (name: string) => join(TMP, name)
+    updateAllRosters(config, botIds, mockResolve)
+
+    const pmRoster = readFileSync(join(TMP, "pm", ".claude", "CLAUDE.md"), "utf8")
+    const workerRoster = readFileSync(join(TMP, "worker", ".claude", "CLAUDE.md"), "utf8")
+
+    expect(pmRoster).toContain("worker")
+    expect(pmRoster).not.toContain("- **pm**")
+    expect(workerRoster).toContain("pm")
+    expect(workerRoster).not.toContain("- **worker**")
+
+    rmSync(TMP, { recursive: true })
   })
 })

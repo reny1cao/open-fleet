@@ -3,7 +3,9 @@ import { join } from "path"
 import type { FleetConfig } from "./types"
 
 /**
- * Build the identity prompt string for a given agent.
+ * Build the fixed identity prompt (loaded once via --append-system-prompt-file).
+ * Contains: name, role, rules, formatting. Does NOT contain team roster —
+ * roster lives in CLAUDE.md for dynamic updates.
  */
 export function buildIdentityPrompt(
   agentName: string,
@@ -16,50 +18,68 @@ export function buildIdentityPrompt(
 
   const lines: string[] = []
 
-  // ── Header ──────────────────────────────────────────────────────────────────
   lines.push(`You are **${agentName}**, a ${agentDef.role} in the fleet. Bot ID \`${botId}\`.`)
   lines.push("")
 
-  // ── Role ────────────────────────────────────────────────────────────────────
   lines.push("## Role")
   lines.push(agentDef.role)
   lines.push("")
 
-  // ── Team ────────────────────────────────────────────────────────────────────
-  lines.push("## Team")
-  for (const [name, def] of Object.entries(config.agents)) {
-    if (name === agentName) continue
-    const peerId = botIds[name] ?? "unknown"
-    lines.push(`- ${name} (\`${peerId}\`) — ${def.server} — ${def.role}`)
-  }
-  lines.push("")
-
-  // ── Channel ─────────────────────────────────────────────────────────────────
   lines.push("## Channel")
   lines.push(`- Channel ID: \`${channelId}\``)
   lines.push("")
 
-  // ── Rules ───────────────────────────────────────────────────────────────────
   lines.push("## Rules")
-  lines.push("- Always reply via Discord reply tool")
+  lines.push("- **Always reply via Discord reply tool** — terminal output does not reach Discord")
   lines.push("- Report concisely, conclusions first")
-  lines.push("- Acknowledge receipt before starting work")
+  lines.push("- When you receive a task, acknowledge briefly (react or short reply) before starting work")
   lines.push("")
 
-  // ── Discord Formatting ──────────────────────────────────────────────────────
   lines.push("## Discord Formatting")
-  lines.push("- Do NOT use markdown tables")
-  lines.push("- No HTML tags or image syntax")
-  lines.push("- OK to use: bold, italic, code, code blocks, quotes, lists, headings")
-  lines.push("- @mention with `<@BOT_ID>`")
-  lines.push("- Max 2000 chars per message")
+  lines.push("- Do NOT use markdown tables — Discord doesn't render them")
+  lines.push("- Do NOT use HTML tags or image syntax")
+  lines.push("- OK to use: **bold**, *italic*, `code`, ```code blocks```, > quotes, - lists, # headings")
+  lines.push("- @mention teammates with `<@BOT_ID>`")
+  lines.push("- Max 2000 chars per message — split longer messages")
 
   return lines.join("\n")
 }
 
 /**
- * Write the identity prompt to {stateDir}/identity.md, creating the directory
- * if it does not exist.
+ * Build the dynamic roster CLAUDE.md content.
+ * This file is placed in each agent's stateDir/.claude/CLAUDE.md and is
+ * re-read by Claude Code on every turn — so updates are picked up live.
+ */
+export function buildRosterClaudeMd(
+  agentName: string,
+  config: FleetConfig,
+  botIds: Record<string, string>
+): string {
+  const lines: string[] = []
+
+  lines.push("# Fleet Team Roster")
+  lines.push("")
+  lines.push(`You are **${agentName}**. Your teammates:`)
+  lines.push("")
+
+  for (const [name, def] of Object.entries(config.agents)) {
+    if (name === agentName) continue
+    const peerId = botIds[name] ?? "unknown"
+    lines.push(`- **${name}** (\`${peerId}\`) — ${def.server} — ${def.role} — mention: \`<@${peerId}>\``)
+  }
+
+  if (Object.keys(config.agents).length <= 1) {
+    lines.push("- (no teammates yet)")
+  }
+
+  lines.push("")
+  lines.push("Use this roster to know who to delegate to or mention in Discord.")
+
+  return lines.join("\n")
+}
+
+/**
+ * Write the fixed identity prompt to {stateDir}/identity.md.
  */
 export function writeBootIdentity(
   agentName: string,
@@ -70,6 +90,37 @@ export function writeBootIdentity(
   mkdirSync(stateDir, { recursive: true })
   const content = buildIdentityPrompt(agentName, config, botIds)
   writeFileSync(join(stateDir, "identity.md"), content, "utf8")
+}
+
+/**
+ * Write the dynamic roster to {stateDir}/.claude/CLAUDE.md.
+ * Claude Code re-reads this file every turn, so changes take effect immediately.
+ */
+export function writeRoster(
+  agentName: string,
+  config: FleetConfig,
+  botIds: Record<string, string>,
+  stateDir: string
+): void {
+  const claudeDir = join(stateDir, ".claude")
+  mkdirSync(claudeDir, { recursive: true })
+  const content = buildRosterClaudeMd(agentName, config, botIds)
+  writeFileSync(join(claudeDir, "CLAUDE.md"), content, "utf8")
+}
+
+/**
+ * Update the roster CLAUDE.md for ALL agents in the fleet.
+ * Called after add-agent so running agents pick up new teammates.
+ */
+export function updateAllRosters(
+  config: FleetConfig,
+  botIds: Record<string, string>,
+  resolveStateDirFn: (name: string, config: FleetConfig) => string
+): void {
+  for (const name of Object.keys(config.agents)) {
+    const stateDir = resolveStateDirFn(name, config)
+    writeRoster(name, config, botIds, stateDir)
+  }
 }
 
 /**

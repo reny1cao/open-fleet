@@ -1,5 +1,5 @@
 import { findConfigDir, loadConfig, saveConfig, loadEnv, resolveStateDir } from "../core/config"
-import { writeBootIdentity } from "../core/identity"
+import { writeBootIdentity, writeRoster, updateAllRosters } from "../core/identity"
 import { DiscordApi } from "../channel/discord/api"
 import { writeAccessConfig } from "../channel/discord/access"
 import { appendFileSync, existsSync, writeFileSync } from "fs"
@@ -93,6 +93,10 @@ export async function addAgent(opts: {
     requireMention: true,
   })
   console.log(`  Wrote access.json → ${stateDir}`)
+
+  // 7b. Update ALL agents' roster CLAUDE.md (running agents pick this up on next turn)
+  updateAllRosters(config, botIds, resolveStateDir)
+  console.log(`  Updated roster for all ${Object.keys(config.agents).length} agents`)
 
   // 8. Print invite URL and next steps
   const inviteUrl = discord.inviteUrl(botInfo.appId)
