@@ -110,32 +110,41 @@ export async function start(
     const serverConfig = config.servers![agentDef.server]
     if (!opts.json) console.log(`  Copying files to ${agentDef.server}...`)
 
-    // Create remote dirs
-    await sshRun(serverConfig, `mkdir -p '${expandedStateDir}/.claude'`)
+    // Resolve remote $HOME (SCP doesn't expand ~)
+    const { stdout: remoteHome } = await sshRun(serverConfig, "echo $HOME")
+    const remoteStateDirRaw = agentDef.stateDir ?? `~/.fleet/state/discord-${agentName}`
+    const remoteStateDirAbs = remoteStateDirRaw.replace(/^~/, remoteHome)
 
-    // SCP identity, access, roster
-    await scp(serverConfig, join(expandedStateDir, "identity.md"), `${expandedStateDir}/identity.md`)
-    await scp(serverConfig, join(expandedStateDir, "access.json"), `${expandedStateDir}/access.json`)
+    // Create remote dirs
+    await sshRun(serverConfig, `mkdir -p '${remoteStateDirAbs}/.claude'`)
+
+    // SCP identity, access, roster (use absolute remote paths)
+    await scp(serverConfig, join(expandedStateDir, "identity.md"), `${remoteStateDirAbs}/identity.md`)
+    await scp(serverConfig, join(expandedStateDir, "access.json"), `${remoteStateDirAbs}/access.json`)
 
     const rosterPath = join(expandedStateDir, ".claude", "CLAUDE.md")
     if (existsSync(rosterPath)) {
-      await scp(serverConfig, rosterPath, `${expandedStateDir}/.claude/CLAUDE.md`)
+      await scp(serverConfig, rosterPath, `${remoteStateDirAbs}/.claude/CLAUDE.md`)
     }
   }
 
-  // 9. Determine workspace (for --add-dir)
-  const workspace = agentDef.workspace ?? config.defaults.workspace ?? process.cwd()
-  const expandedWorkspace = expandHome(workspace)
+  // 9. Determine workspace and paths
+  //    For remote agents, use $HOME (expands in bash even inside quotes)
+  //    ~ doesn't expand inside single quotes, so we use $HOME for remote
+  const isRemote = agentDef.server !== "local"
+  const rawStateDir = agentDef.stateDir ?? `~/.fleet/state/discord-${agentName}`
+  const rawWorkspace = agentDef.workspace ?? config.defaults.workspace ?? "~/workspace"
+
+  // For remote: replace ~ with $HOME (bash expands $HOME inside double quotes and scripts)
+  const cmdStateDir = isRemote ? rawStateDir.replace(/^~/, "$HOME") : expandedStateDir
+  const cmdWorkspace = isRemote ? rawWorkspace.replace(/^~/, "$HOME") : expandHome(rawWorkspace)
 
   // 10. Build command
-  //   CWD = stateDir (so Claude Code reads .claude/CLAUDE.md for dynamic roster)
-  //   --add-dir = workspace (so agent can access the actual codebase)
-  //   --append-system-prompt-file = fixed identity (role, rules, formatting)
   const command = [
     "claude",
     "--dangerously-skip-permissions",
-    `--append-system-prompt-file '${expandedStateDir}/identity.md'`,
-    `--add-dir '${expandedWorkspace}'`,
+    `--append-system-prompt-file '${cmdStateDir}/identity.md'`,
+    `--add-dir '${cmdWorkspace}'`,
     `--channels ${discord.pluginId()}`,
   ].join(" ")
 
@@ -144,11 +153,11 @@ export async function start(
     session,
     env: {
       DISCORD_BOT_TOKEN: token,
-      DISCORD_STATE_DIR: expandedStateDir,
+      DISCORD_STATE_DIR: cmdStateDir,
       DISCORD_ACCESS_MODE: "static",
       FLEET_SELF: agentName,
     },
-    workDir: expandedStateDir,
+    workDir: cmdStateDir,
     command,
   })
 

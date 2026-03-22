@@ -335,7 +335,7 @@ async function checkRemoteServers(configDir: string): Promise<CheckResult[]> {
     let sshPassed = false
     try {
       const { exitCode } = await runWithTimeout(
-        ["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes", target, "echo ok"],
+        ["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes", "-o", "RequestTTY=no", "-o", "RemoteCommand=none", target, "echo ok"],
         5000
       )
       sshPassed = exitCode === 0
@@ -363,7 +363,7 @@ async function checkRemoteServers(configDir: string): Promise<CheckResult[]> {
       for (const { tool } of prereqs) {
         try {
           const { exitCode } = await runWithTimeout(
-            ["ssh", target, `which ${tool}`],
+            ["ssh", "-o", "RequestTTY=no", "-o", "RemoteCommand=none", target, `export PATH=$HOME/.bun/bin:$HOME/.local/bin:$PATH && which ${tool}`],
             5000
           )
           results.push({

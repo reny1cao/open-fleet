@@ -2,14 +2,17 @@ import type { RuntimeAdapter, StartOpts } from "./types"
 import type { ServerConfig } from "../core/types"
 
 const SSH_TIMEOUT = 5
+// PATH prefix for non-interactive SSH shells (bun/claude not in default PATH)
+const REMOTE_PATH_PREFIX = "export PATH=$HOME/.bun/bin:$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"
 
 export async function sshRun(
   server: ServerConfig,
   cmd: string,
   opts?: { throwOnError?: boolean }
 ): Promise<{ stdout: string; ok: boolean }> {
+  const fullCmd = `${REMOTE_PATH_PREFIX} && ${cmd}`
   const proc = Bun.spawn(
-    ["ssh", "-o", `ConnectTimeout=${SSH_TIMEOUT}`, "-o", "BatchMode=yes", `${server.user}@${server.sshHost}`, cmd],
+    ["ssh", "-o", `ConnectTimeout=${SSH_TIMEOUT}`, "-o", "BatchMode=yes", "-o", "RequestTTY=no", "-o", "RemoteCommand=none", `${server.user}@${server.sshHost}`, fullCmd],
     { stdout: "pipe", stderr: "pipe" }
   )
   const stdout = await new Response(proc.stdout).text()
@@ -43,16 +46,28 @@ export class TmuxRemote implements RuntimeAdapter {
 
   async start(opts: StartOpts): Promise<void> {
     // Create remote workDir
-    await sshRun(this.server, `mkdir -p '${opts.workDir}'`)
+    await sshRun(this.server, `mkdir -p "${opts.workDir}"`)
 
-    // Build env prefix
-    const envPrefix = Object.entries(opts.env)
-      .map(([k, v]) => `${k}='${v}'`)
-      .join(" ")
-    const fullCmd = envPrefix ? `${envPrefix} ${opts.command}` : opts.command
+    // Write a startup script to remote to avoid quoting hell
+    // (SSH → tmux → shell = 3 layers of escaping)
+    const scriptLines = [
+      "#!/bin/bash",
+      REMOTE_PATH_PREFIX,
+      ...Object.entries(opts.env).map(([k, v]) => `export ${k}="${v}"`),
+      `cd "${opts.workDir}"`,
+      `exec ${opts.command.replace(/'/g, '"')}`,
+    ]
+    const remoteScript = `/tmp/fleet-start-${opts.session}.sh`
+    const { writeFileSync, unlinkSync } = await import("fs")
+    const localScript = `/tmp/fleet-start-${opts.session}-local.sh`
+    writeFileSync(localScript, scriptLines.join("\n") + "\n")
+    await scp(this.server, localScript, remoteScript)
+    await sshRun(this.server, `chmod +x '${remoteScript}'`)
+    try { unlinkSync(localScript) } catch {}
 
+    // Start tmux with the script
     await sshRun(this.server,
-      `tmux new-session -d -s '${opts.session}' -c '${opts.workDir}' "${fullCmd.replace(/"/g, '\\\\"')}"`)
+      `tmux new-session -d -s '${opts.session}' '${remoteScript}'`)
   }
 
   async stop(session: string): Promise<void> {
