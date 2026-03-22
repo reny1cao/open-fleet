@@ -212,3 +212,67 @@ export async function init(opts: {
   console.log("  2. Run: fleet-next start <agent>")
   console.log("  3. DM or @mention the bot in Discord to verify it responds")
 }
+
+export async function interactiveInit(configDir: string): Promise<void> {
+  const rl = require("readline").createInterface({ input: process.stdin, output: process.stdout })
+  const ask = (q: string): Promise<string> => new Promise(r => rl.question(q, r))
+
+  try {
+    console.log("")
+    console.log("fleet init — First-time setup")
+    console.log("──────────────────────────────────")
+
+    // Step 1: Fleet name
+    const name = await ask("Fleet name [my-fleet]: ") || "my-fleet"
+
+    // Step 2: Collect tokens
+    console.log("")
+    console.log("  Bot tokens (paste each, press Enter. Empty line when done):")
+    console.log("  Get tokens at: https://discord.com/developers/applications")
+    console.log("")
+
+    const tokens: string[] = []
+    const discord = new DiscordApi()
+    while (true) {
+      const token = await ask(`  Token ${tokens.length + 1}: `)
+      if (!token.trim()) break
+      try {
+        const info = await discord.validateToken(token.trim())
+        console.log(`  ✔ ${info.name} (${info.appId})`)
+        tokens.push(token.trim())
+      } catch {
+        console.log("  ✘ Invalid token, try again")
+      }
+    }
+
+    if (tokens.length === 0) {
+      console.log("No tokens provided. Exiting.")
+      rl.close()
+      return
+    }
+
+    // Step 3: Agent names
+    // Validate all tokens to get bot info
+    const botInfos = await Promise.all(tokens.map(t => discord.validateToken(t)))
+
+    console.log("")
+    console.log("  Agents:")
+    const agents: string[] = []
+    for (let i = 0; i < tokens.length; i++) {
+      const defaultName = i === 0 ? "lead" : `worker-${i}`
+      const defaultRole = i === 0 ? "lead" : "worker"
+      const agentName = await ask(`  Name for ${botInfos[i].name} [${defaultName}]: `) || defaultName
+      const role = await ask(`  Role for ${agentName} [${defaultRole}]: `) || defaultRole
+      agents.push(`${agentName}:local:${role}`)
+    }
+
+    rl.close()
+
+    // Call the existing non-interactive init
+    await init({ tokens, name, agents, force: false })
+
+  } catch (err) {
+    rl.close()
+    throw err
+  }
+}

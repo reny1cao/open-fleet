@@ -1,4 +1,7 @@
 #!/bin/bash
+# fleet — Legacy bash CLI (kept as fleet-bash fallback)
+# The primary fleet CLI is now the TypeScript binary (fleet-next).
+# This file is maintained for backwards compatibility only.
 # fleet — Agent fleet CLI
 #
 # Usage:

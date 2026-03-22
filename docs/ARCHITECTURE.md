@@ -6,7 +6,7 @@
 
 The single most important architectural decision. When a Claude Code session performs heavy tasks (coding, file operations, long tool chains), it fills its context window and loses track of its Discord obligations. The bot literally forgets to reply.
 
-**Solution:** Sentinel (the Hub) never performs real work. Its entire job is:
+**Solution:** The hub agent never performs real work. Its entire job is:
 
 ```
 Receive Discord message
@@ -22,10 +22,10 @@ Receive Discord message
   → @mention the appropriate remote bot on Discord
   → Remote bot executes (also via subagent)
   → Remote bot replies on Discord
-  → Sentinel relays to user
+  → Hub relays to user
 ```
 
-This keeps Sentinel's context window clean and responsive at all times.
+This keeps the hub's context window clean and responsive at all times.
 
 ### 2. N Bots = N Sessions
 
@@ -45,10 +45,10 @@ An early blueprint proposed a full platform: Redis state management, unified gat
 
 - Discord's plugin is already a gateway — rebuilding one is redundant
 - Claude Code sessions aren't microservices — you can't spawn/kill them in milliseconds
-- A shell script + tmux + SSH covers 95% of fleet management needs
+- A CLI + tmux + SSH covers 95% of fleet management needs
 - Complexity should live in the bots' prompts (identity files), not in infrastructure
 
-`fleet` is ~380 lines of bash. That's the entire management layer.
+`fleet` is ~2K lines of Bun/TypeScript. That's the entire management layer.
 
 ## System Topology
 
@@ -57,17 +57,17 @@ An early blueprint proposed a full platform: Redis state management, unified gat
 │                   Discord Server                     │
 │                                                      │
 │  #general    #dev         #infra                     │
-│  Sentinel    Pilot        Sentinel                   │
-│  (all bots   Forge        Citadel                    │
-│   listen)    Archon                                  │
+│  Hub         Worker B     Hub                        │
+│  (all bots   Worker C     Worker D                   │
+│   listen)                                            │
 └──────┬───────┬────────────┬─────────────────────────┘
        │       │            │
   ┌────▼────┐ ┌▼─────────┐ │
-  │Local Mac│ │Singapore  │ │
-  │         │ │VPS        │ │
-  │Sentinel │ │Archon     │ ┌▼──────────┐
-  │Pilot    │ │Forge      │ │Germany VPS│
-  │         │ │           │ │Citadel    │
+  │Local Mac│ │Remote VPS │ │
+  │         │ │           │ │
+  │Hub      │ │Worker B   │ ┌▼──────────┐
+  │Worker A │ │Worker C   │ │Remote VPS │
+  │         │ │           │ │Worker D   │
   └─────────┘ └───────────┘ └───────────┘
 
   Each box = tmux sessions running Claude Code + Discord plugin
@@ -75,39 +75,17 @@ An early blueprint proposed a full platform: Redis state management, unified gat
   Management = fleet (local tmux / remote SSH + tmux)
 ```
 
+Agent names and roles are defined in `fleet.yaml` — the fleet ships with no hardcoded agent identities. You name and describe each agent when you run `fleet init` or `fleet add-agent`.
+
 ## Bot Roles
 
-### Sentinel (Hub)
+Role names are user-defined. Common patterns:
 
-- **Location:** Local machine
-- **Purpose:** Dispatch only. Receives all user messages, routes to the right bot.
-- **Key behavior:** Uses `Agent(run_in_background=true)` for local tasks, @mentions for remote tasks.
-- **Never does:** File editing, coding, server operations, anything that fills context.
+- **Hub (Lead):** Dispatch only. Receives all user messages, routes to the right bot. Uses `Agent(run_in_background=true)` for local tasks, @mentions for remote tasks. Never does heavy work that fills context.
+- **Local worker:** Full access to local codebase — reads files, greps, analyzes, sends precise instructions to remote bots.
+- **Remote worker:** General-purpose execution on a remote server. Receives instructions → executes → reports results back to Discord.
 
-### Pilot (Guide)
-
-- **Location:** Local machine
-- **Purpose:** Reads local code, writes plans, reviews PRs, then sends instructions to remote bots via Discord.
-- **Advantage:** Full access to local codebase — can read files, grep, analyze before giving precise instructions.
-- **Pattern:** Read code locally → write specific instructions (file paths, commands, expected output) → post to #dev for Forge/Archon.
-
-### Archon (Field Agent)
-
-- **Location:** Remote server (e.g., Singapore)
-- **Purpose:** General-purpose execution on the remote server. Operations, debugging, data tasks.
-- **Pattern:** Receives instructions → executes on server → reports results back to Discord.
-
-### Forge (Dev Worker)
-
-- **Location:** Remote server (e.g., Singapore)
-- **Purpose:** Focused coding. Receives development instructions from Pilot, writes code, runs tests.
-- **Pattern:** Pilot sends spec → Forge implements → reports diff and test results.
-
-### Citadel (Infra Worker)
-
-- **Location:** Remote server (e.g., Germany)
-- **Purpose:** Infrastructure operations. Docker, databases, networking, monitoring.
-- **Key behavior:** Confirms before destructive operations (delete containers, modify networks).
+Roles are assigned via identity files (`identities/<name>.md`). The `fleet add-agent` command generates these automatically from a template.
 
 ## Identity Injection
 

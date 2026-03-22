@@ -1,7 +1,7 @@
 import { start } from "./commands/start"
 import { stop } from "./commands/stop"
 import { status } from "./commands/status"
-import { init } from "./commands/init"
+import { init, interactiveInit } from "./commands/init"
 import { doctor } from "./commands/doctor"
 import { patch } from "./commands/patch"
 import { inject } from "./commands/inject"
@@ -54,8 +54,11 @@ export async function main(argv: string[]): Promise<void> {
         }
         const name = parseFlagValue(args, "--name") ?? "my-fleet"
         const channel = parseFlagValue(args, "--channel")
-        if (tokens.length === 0) throw new Error("Usage: fleet-next init --token T1 [--token T2] --name NAME")
-        await init({ tokens, name, agents: agents.length > 0 ? agents : undefined, channel, force: parseFlag(args, "--force") })
+        if (tokens.length === 0) {
+          await interactiveInit(process.cwd())
+        } else {
+          await init({ tokens, name, agents: agents.length > 0 ? agents : undefined, channel, force: parseFlag(args, "--force") })
+        }
         break
       }
       case "start": {
