@@ -1,0 +1,428 @@
+import { describe, it, expect, beforeEach, afterEach } from "bun:test"
+import { mkdirSync, writeFileSync, rmSync } from "fs"
+import { tmpdir } from "os"
+import { join } from "path"
+import {
+  loadConfig,
+  saveConfig,
+  loadEnv,
+  getToken,
+  resolveStateDir,
+  sessionName,
+  findConfigDir,
+} from "../src/core/config"
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function makeTempDir(): string {
+  const dir = join(tmpdir(), `fleet-test-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+  mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+const VALID_FLEET_YAML = `\
+fleet:
+  name: test-fleet
+  mission: testing
+
+discord:
+  channel_id: "111222333"
+  server_id: "999888777"
+  user_id: "555444333"
+
+defaults:
+  workspace: ~/workspace
+  runtime: claude
+
+agents:
+  hub:
+    role: hub
+    token_env: DISCORD_BOT_TOKEN_HUB
+    server: local
+    identity: identities/hub.md
+  worker-1:
+    role: worker
+    token_env: DISCORD_BOT_TOKEN_WORKER1
+    server: local
+    state_dir: ~/.fleet/state/discord-worker1
+    identity: identities/worker-1.md
+
+servers:
+  staging:
+    ssh_host: staging-server
+    user: dev
+`
+
+const MINIMAL_FLEET_YAML = `\
+fleet:
+  name: mini-fleet
+
+discord:
+  channel_id: "123"
+
+defaults:
+  workspace: ~/workspace
+
+agents:
+  solo:
+    role: worker
+    server: local
+    identity: identities/solo.md
+`
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+describe("loadConfig", () => {
+  let dir: string
+
+  beforeEach(() => {
+    dir = makeTempDir()
+  })
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it("parses a valid fleet.yaml correctly", () => {
+    writeFileSync(join(dir, "fleet.yaml"), VALID_FLEET_YAML)
+    const config = loadConfig(dir)
+
+    expect(config.fleet.name).toBe("test-fleet")
+    expect(config.fleet.mission).toBe("testing")
+    expect(config.discord.channelId).toBe("111222333")
+    expect(config.discord.serverId).toBe("999888777")
+    expect(config.discord.userId).toBe("555444333")
+    expect(config.defaults.workspace).toBe("~/workspace")
+    expect(config.defaults.runtime).toBe("claude")
+  })
+
+  it("parses agent fields correctly", () => {
+    writeFileSync(join(dir, "fleet.yaml"), VALID_FLEET_YAML)
+    const config = loadConfig(dir)
+
+    expect(config.agents["hub"]).toBeDefined()
+    expect(config.agents["hub"].role).toBe("hub")
+    expect(config.agents["hub"].tokenEnv).toBe("DISCORD_BOT_TOKEN_HUB")
+    expect(config.agents["hub"].server).toBe("local")
+    expect(config.agents["hub"].identity).toBe("identities/hub.md")
+
+    expect(config.agents["worker-1"]).toBeDefined()
+    expect(config.agents["worker-1"].tokenEnv).toBe("DISCORD_BOT_TOKEN_WORKER1")
+    expect(config.agents["worker-1"].stateDir).toBe("~/.fleet/state/discord-worker1")
+  })
+
+  it("parses server config with camelCase", () => {
+    writeFileSync(join(dir, "fleet.yaml"), VALID_FLEET_YAML)
+    const config = loadConfig(dir)
+
+    expect(config.servers).toBeDefined()
+    expect(config.servers!["staging"]).toBeDefined()
+    expect(config.servers!["staging"].sshHost).toBe("staging-server")
+    expect(config.servers!["staging"].user).toBe("dev")
+  })
+
+  it("derives tokenEnv from agent name if token_env not set", () => {
+    const yaml = `\
+fleet:
+  name: test-fleet
+discord:
+  channel_id: "123"
+defaults:
+  workspace: ~/workspace
+agents:
+  my-bot:
+    role: worker
+    server: local
+    identity: identities/my-bot.md
+`
+    writeFileSync(join(dir, "fleet.yaml"), yaml)
+    const config = loadConfig(dir)
+    // my-bot → DISCORD_BOT_TOKEN_MY_BOT (upper, hyphens → underscores)
+    expect(config.agents["my-bot"].tokenEnv).toBe("DISCORD_BOT_TOKEN_MY_BOT")
+  })
+
+  it("throws when fleet.yaml is missing", () => {
+    expect(() => loadConfig(dir)).toThrow("fleet.yaml not found")
+  })
+
+  it("throws when fleet.name is missing", () => {
+    const yaml = `\
+fleet: {}
+discord:
+  channel_id: "123"
+defaults:
+  workspace: ~/workspace
+agents:
+  hub:
+    role: hub
+    server: local
+    identity: identities/hub.md
+`
+    writeFileSync(join(dir, "fleet.yaml"), yaml)
+    expect(() => loadConfig(dir)).toThrow()
+  })
+
+  it("throws when agents section is empty", () => {
+    const yaml = `\
+fleet:
+  name: broken
+discord:
+  channel_id: "123"
+defaults:
+  workspace: ~/workspace
+agents: {}
+`
+    writeFileSync(join(dir, "fleet.yaml"), yaml)
+    expect(() => loadConfig(dir)).toThrow()
+  })
+
+  it("throws when agents section is missing", () => {
+    const yaml = `\
+fleet:
+  name: broken
+discord:
+  channel_id: "123"
+defaults:
+  workspace: ~/workspace
+`
+    writeFileSync(join(dir, "fleet.yaml"), yaml)
+    expect(() => loadConfig(dir)).toThrow()
+  })
+})
+
+describe("findConfigDir", () => {
+  let dir: string
+  let origEnv: Record<string, string | undefined>
+
+  beforeEach(() => {
+    dir = makeTempDir()
+    origEnv = {
+      FLEET_CONFIG: process.env.FLEET_CONFIG,
+      FLEET_DIR: process.env.FLEET_DIR,
+    }
+  })
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true })
+    for (const [k, v] of Object.entries(origEnv)) {
+      if (v === undefined) delete process.env[k]
+      else process.env[k] = v
+    }
+  })
+
+  it("finds fleet.yaml in the given startDir", () => {
+    writeFileSync(join(dir, "fleet.yaml"), VALID_FLEET_YAML)
+    delete process.env.FLEET_CONFIG
+    delete process.env.FLEET_DIR
+    const found = findConfigDir(dir)
+    expect(found).toBe(dir)
+  })
+
+  it("prefers FLEET_CONFIG env var over startDir", () => {
+    const configDir = makeTempDir()
+    try {
+      writeFileSync(join(configDir, "fleet.yaml"), VALID_FLEET_YAML)
+      process.env.FLEET_CONFIG = join(configDir, "fleet.yaml")
+      const found = findConfigDir(dir)
+      expect(found).toBe(configDir)
+    } finally {
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
+  it("falls back to FLEET_DIR when startDir has no fleet.yaml", () => {
+    const fleetDir = makeTempDir()
+    try {
+      writeFileSync(join(fleetDir, "fleet.yaml"), VALID_FLEET_YAML)
+      delete process.env.FLEET_CONFIG
+      process.env.FLEET_DIR = fleetDir
+      const found = findConfigDir(dir)
+      expect(found).toBe(fleetDir)
+    } finally {
+      rmSync(fleetDir, { recursive: true, force: true })
+    }
+  })
+
+  it("throws when fleet.yaml cannot be found anywhere", () => {
+    delete process.env.FLEET_CONFIG
+    delete process.env.FLEET_DIR
+    expect(() => findConfigDir(dir)).toThrow("fleet.yaml not found")
+  })
+})
+
+describe("loadEnv", () => {
+  let dir: string
+
+  beforeEach(() => {
+    dir = makeTempDir()
+  })
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it("parses a .env file into key-value pairs", () => {
+    writeFileSync(
+      join(dir, ".env"),
+      "DISCORD_BOT_TOKEN_HUB=token-abc-123\nDISCORD_BOT_TOKEN_WORKER1=token-xyz-456\n"
+    )
+    const env = loadEnv(dir)
+    expect(env["DISCORD_BOT_TOKEN_HUB"]).toBe("token-abc-123")
+    expect(env["DISCORD_BOT_TOKEN_WORKER1"]).toBe("token-xyz-456")
+  })
+
+  it("ignores comment lines and blank lines", () => {
+    writeFileSync(
+      join(dir, ".env"),
+      "# This is a comment\n\nFOO=bar\n   \nBAZ=qux\n"
+    )
+    const env = loadEnv(dir)
+    expect(Object.keys(env)).toHaveLength(2)
+    expect(env["FOO"]).toBe("bar")
+    expect(env["BAZ"]).toBe("qux")
+  })
+
+  it("returns empty object when .env file does not exist", () => {
+    const env = loadEnv(dir)
+    expect(env).toEqual({})
+  })
+
+  it("handles values with = signs in them", () => {
+    writeFileSync(join(dir, ".env"), "TOKEN=abc=def=ghi\n")
+    const env = loadEnv(dir)
+    expect(env["TOKEN"]).toBe("abc=def=ghi")
+  })
+})
+
+describe("getToken", () => {
+  let dir: string
+  let origToken: string | undefined
+
+  beforeEach(() => {
+    dir = makeTempDir()
+    origToken = process.env.DISCORD_BOT_TOKEN_HUB
+  })
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true })
+    if (origToken === undefined) delete process.env.DISCORD_BOT_TOKEN_HUB
+    else process.env.DISCORD_BOT_TOKEN_HUB = origToken
+  })
+
+  it("finds token from .env file", () => {
+    writeFileSync(join(dir, "fleet.yaml"), VALID_FLEET_YAML)
+    writeFileSync(join(dir, ".env"), "DISCORD_BOT_TOKEN_HUB=secret-hub-token\n")
+    delete process.env.DISCORD_BOT_TOKEN_HUB
+
+    const config = loadConfig(dir)
+    const token = getToken("hub", config, dir)
+    expect(token).toBe("secret-hub-token")
+  })
+
+  it("prefers process.env over .env file", () => {
+    writeFileSync(join(dir, "fleet.yaml"), VALID_FLEET_YAML)
+    writeFileSync(join(dir, ".env"), "DISCORD_BOT_TOKEN_HUB=file-token\n")
+    process.env.DISCORD_BOT_TOKEN_HUB = "env-token"
+
+    const config = loadConfig(dir)
+    const token = getToken("hub", config, dir)
+    expect(token).toBe("env-token")
+  })
+
+  it("throws when token is missing from both process.env and .env", () => {
+    writeFileSync(join(dir, "fleet.yaml"), VALID_FLEET_YAML)
+    delete process.env.DISCORD_BOT_TOKEN_HUB
+
+    const config = loadConfig(dir)
+    expect(() => getToken("hub", config, dir)).toThrow()
+  })
+})
+
+describe("resolveStateDir", () => {
+  it("returns ~/.claude/channels/discord for the first agent", () => {
+    const dir = makeTempDir()
+    try {
+      writeFileSync(join(dir, "fleet.yaml"), VALID_FLEET_YAML)
+      const config = loadConfig(dir)
+      // "hub" is first agent in VALID_FLEET_YAML
+      const stateDir = resolveStateDir("hub", config)
+      expect(stateDir).toBe(`${process.env.HOME}/.claude/channels/discord`)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("returns ~/.fleet/state/discord-<name> for subsequent agents without explicit stateDir", () => {
+    // Use MINIMAL_FLEET_YAML with a second agent that has no state_dir
+    const yaml = `\
+fleet:
+  name: test-fleet
+discord:
+  channel_id: "123"
+defaults:
+  workspace: ~/workspace
+agents:
+  hub:
+    role: hub
+    server: local
+    identity: identities/hub.md
+  worker-1:
+    role: worker
+    server: local
+    identity: identities/worker-1.md
+`
+    const dir = makeTempDir()
+    try {
+      writeFileSync(join(dir, "fleet.yaml"), yaml)
+      const config = loadConfig(dir)
+      const stateDir = resolveStateDir("worker-1", config)
+      expect(stateDir).toBe(`${process.env.HOME}/.fleet/state/discord-worker-1`)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("expands ~ in explicit stateDir", () => {
+    const dir = makeTempDir()
+    try {
+      writeFileSync(join(dir, "fleet.yaml"), VALID_FLEET_YAML)
+      const config = loadConfig(dir)
+      // worker-1 has state_dir: ~/.fleet/state/discord-worker1
+      const stateDir = resolveStateDir("worker-1", config)
+      expect(stateDir).toBe(`${process.env.HOME}/.fleet/state/discord-worker1`)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe("sessionName", () => {
+  it("returns fleetName-agentName format", () => {
+    expect(sessionName("my-fleet", "hub")).toBe("my-fleet-hub")
+    expect(sessionName("my-fleet", "worker-1")).toBe("my-fleet-worker-1")
+  })
+})
+
+describe("saveConfig", () => {
+  let dir: string
+
+  beforeEach(() => {
+    dir = makeTempDir()
+  })
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it("round-trips a config through save and load", () => {
+    writeFileSync(join(dir, "fleet.yaml"), VALID_FLEET_YAML)
+    const original = loadConfig(dir)
+    saveConfig(original, dir)
+    const reloaded = loadConfig(dir)
+
+    expect(reloaded.fleet.name).toBe(original.fleet.name)
+    expect(reloaded.discord.channelId).toBe(original.discord.channelId)
+    expect(reloaded.agents["hub"].tokenEnv).toBe(original.agents["hub"].tokenEnv)
+    expect(reloaded.agents["worker-1"].stateDir).toBe(original.agents["worker-1"].stateDir)
+  })
+})
