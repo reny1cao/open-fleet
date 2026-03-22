@@ -1,11 +1,13 @@
 import { start } from "./commands/start"
 import { stop } from "./commands/stop"
 import { status } from "./commands/status"
+import { init } from "./commands/init"
 
 function usage(): void {
   console.log(`fleet-next — Agent fleet CLI (TypeScript)
 
 Usage:
+  fleet-next init --token T1 [--token T2 …] --name NAME [--agent name:server:role …] [--channel ID] [--force]
   fleet-next start <agent> [--wait] [--role <r>]
   fleet-next stop <agent> [--force]
   fleet-next status [--json]
@@ -32,6 +34,20 @@ export async function main(argv: string[]): Promise<void> {
 
   try {
     switch (command) {
+      case "init": {
+        const tokens: string[] = []
+        const agents: string[] = []
+        for (let i = 1; i < args.length; i++) {
+          if (args[i] === "--token" && args[i + 1]) { tokens.push(args[++i]); continue }
+          if (args[i] === "--name" && args[i + 1]) { /* handled by parseFlagValue */ continue }
+          if (args[i] === "--agent" && args[i + 1]) { agents.push(args[++i]); continue }
+        }
+        const name = parseFlagValue(args, "--name") ?? "my-fleet"
+        const channel = parseFlagValue(args, "--channel")
+        if (tokens.length === 0) throw new Error("Usage: fleet-next init --token T1 [--token T2] --name NAME")
+        await init({ tokens, name, agents: agents.length > 0 ? agents : undefined, channel, force: parseFlag(args, "--force") })
+        break
+      }
       case "start": {
         const agent = args[1]
         if (!agent || agent.startsWith("--")) throw new Error("Usage: fleet-next start <agent>")
