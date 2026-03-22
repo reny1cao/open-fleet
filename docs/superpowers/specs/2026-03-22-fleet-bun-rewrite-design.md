@@ -340,11 +340,13 @@ async function start(agent: string, opts: StartOpts) {
   const token = getToken(agent, config)
   const stateDir = resolveStateDir(agent, config)
 
-  // 1. Write identity to stateDir (CLAUDE.md approach)
+  // 1. Write identity to stateDir/identity.md
   writeBootIdentity(agentDef, config, stateDir)
 
   // 2. Write access.json to stateDir
   writeAccessConfig(agentDef, config, stateDir)
+
+  // Identity loaded via --append-system-prompt-file (before channel connects)
 
   // 3. Start Claude Code via runtime adapter
   const runtime = agentDef.server === 'local'
@@ -360,7 +362,7 @@ async function start(agent: string, opts: StartOpts) {
       FLEET_SELF: agent,
     },
     workDir: resolveWorkspace(agentDef, config),
-    command: `claude --dangerously-skip-permissions --channels ${config.defaults.channelPlugin}`,
+    command: `claude --dangerously-skip-permissions --append-system-prompt-file ${stateDir}/identity.md --channels ${adapter.pluginId()}`,
   })
 
   // 4. Handle --dangerously-skip-permissions first-run confirmation
@@ -493,15 +495,19 @@ Auto-install: tmux via brew/apt/dnf/pacman, bun via curl, Claude Code via npm.
 
 Note: `jq` and `python3`/`PyYAML` are no longer required in the TS version.
 
-## Identity at Boot — Resolution Strategy
+## Identity at Boot — Resolved
 
-The identity-at-boot approach depends on Claude Code loading CLAUDE.md from the right location. Resolution order (try each, use first that works):
+Claude Code supports `--append-system-prompt-file <path>`. This is the solution:
 
-1. **`--system-prompt <path>`** — If Claude Code supports a system prompt file flag, use it directly. Cleanest option, no file placement issues.
-2. **`--project-dir <stateDir>`** — Start Claude Code with stateDir as project root, write CLAUDE.md there. The identity instructs the agent: "Your workspace is at <actual-workspace-path>."
-3. **Workspace CLAUDE.md with namespaced section** — Write a `## Fleet Identity` section to `<workspace>/.claude/CLAUDE.md`. Risk: multiple agents sharing a workspace clobber each other. Mitigate with agent-specific filenames (e.g., `.claude/fleet-pm.md`) and a `settings.json` include.
+```bash
+claude --dangerously-skip-permissions \
+  --append-system-prompt-file ~/.fleet/state/pm/identity.md \
+  --channels plugin:discord@claude-plugins-official
+```
 
-**This must be validated in Phase 1 before writing the rest of the commands.** Build a minimal test: write CLAUDE.md to a temp dir, start Claude Code with `--project-dir`, verify it loads the content.
+Each agent's identity file lives in its own state dir (`~/.fleet/state/<agent>/identity.md`). The flag appends it to the default system prompt before the session starts — before the channel connects, before any Discord messages arrive.
+
+**No CLAUDE.md conflicts.** No project-dir workarounds. No race condition. The open question from the original spec is resolved.
 
 ## Note on `fleet inject`
 
@@ -515,6 +521,10 @@ Fleet-managed agents should default to `DISCORD_ACCESS_MODE=static` in their env
 
 1. **Plugin fork timing** — When does fleet need enough plugin control to justify forking discord plugin into the repo?
 2. **Org structure in practice** — The `structure` field in fleet.yaml is forward-looking. For v1, only `topology: star` with `lead` is implemented. Hierarchy/mesh/squad come with govern + adapt layers.
+
+## Resolved Questions
+
+1. ~~`--project-dir` behavior~~ — **Resolved.** Claude Code has `--append-system-prompt-file <path>` which loads identity before the session starts. No CLAUDE.md conflicts, no race condition.
 
 ## Success Criteria
 
