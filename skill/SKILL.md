@@ -16,7 +16,7 @@ Assume the user has nothing set up. Walk them through one step at a time.
 
 ### Step 1: Install fleet CLI and verify environment
 
-**Why:** Fleet needs the CLI installed, Claude Code with Channels support, the Discord plugin, and patches applied. The install script handles all of this.
+**Why:** Fleet needs the CLI installed, Claude Code with Channels support, the Discord plugin, and patches applied. The install script handles all of this — including building the Bun/TypeScript binary (`fleet-next`). After install, `fleet` points to the TS binary automatically.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/reny1cao/open-fleet/master/install.sh | bash
@@ -31,12 +31,14 @@ Check the output for:
 - **Claude Code version** — needs **v2.1.80+** for `--channels` support. Run `claude --version` to check. If older, update: `npm update -g @anthropic-ai/claude-code`. Note: requires claude.ai login (Console/API key auth not supported for Channels).
 - **Discord plugin** — `fleet doctor` checks if `server.ts` exists at the plugin path
 - **Patches** — STATE_DIR and PARTNER_BOT_IDS must show as applied
+- **Bun** — the TS binary requires Bun. `fleet doctor` checks it is installed and in PATH.
 
 If `fleet doctor` shows failures:
 - Claude Code not installed → tell user: `npm install -g @anthropic-ai/claude-code`
 - Claude Code not logged in → tell user: `claude auth login`
 - Plugin missing → run: `fleet patch` (install.sh should have handled this, but re-run if needed)
 - Patches missing → run: `fleet patch`
+- Bun missing → install from https://bun.sh, then re-run `install.sh`
 
 **Done when:** `fleet doctor` shows all checks green (or only non-blocking warnings). `fleet help` works.
 
@@ -79,9 +81,9 @@ Once the user agrees on the team, move to Step 4.
 
 ### Step 4: Create bots, configure, and invite
 
-**Why:** Each agent needs a Discord bot identity. You'll guide the user to create each one, grab its token, invite it to the server, then run `fleet init` to generate config.
+**Why:** Each agent needs a Discord bot identity (token). `fleet add-agent` handles the rest — it validates the token, generates the identity file, writes `access.json` with the correct schema, and prints the invite URL.
 
-**What the user provides:** Only bot tokens. Everything else is auto-detected.
+**What the user provides:** Only bot tokens. Everything else is handled by the CLI.
 
 **Create one bot at a time. For each bot:**
 
@@ -89,30 +91,30 @@ Once the user agrees on the team, move to Step 4.
 2. "Click 'New Application' at the top right. Name it [agreed name]. Click Create."
 3. "Click 'Bot' in the left sidebar. (The Application ID and Public Key on this page are NOT the token.)"
 4. "Click 'Reset Token', confirm, and paste the token to me."
-5. After receiving the token, verify it by running: `curl -sf -H "Authorization: Bot TOKEN" https://discord.com/api/v10/users/@me`
+5. After receiving the token, run:
+   ```bash
+   fleet add-agent --token TOKEN --name AGENT_NAME --role ROLE
+   ```
+   The CLI validates the token against the Discord API, generates `identities/<name>.md`, updates `fleet.yaml`, and prints the invite URL.
 6. "One more thing — scroll down to 'Privileged Gateway Intents', turn on 'Message Content Intent', click Save."
-7. "Go back to 'General Information' in the left sidebar, copy the Application ID."
-8. Give invite URL: `https://discord.com/oauth2/authorize?client_id=APPLICATION_ID&scope=bot&permissions=117840`
-9. "Open the link, select your server, click Authorize."
+7. Share the invite URL from `fleet add-agent` output: "Open this link, select your server, click Authorize."
 
 Repeat for each bot.
 
-**After all bots are created and invited — choose a channel:**
+**After all bots are created and invited — initialize the fleet:**
 
-Before running `fleet init`, query the server's channels to let the user choose:
+If starting fresh (no existing `fleet.yaml`), use `fleet init` to set up the fleet config all at once:
+
 ```bash
+# First, get channel ID
+curl -sf -H "Authorization: Bot FIRST_TOKEN" https://discord.com/api/v10/users/@me/guilds
 curl -sf -H "Authorization: Bot FIRST_TOKEN" https://discord.com/api/v10/guilds/GUILD_ID/channels
 ```
-(Get GUILD_ID from `curl -sf -H "Authorization: Bot FIRST_TOKEN" https://discord.com/api/v10/users/@me/guilds`)
 
-Show the text channels to the user and ask which one the fleet should use. If they want a new channel, they can create one in Discord first.
-
-**Run fleet init:**
-
-Ask the user what they want to name their fleet.
+Show the text channels to the user and ask which one the fleet should use. Then:
 
 ```bash
-fleet init --token T1 --token T2 --name USER_NAME --channel CHANNEL_ID --agent name1:local:role1 --agent name2:local:role2
+fleet init --token T1 --token T2 --name FLEET_NAME --channel CHANNEL_ID --agent name1:local:role1 --agent name2:local:role2
 ```
 
 **Done when:** Output shows "Fleet initialized!" Verify: `cat fleet.yaml` shows agents and a non-empty `channel_id`.
@@ -120,7 +122,7 @@ fleet init --token T1 --token T2 --name USER_NAME --channel CHANNEL_ID --agent n
 
 ### Step 5: Start the team
 
-**Why:** This launches each agent as a Claude Code process connected to Discord. They'll come online and start listening.
+**Why:** This launches each agent as a Claude Code process connected to Discord. Identity is injected via `--append-system-prompt-file` at startup — the agent knows its name and role from the very first message, with no race condition.
 
 **Before starting:** Claude Code needs `--dangerously-skip-permissions` to run unattended. Fleet auto-handles the first-run confirmation prompt (sends "y" automatically via tmux). But if a bot doesn't come online after `fleet start`:
 
@@ -223,7 +225,7 @@ Starts all agents from fleet.yaml. Skips already-running agents. Use `--json` fo
 ### "stop all"
 Stop each agent sequentially:
 ```bash
-for agent in $(fleet status --json | python3 -c "import json,sys; [print(a['name']) for a in json.load(sys.stdin) if a['state']=='running']"); do fleet stop "$agent"; done
+for agent in $(fleet status --json | jq -r '.[] | select(.state=="running") | .name'); do fleet stop "$agent"; done
 ```
 
 ### "add agent"

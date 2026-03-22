@@ -89,38 +89,34 @@ Roles are assigned via identity files (`identities/<name>.md`). The `fleet add-a
 
 ## Identity Injection
 
-### Timing
+### How it works
+
+Identity is loaded via Claude Code's `--append-system-prompt-file` flag. The fleet CLI passes the agent's identity file path at process startup — no tmux send-keys, no polling, no race condition.
 
 ```
 fleet start <bot>
   │
-  ├── Start Claude Code in tmux with DISCORD_BOT_TOKEN
+  ├── Resolve identity file: identities/<bot>.md
+  │   (+ role overlay appended if --role specified)
   │
-  ├── Poll tmux output for "Listening for channel messages" (max 60s)
-  │   (Claude Code initialization + Discord Gateway IDENTIFY)
-  │
-  ├── Wait 3 more seconds (Gateway stabilization)
-  │
-  └── tmux send-keys "<identity prompt>"
-      │
-      ├── Base identity (identities/<bot>.md)
-      │   "Read this identity and remember it..."
-      │
-      └── + Role overlay if --role specified (identities/roles/<role>.md)
-          "You are now assigned an additional role..."
+  └── Launch Claude Code in tmux:
+        claude --channels ... \
+               --append-system-prompt-file identities/<bot>.md
 ```
 
-### Remote Injection
+The identity is part of the system prompt from the very first message. The bot knows who it is before any Discord message arrives.
 
-For remote bots, the prompt can't be sent directly via `tmux send-keys` (shell escaping nightmare across SSH). Instead:
-
-1. Write the full prompt to a temp file on the remote server via SSH pipe
-2. Use `tmux send-keys` on the remote to inject from that file
-3. Clean up the temp file
-
-### Hot Injection
+### Role overlay
 
 `fleet inject <bot> <role>` sends a role overlay to a running bot without restarting. The prompt starts with "You are now assigned an additional role" — Claude appends the new expertise to its existing identity.
+
+For a clean role injection at start time, use `--role`:
+
+```bash
+fleet start worker --role reviewer
+```
+
+The CLI concatenates `identities/<bot>.md` and `identities/roles/reviewer.md` into a single temp file and passes it via `--append-system-prompt-file`.
 
 ## Multi-Instance Isolation
 
@@ -150,7 +146,7 @@ const STATE_DIR = process.env.DISCORD_STATE_DIR
 - No env var set → original behavior (backwards compatible)
 - `DISCORD_STATE_DIR=~/.claude/channels/discord-pilot` → fully isolated state
 
-`fleet` reads `state_dir` from `fleet.yaml` and passes it as `DISCORD_STATE_DIR` when starting the Claude Code process.
+`fleet` reads the `state_dir` field from the agent's entry in `fleet.yaml` and passes it as `DISCORD_STATE_DIR` when starting the Claude Code process. The `fleet init` and `fleet add-agent` commands set this automatically for every agent after the first.
 
 ### Why CLAUDE_PLUGIN_DATA doesn't help
 
@@ -168,11 +164,11 @@ The `/discord:access` and `/discord:configure` skills have hardcoded paths to `~
 ### User → Bot (direct task)
 
 ```
-User posts in #general: "Check disk usage on Singapore"
-  → Sentinel receives (it monitors #general)
-  → Sentinel @mentions Archon in #general: "Check disk usage"
-  → Archon executes `df -h` on Singapore VPS
-  → Archon replies in #general with results
+User posts in #general: "Check disk usage on the VPS"
+  → Hub receives (it monitors #general)
+  → Hub @mentions Ops in #general: "Check disk usage"
+  → Ops executes `df -h` on remote VPS
+  → Ops replies in #general with results
   → User sees the reply directly
 ```
 
@@ -180,14 +176,14 @@ User posts in #general: "Check disk usage on Singapore"
 
 ```
 User posts in #general: "Add rate limiting to the API"
-  → Sentinel receives, routes to Pilot
-  → Sentinel @mentions Pilot in #dev: "Add rate limiting to the API"
-  → Pilot reads local codebase, writes implementation plan
-  → Pilot @mentions Forge in #dev: specific instructions with file paths
-  → Forge implements on remote server
-  → Forge replies in #dev: diff + test results
-  → Pilot reviews, requests changes or approves
-  → Sentinel summarizes outcome in #general for user
+  → Hub receives, routes to Lead
+  → Hub @mentions Lead in #dev: "Add rate limiting to the API"
+  → Lead reads local codebase, writes implementation plan
+  → Lead @mentions Coder in #dev: specific instructions with file paths
+  → Coder implements on remote server
+  → Coder replies in #dev: diff + test results
+  → Lead reviews, requests changes or approves
+  → Hub summarizes outcome in #general for user
 ```
 
 ## Star Topology (Why Not Others)
@@ -201,6 +197,6 @@ We evaluated four organizational models:
 
 Star topology works because:
 - One person is giving orders — only one entry point needed
-- Sentinel as the single hub keeps routing simple
+- A single hub agent keeps routing simple
 - Any bot can talk to any other via @mention if needed (escape hatch)
-- Easy to reason about: user → Sentinel → the right bot
+- Easy to reason about: user → Hub → the right bot

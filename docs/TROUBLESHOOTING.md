@@ -50,16 +50,16 @@ Common issues and solutions, earned the hard way.
 
 **Fix:** `fleet init` handles this automatically — the second+ agent on the same server gets `state_dir: ~/.fleet/state/discord-<name>` in fleet.yaml. The `DISCORD_STATE_DIR` env var is set when `fleet start` launches the agent. To fix manually, add `state_dir` to the agent in fleet.yaml.
 
-## 4. Identity injection doesn't land
+## 4. Bot starts but doesn't know its name/role
 
-**Symptom:** Bot starts but doesn't know its name/role.
+**Symptom:** Bot is online and responds, but has no identity — introduces itself generically.
 
 **Causes:**
-- Bot wasn't fully initialized when injection fired (fleet now polls for readiness)
+- `identities/<bot>.md` file is missing or empty
+- `--append-system-prompt-file` path was wrong at launch (check `fleet status --json` for the resolved path)
 - Remote bot's Discord plugin failed to start (check bun in PATH)
-- tmux session crashed during injection
 
-**Debug:** `tmux capture-pane -t hq-<bot> -p | tail -30` to see what the bot received.
+**Debug:** `tmux capture-pane -t hq-<bot> -p | tail -30` to see the launch command. Look for `--append-system-prompt-file` in the output. Run `fleet doctor` to check that identity files exist.
 
 ## 5. `fleet status` shows "SSH unreachable"
 
@@ -83,6 +83,12 @@ Common issues and solutions, earned the hard way.
 ## Diagnostic commands
 
 ```bash
+# Full health check — start here for any issue
+fleet doctor
+
+# Machine-readable health check (for scripting)
+fleet doctor --json
+
 # Check bot token validity
 curl -s -H "Authorization: Bot <TOKEN>" https://discord.com/api/v10/users/@me | jq .username
 
@@ -102,4 +108,7 @@ cat ~/.fleet/state/discord-<agent>/access.json | jq .
 
 # Verify access.json has correct schema (must have groups with channel ID)
 jq '.groups | keys' ~/.claude/channels/discord/access.json
+
+# See what a bot received at startup (check identity injection)
+tmux capture-pane -t hq-<bot> -p | tail -30
 ```
