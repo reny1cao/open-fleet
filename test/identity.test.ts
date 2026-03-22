@@ -97,3 +97,59 @@ describe("updateAllRosters", () => {
     rmSync(TMP, { recursive: true })
   })
 })
+
+// Task 3: Collaboration norms
+describe("buildIdentityPrompt — collaboration norms", () => {
+  it("contains ack norm (immediately + react)", () => {
+    const prompt = buildIdentityPrompt("pm", config, botIds)
+    expect(prompt.toLowerCase()).toContain("immediately")
+    expect(prompt.toLowerCase()).toContain("react")
+  })
+
+  it("contains failure norm (can't)", () => {
+    const prompt = buildIdentityPrompt("pm", config, botIds)
+    expect(prompt).toContain("can't")
+  })
+
+  it("contains handoff norm (@mention)", () => {
+    const prompt = buildIdentityPrompt("pm", config, botIds)
+    expect(prompt).toContain("@mention")
+  })
+
+  it("contains completion norm (finish)", () => {
+    const prompt = buildIdentityPrompt("pm", config, botIds)
+    expect(prompt.toLowerCase()).toContain("finish")
+  })
+
+  it("does NOT contain old 'Report concisely' rule", () => {
+    const prompt = buildIdentityPrompt("pm", config, botIds)
+    expect(prompt).not.toContain("Report concisely")
+  })
+})
+
+// Task 4: Manager knowledge injection
+const managerConfig: FleetConfig = {
+  fleet: { name: "crew" },
+  structure: { topology: "star", lead: "pm" },
+  discord: { channelId: "chan123" },
+  defaults: { workspace: "~/workspace" },
+  agents: {
+    pm: { role: "lead", tokenEnv: "T_PM", server: "local", identity: "identities/pm.md" },
+    worker: { role: "worker", tokenEnv: "T_W", server: "local", identity: "identities/worker.md" },
+  },
+}
+
+describe("buildIdentityPrompt — manager knowledge injection", () => {
+  it("lead's identity contains fleet management commands", () => {
+    const prompt = buildIdentityPrompt("pm", managerConfig, botIds)
+    expect(prompt).toContain("fleet status")
+    expect(prompt).toContain("fleet doctor")
+    expect(prompt).toContain("fleet inject")
+    expect(prompt.toLowerCase()).toContain("coordinator")
+  })
+
+  it("worker's identity does NOT contain Fleet Management section", () => {
+    const prompt = buildIdentityPrompt("worker", managerConfig, botIds)
+    expect(prompt).not.toContain("Fleet Management")
+  })
+})

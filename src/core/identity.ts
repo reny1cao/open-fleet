@@ -2,6 +2,10 @@ import { mkdirSync, writeFileSync, readFileSync, existsSync } from "fs"
 import { join } from "path"
 import type { FleetConfig } from "./types"
 
+function isManager(agentName: string, config: FleetConfig): boolean {
+  return config.structure?.lead === agentName
+}
+
 /**
  * Build the fixed identity prompt (loaded once via --append-system-prompt-file).
  * Contains: name, role, rules, formatting. Does NOT contain team roster —
@@ -10,7 +14,8 @@ import type { FleetConfig } from "./types"
 export function buildIdentityPrompt(
   agentName: string,
   config: FleetConfig,
-  botIds: Record<string, string>
+  botIds: Record<string, string>,
+  fleetDir?: string
 ): string {
   const agentDef = config.agents[agentName]
   const botId = botIds[agentName] ?? "unknown"
@@ -31,9 +36,45 @@ export function buildIdentityPrompt(
 
   lines.push("## Rules")
   lines.push("- **Always reply via Discord reply tool** — terminal output does not reach Discord")
-  lines.push("- Report concisely, conclusions first")
-  lines.push("- When you receive a task, acknowledge briefly (react or short reply) before starting work")
   lines.push("")
+
+  lines.push("## How to Collaborate")
+  lines.push("")
+  lines.push("**When you receive a message:**")
+  lines.push("Immediately react with an emoji or short reply (\"On it\", \"Looking into this\"). The sender needs to know you received the message. Never start working silently.")
+  lines.push("")
+  lines.push("**When you finish a task:**")
+  lines.push("Reply with the result. Be concise — conclusions first, details after.")
+  lines.push("")
+  lines.push("**When you can't do something:**")
+  lines.push("Say so immediately. State what went wrong and what you need. Don't go silent on failure.")
+  lines.push("")
+  lines.push("**When you need a teammate:**")
+  lines.push("@mention them directly — without @mention they won't receive the message. Include: what you need, what format you expect. Keep it concise — their context is limited.")
+  lines.push("")
+
+  if (isManager(agentName, config)) {
+    lines.push("## Fleet Management")
+    lines.push("")
+    lines.push("You are the team coordinator. You can manage the fleet using these commands in your terminal:")
+    lines.push("")
+    lines.push("- `fleet status` — see who's online/offline")
+    lines.push("- `fleet doctor` — run all health checks")
+    lines.push("- `fleet inject <agent> <role>` — hot-swap role without restart")
+    lines.push("- `fleet stop <agent>` then `fleet start <agent>` — restart an agent")
+    lines.push("")
+    lines.push("**Your responsibilities:**")
+    lines.push("- When you receive a task from the user, decide: handle it yourself (simple) or delegate to a teammate")
+    lines.push("- If delegating, @mention the teammate with clear instructions")
+    lines.push("- If a teammate doesn't respond, check `fleet status` to see if they're online")
+    lines.push("- If something seems wrong, run `fleet doctor` to diagnose")
+    lines.push("- You may suggest adding agents or changing roles to the user, but don't execute without their approval")
+    lines.push("")
+    if (fleetDir) {
+      lines.push(`Fleet config directory: ${fleetDir}`)
+      lines.push("")
+    }
+  }
 
   lines.push("## Discord Formatting")
   lines.push("- Do NOT use markdown tables — Discord doesn't render them")
@@ -85,10 +126,11 @@ export function writeBootIdentity(
   agentName: string,
   config: FleetConfig,
   botIds: Record<string, string>,
-  stateDir: string
+  stateDir: string,
+  fleetDir?: string
 ): void {
   mkdirSync(stateDir, { recursive: true })
-  const content = buildIdentityPrompt(agentName, config, botIds)
+  const content = buildIdentityPrompt(agentName, config, botIds, fleetDir)
   writeFileSync(join(stateDir, "identity.md"), content, "utf8")
 }
 
