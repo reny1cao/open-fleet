@@ -3,8 +3,11 @@ import { writeBootIdentity, writeRoster } from "../core/identity"
 import { DiscordApi } from "../channel/discord/api"
 import { writeAccessConfig } from "../channel/discord/access"
 import { TmuxLocal } from "../runtime/tmux"
+import { TmuxRemote, scp, sshRun } from "../runtime/remote"
+import type { RuntimeAdapter } from "../runtime/types"
 import { homedir } from "os"
 import { join } from "path"
+import { existsSync } from "fs"
 
 function expandHome(p: string): string {
   if (p.startsWith("~/")) return join(homedir(), p.slice(2))
@@ -35,7 +38,13 @@ export async function start(
   const session = sessionName(config.fleet.name, agentName)
 
   // 5. Check if already running
-  const runtime = new TmuxLocal()
+  const runtime: RuntimeAdapter = agentDef.server === "local"
+    ? new TmuxLocal()
+    : (() => {
+        const serverConfig = config.servers?.[agentDef.server]
+        if (!serverConfig) throw new Error(`Server "${agentDef.server}" not defined in fleet.yaml servers`)
+        return new TmuxRemote(serverConfig)
+      })()
   if (await runtime.isRunning(session)) {
     if (opts.json) {
       console.log(JSON.stringify({ agent: agentName, session, status: "already_running" }))
@@ -96,6 +105,24 @@ export async function start(
     userId: config.discord.userId,
   })
 
+  // 8b. SCP identity files to remote if non-local
+  if (agentDef.server !== "local") {
+    const serverConfig = config.servers![agentDef.server]
+    if (!opts.json) console.log(`  Copying files to ${agentDef.server}...`)
+
+    // Create remote dirs
+    await sshRun(serverConfig, `mkdir -p '${expandedStateDir}/.claude'`)
+
+    // SCP identity, access, roster
+    await scp(serverConfig, join(expandedStateDir, "identity.md"), `${expandedStateDir}/identity.md`)
+    await scp(serverConfig, join(expandedStateDir, "access.json"), `${expandedStateDir}/access.json`)
+
+    const rosterPath = join(expandedStateDir, ".claude", "CLAUDE.md")
+    if (existsSync(rosterPath)) {
+      await scp(serverConfig, rosterPath, `${expandedStateDir}/.claude/CLAUDE.md`)
+    }
+  }
+
   // 9. Determine workspace (for --add-dir)
   const workspace = agentDef.workspace ?? config.defaults.workspace ?? process.cwd()
   const expandedWorkspace = expandHome(workspace)
@@ -127,17 +154,18 @@ export async function start(
 
   // 11. Handle trust prompt (new workspace directory) and permissions prompt
   //     Both require pressing Enter or "y" + Enter. Poll for either.
+  const sleepMs = agentDef.server === "local" ? 3000 : 5000
   for (let attempt = 0; attempt < 3; attempt++) {
     const output = await runtime.captureOutput(session)
     if (/Listening for channel messages/.test(output)) break
     if (/trust this folder|safety check/i.test(output)) {
       await runtime.sendKeys(session, "")  // press Enter to accept
-      await Bun.sleep(3000)
+      await Bun.sleep(sleepMs)
       continue
     }
     if (/bypass|dangerous|permission|y\/n/i.test(output)) {
       await runtime.sendKeys(session, "y")
-      await Bun.sleep(3000)
+      await Bun.sleep(sleepMs)
       continue
     }
     await Bun.sleep(2000)
