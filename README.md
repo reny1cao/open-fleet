@@ -46,31 +46,16 @@ fleet stop <agent>               # Stop an agent
 fleet apply                      # Start all agents
 fleet status                     # Who's online
 fleet inject <agent> <role>      # Change an agent's role
+fleet add-agent                  # Add a new agent to the fleet
 fleet doctor                     # Diagnose issues
 fleet init                       # Set up a new fleet
 ```
 
 All commands support `--json` for machine-readable output.
 
-## Add a Remote Server
+## Remote Servers
 
-```yaml
-# fleet.yaml
-servers:
-  staging:
-    ssh_host: my-server
-    user: dev
-
-agents:
-  worker-remote:
-    token_env: DISCORD_BOT_TOKEN_WORKER
-    role: worker
-    server: staging
-```
-
-```bash
-fleet start worker-remote    # Starts on the remote server via SSH
-```
+Remote server support (SSH + tmux) is coming in v1.1. For now, all agents run on the local machine.
 
 ## Contribute
 

@@ -1,6 +1,6 @@
 # Contributing to Fleet
 
-Thanks for your interest in contributing! Fleet is a shell-native tool for orchestrating AI agents across multiple servers.
+Thanks for your interest in contributing! Fleet is a TypeScript CLI for orchestrating AI agents across multiple machines.
 
 ## Getting Started
 
@@ -13,20 +13,19 @@ Thanks for your interest in contributing! Fleet is a shell-native tool for orche
 
 ```
 fleet                    # CLI entry point (sub-command router)
-lib/
-├── config.sh            # fleet.yaml parsing (Python3 + PyYAML)
-├── remote.sh            # SSH + tmux session management
-├── identity.sh          # Identity injection + hot role injection
-├── init.sh              # Interactive setup flow
-├── doctor.sh            # Health diagnostics
-└── ui.sh                # Colors and output helpers
+src/
+├── config.ts            # fleet.yaml parsing
+├── identity.ts          # Identity injection + hot role injection
+├── init.ts              # Interactive setup flow
+├── doctor.ts            # Health diagnostics
+└── ui.ts                # Colors and output helpers
 ```
 
 ## Design Principles
 
-- **Shell native** — No Node.js/Python runtime dependencies beyond PyYAML for YAML parsing
-- **fleet.yaml is the single source of truth** — All config reads go through `lib/config.sh`
-- **No hardcoded values** — Server names, SSH hosts, users, tmux prefixes all come from config
+- **TypeScript CLI** — The CLI is implemented in TypeScript under `src/`
+- **fleet.yaml is the single source of truth** — All config reads go through `src/config.ts`
+- **No hardcoded values** — Server names, users, and prefixes all come from config
 - **Agents are generic** — The CLI doesn't assume specific agent names or roles
 
 ## Making Changes
@@ -38,8 +37,8 @@ lib/
 
 ## Adding a New Command
 
-1. Add the handler function `do_mycommand()` in `fleet` or a new `lib/mycommand.sh`
-2. Add the case to the route switch in `fleet`
+1. Add the handler function in `src/` (new file or extend an existing one)
+2. Add the case to the route switch in the CLI entry point
 3. Update `fleet help` text
 4. Add shell completions in `completions/`
 
