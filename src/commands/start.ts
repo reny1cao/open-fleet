@@ -45,18 +45,36 @@ export async function start(
     return
   }
 
-  // 6. Validate all bot tokens to build botIds map
+  // 6. Validate all bot tokens to build botIds map (parallel)
   const discord = new DiscordApi()
   const botIds: Record<string, string> = {}
 
-  for (const [name, def] of Object.entries(config.agents)) {
-    try {
+  const entries = Object.entries(config.agents)
+  const results = await Promise.allSettled(
+    entries.map(async ([name]) => {
       const agentToken = getToken(name, config, configDir)
       const info = await discord.validateToken(agentToken)
-      botIds[name] = info.id
-    } catch {
+      return { name, id: info.id }
+    })
+  )
+
+  for (let i = 0; i < entries.length; i++) {
+    const [name] = entries[i]
+    const result = results[i]
+    if (result.status === "fulfilled") {
+      botIds[name] = result.value.id
+    } else {
+      if (name === agentName) {
+        throw new Error(`Cannot start ${agentName}: own token validation failed — ${result.reason instanceof Error ? result.reason.message : result.reason}`)
+      }
+      if (!opts.json) console.warn(`  Warning: ${name} token validation failed — ${result.reason instanceof Error ? result.reason.message : result.reason}`)
       botIds[name] = "UNKNOWN"
     }
+  }
+
+  const unknownAgents = Object.entries(botIds).filter(([, id]) => id === "UNKNOWN").map(([n]) => n)
+  if (unknownAgents.length > 0 && !opts.json) {
+    console.warn(`  Warning: ${unknownAgents.length} agent(s) have unknown bot IDs: ${unknownAgents.join(", ")}`)
   }
 
   // 7. Write identity.md (fixed, loaded once via --append-system-prompt-file)
@@ -75,6 +93,7 @@ export async function start(
     channelId: config.discord.channelId,
     partnerBotIds,
     requireMention: true,
+    userId: config.discord.userId,
   })
 
   // 9. Determine workspace (for --add-dir)
@@ -88,8 +107,8 @@ export async function start(
   const command = [
     "claude",
     "--dangerously-skip-permissions",
-    `--append-system-prompt-file ${expandedStateDir}/identity.md`,
-    `--add-dir ${expandedWorkspace}`,
+    `--append-system-prompt-file '${expandedStateDir}/identity.md'`,
+    `--add-dir '${expandedWorkspace}'`,
     `--channels ${discord.pluginId()}`,
   ].join(" ")
 

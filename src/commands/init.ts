@@ -1,6 +1,7 @@
 import { existsSync, writeFileSync, mkdirSync } from "fs"
 import { join } from "path"
 import { homedir } from "os"
+import { createInterface } from "readline"
 import { saveConfig, resolveStateDir } from "../core/config"
 import type { FleetConfig, AgentDef } from "../core/types"
 import { writeBootIdentity } from "../core/identity"
@@ -145,6 +146,7 @@ export async function init(opts: {
     fleet: { name },
     discord: {
       channelId,
+      serverId: guildId,
       ...(ownerId !== undefined ? { userId: ownerId } : {}),
     },
     defaults: {
@@ -196,6 +198,7 @@ export async function init(opts: {
       channelId,
       partnerBotIds,
       requireMention: true,
+      userId: config.discord.userId,
     })
     log(`  ${agentName}: access.json → ${stateDir}`)
   }
@@ -229,7 +232,7 @@ export async function init(opts: {
 }
 
 export async function interactiveInit(configDir: string): Promise<void> {
-  const rl = require("readline").createInterface({ input: process.stdin, output: process.stdout })
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
   const ask = (q: string): Promise<string> => new Promise(r => rl.question(q, r))
 
   try {

@@ -10,9 +10,12 @@ const PLUGIN_SERVER_PATH = join(
 )
 
 export async function patch(opts?: { json?: boolean }): Promise<void> {
+  const log = opts?.json ? () => {} : console.log.bind(console)
+  const warn = opts?.json ? () => {} : console.warn.bind(console)
+
   // 1. Check server.ts exists
   if (!existsSync(PLUGIN_SERVER_PATH)) {
-    console.warn(`warn: server.ts not found at ${PLUGIN_SERVER_PATH}`)
+    warn(`warn: server.ts not found at ${PLUGIN_SERVER_PATH}`)
     return
   }
 
@@ -28,7 +31,7 @@ export async function patch(opts?: { json?: boolean }): Promise<void> {
   }
 
   if (tokens.length === 0) {
-    console.warn("warn: no DISCORD_BOT_TOKEN_* entries found in .env — nothing to patch")
+    warn("warn: no DISCORD_BOT_TOKEN_* entries found in .env — nothing to patch")
     return
   }
 
@@ -41,12 +44,12 @@ export async function patch(opts?: { json?: boolean }): Promise<void> {
       const info = await discord.validateToken(token)
       botIds.push(info.id)
     } catch (err) {
-      console.warn(`warn: token validation failed — ${err instanceof Error ? err.message : err}`)
+      warn(`warn: token validation failed — ${err instanceof Error ? err.message : err}`)
     }
   }
 
   if (botIds.length === 0) {
-    console.warn("warn: no valid bot IDs resolved — server.ts not modified")
+    warn("warn: no valid bot IDs resolved — server.ts not modified")
     return
   }
 
@@ -63,24 +66,22 @@ export async function patch(opts?: { json?: boolean }): Promise<void> {
   const changed = updated !== content
 
   if (!patternFound) {
-    console.warn("warn: PARTNER_BOT_IDS pattern not found in server.ts — no changes made")
+    warn("warn: PARTNER_BOT_IDS pattern not found in server.ts — no changes made")
   } else if (!changed) {
     // Pattern found but content is already identical — already up to date
-    console.log(`PARTNER_BOT_IDS already up to date (${botIds.length} bot ID(s))`)
+    log(`PARTNER_BOT_IDS already up to date (${botIds.length} bot ID(s))`)
   } else {
     // 6. Write updated server.ts
     writeFileSync(PLUGIN_SERVER_PATH, updated, "utf8")
-    console.log(`Updated PARTNER_BOT_IDS with ${botIds.length} bot ID(s)`)
-    if (!opts?.json) {
-      for (const id of botIds) {
-        console.log(`  ${id}`)
-      }
+    log(`Updated PARTNER_BOT_IDS with ${botIds.length} bot ID(s)`)
+    for (const id of botIds) {
+      log(`  ${id}`)
     }
   }
 
   // 7. Check STATE_DIR patch
   if (!content.includes("DISCORD_STATE_DIR")) {
-    console.warn(
+    warn(
       "warn: STATE_DIR patch not detected (DISCORD_STATE_DIR env var support missing). " +
         "It should be in the upstream plugin — check if your plugin version is up to date."
     )

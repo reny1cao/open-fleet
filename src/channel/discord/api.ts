@@ -34,14 +34,15 @@ async function discordFetch(
   try {
     const res = await fetch(`${BASE_URL}${path}`, {
       ...options,
+      headers: { Authorization: `Bot ${token}`, "Content-Type": "application/json", ...options.headers },
       signal: controller.signal,
-      headers: {
-        Authorization: `Bot ${token}`,
-        "Content-Type": "application/json",
-        ...(options.headers ?? {}),
-      },
     })
     return res
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error(`Discord API timed out after ${TIMEOUT_MS / 1000}s (${path})`)
+    }
+    throw err
   } finally {
     clearTimeout(timer)
   }

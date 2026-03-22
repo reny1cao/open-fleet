@@ -13,7 +13,7 @@ export function writeAccessConfig(stateDir: string, opts: AccessConfigOpts): voi
 
   const config: AccessConfig = {
     dmPolicy: "allowlist",
-    allowFrom: opts.partnerBotIds,
+    allowFrom: [...opts.partnerBotIds, ...(opts.userId ? [opts.userId] : [])],
     groups: {
       [opts.channelId]: {
         requireMention: opts.requireMention,

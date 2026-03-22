@@ -72,11 +72,13 @@ export async function addAgent(opts: {
       try {
         const info = await discord.validateToken(envToken)
         botIds[agentName] = info.id
-      } catch {
-        botIds[agentName] = "unknown"
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        if (!opts.json) console.warn(`  Warning: ${agentName} token validation failed — ${msg}`)
+        botIds[agentName] = "UNKNOWN"
       }
     } else {
-      botIds[agentName] = "unknown"
+      botIds[agentName] = "UNKNOWN"
     }
   }
 
@@ -88,12 +90,13 @@ export async function addAgent(opts: {
   const partnerBotIds = Object.entries(botIds)
     .filter(([n]) => n !== name)
     .map(([, id]) => id)
-    .filter((id) => id !== "unknown")
+    .filter((id) => id !== "UNKNOWN")
 
   writeAccessConfig(stateDir, {
     channelId: config.discord.channelId,
     partnerBotIds,
     requireMention: true,
+    userId: config.discord.userId,
   })
   log(`  Wrote access.json → ${stateDir}`)
 
