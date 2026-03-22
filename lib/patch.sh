@@ -29,24 +29,24 @@ sync_partner_bot_ids() {
 
   [[ ${#ids[@]} -eq 0 ]] && return 0
 
-  # Build the new Set content
-  local set_content=""
-  for id in "${ids[@]}"; do
-    set_content="${set_content}  '${id}',\n"
-  done
-
-  # Replace the PARTNER_BOT_IDS block
-  python3 -c "
+  # Replace the PARTNER_BOT_IDS block — pass IDs as argv to avoid quoting issues
+  python3 - "$server_ts" "${ids[@]}" <<'PYEOF'
 import re, sys
-with open(sys.argv[1], 'r') as f:
+
+server_ts = sys.argv[1]
+bot_ids = sys.argv[2:]
+
+with open(server_ts, 'r') as f:
     content = f.read()
-# Match: const PARTNER_BOT_IDS = new Set([\n...\n])
+
+lines = "\n".join(f"  '{bid}'," for bid in bot_ids)
+replacement = f"const PARTNER_BOT_IDS = new Set([\n{lines}\n])"
 pattern = r'const PARTNER_BOT_IDS = new Set\(\[.*?\]\)'
-replacement = 'const PARTNER_BOT_IDS = new Set([\n${set_content}])'
 new_content = re.sub(pattern, replacement, content, flags=re.DOTALL)
-with open(sys.argv[1], 'w') as f:
+
+with open(server_ts, 'w') as f:
     f.write(new_content)
-" "$server_ts"
+PYEOF
 
   $JSON_OUTPUT 2>/dev/null && return 0
   $QUIET_OUTPUT 2>/dev/null && return 0
