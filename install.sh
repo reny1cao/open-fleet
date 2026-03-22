@@ -8,9 +8,10 @@
 # What it does:
 #   1. Clones repo (if run via curl)
 #   2. Installs fleet CLI to PATH
-#   3. Checks/installs dependencies
-#   4. Checks Claude Code login
-#   5. Installs Discord plugin + patches
+#   3. Builds fleet-next (TypeScript binary)
+#   4. Checks/installs dependencies
+#   5. Checks Claude Code login
+#   6. Installs Discord plugin + patches
 #
 # After this:
 #   fleet init     — configure tokens, Discord, agents
@@ -91,7 +92,7 @@ fi
 # Step 1: Fleet CLI + Completions
 # ════════════════════════════════════════
 
-step "Step 1/5: Installing fleet CLI"
+step "Step 1/6: Installing fleet CLI"
 
 mkdir -p "$BIN_DIR"
 chmod +x "$SCRIPT_DIR/fleet"
@@ -121,12 +122,30 @@ if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
 fi
 
 # ════════════════════════════════════════
-# Step 2: Dependencies
+# Step 2: Build fleet-next (TypeScript)
 # ════════════════════════════════════════
 
-step "Step 2/5: Dependencies"
+step "Step 2/6: Building fleet-next (TypeScript)"
 
-for cmd in jq tmux curl; do
+if command -v bun &>/dev/null; then
+  (cd "$SCRIPT_DIR" && bun install --frozen-lockfile 2>/dev/null && bun build --compile --outfile fleet-next src/index.ts 2>/dev/null)
+  if [[ -f "$SCRIPT_DIR/fleet-next" ]]; then
+    ln -sf "$SCRIPT_DIR/fleet-next" "$BIN_DIR/fleet-next"
+    ok "fleet-next built and linked"
+  else
+    warn "fleet-next build failed — bash fleet still available"
+  fi
+else
+  warn "bun not found — fleet-next will be built after bun is installed"
+fi
+
+# ════════════════════════════════════════
+# Step 3: Dependencies
+# ════════════════════════════════════════
+
+step "Step 3/6: Dependencies"
+
+for cmd in tmux curl; do
   if command -v "$cmd" &>/dev/null; then
     ok "$cmd"
   else
@@ -134,21 +153,6 @@ for cmd in jq tmux curl; do
     install_pkg "$cmd" && ok "$cmd installed" || fail "$cmd — install failed"
   fi
 done
-
-# Python3
-if command -v python3 &>/dev/null; then
-  ok "python3"
-else
-  fail "python3 — not found. Install manually."
-fi
-
-# PyYAML
-if python3 -c "import yaml" 2>/dev/null; then
-  ok "PyYAML"
-else
-  echo "  Installing PyYAML..."
-  pip3 install pyyaml 2>/dev/null && ok "PyYAML installed" || fail "PyYAML — pip3 install pyyaml"
-fi
 
 # bun
 if command -v bun &>/dev/null; then
@@ -158,6 +162,16 @@ else
   curl -fsSL https://bun.sh/install | bash 2>/dev/null
   export PATH="$HOME/.bun/bin:$PATH"
   ok "bun installed"
+fi
+
+# Retry fleet-next build if bun was just installed
+if [[ ! -f "$SCRIPT_DIR/fleet-next" ]] && command -v bun &>/dev/null; then
+  echo "  Building fleet-next (bun now available)..."
+  (cd "$SCRIPT_DIR" && bun install --frozen-lockfile 2>/dev/null && bun build --compile --outfile fleet-next src/index.ts 2>/dev/null)
+  if [[ -f "$SCRIPT_DIR/fleet-next" ]]; then
+    ln -sf "$SCRIPT_DIR/fleet-next" "$BIN_DIR/fleet-next"
+    ok "fleet-next built and linked"
+  fi
 fi
 
 # Claude Code
@@ -177,10 +191,10 @@ if [[ ! -f "$HOME/.claude/settings.json" ]]; then
 fi
 
 # ════════════════════════════════════════
-# Step 3: Claude Code login
+# Step 4: Claude Code login
 # ════════════════════════════════════════
 
-step "Step 3/5: Claude Code login"
+step "Step 4/6: Claude Code login"
 
 is_logged_in() {
   claude auth status 2>/dev/null | grep -q '"loggedIn": true'
@@ -198,10 +212,10 @@ else
 fi
 
 # ════════════════════════════════════════
-# Step 4: Discord plugin
+# Step 5: Discord plugin
 # ════════════════════════════════════════
 
-step "Step 4/5: Discord plugin"
+step "Step 5/6: Discord plugin"
 
 if [[ -f "$PLUGIN_DIR/server.ts" ]]; then
   ok "Discord plugin installed"
@@ -218,10 +232,10 @@ else
 fi
 
 # ════════════════════════════════════════
-# Step 5: Patches
+# Step 6: Patches
 # ════════════════════════════════════════
 
-step "Step 5/5: Discord plugin patches"
+step "Step 6/6: Discord plugin patches"
 
 if [[ -f "$PLUGIN_DIR/server.ts" ]]; then
   SERVER_TS="$PLUGIN_DIR/server.ts"
@@ -271,5 +285,8 @@ echo ""
 echo "  Next:"
 echo "    fleet init         # Configure tokens + agents"
 echo "    fleet start hub    # Launch your first agent"
+echo ""
+echo "  Both 'fleet' (bash) and 'fleet-next' (TypeScript) are available."
+echo "  fleet-next is recommended — faster, no Python dependency."
 echo "════════════════════════════════════════"
 echo ""
