@@ -1,34 +1,6 @@
 import { writeFileSync, readFileSync, mkdirSync } from "fs"
 import { join } from "path"
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-// NOTE: If src/channel/types.ts (Task 3) exists, import AccessConfig and
-// AccessConfigOpts from there and remove these local declarations.
-
-export interface AccessConfigOpts {
-  /** Bot IDs allowed to DM this bot */
-  partnerBotIds: string[]
-  /** Discord channel ID for the group gate entry */
-  channelId: string
-  /** Whether the bot requires a @mention before responding in the channel */
-  requireMention: boolean
-}
-
-export interface AccessGroupEntry {
-  requireMention: boolean
-  allowFrom: string[]
-}
-
-export interface AccessConfig {
-  /** DM policy — must be "allowlist" to match the Discord plugin gate() schema */
-  dmPolicy: "allowlist"
-  /** Top-level list of bot/user IDs allowed to DM this bot */
-  allowFrom: string[]
-  /** Per-channel gate entries keyed by channel ID */
-  groups: Record<string, AccessGroupEntry>
-  /** Pending pairing requests — kept empty on initial write */
-  pending: Record<string, never>
-}
+import type { AccessConfig, AccessConfigOpts } from "../types"
 
 // ── writeAccessConfig ─────────────────────────────────────────────────────────
 
