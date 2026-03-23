@@ -1,5 +1,5 @@
-import { sshRun } from "../runtime/remote"
-import type { ServerConfig } from "../core/types"
+const SSH_TIMEOUT = 10
+const REMOTE_PATH_PREFIX = "export PATH=$HOME/.bun/bin:$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"
 
 interface SetupOpts {
   json?: boolean
@@ -11,23 +11,37 @@ interface StepResult {
   message: string
 }
 
+/** Run SSH command using host alias directly (supports ~/.ssh/config aliases) */
+async function sshExec(
+  host: string,
+  cmd: string,
+): Promise<{ stdout: string; ok: boolean }> {
+  const fullCmd = `${REMOTE_PATH_PREFIX} && ${cmd}`
+  const proc = Bun.spawn(
+    ["ssh", "-o", `ConnectTimeout=${SSH_TIMEOUT}`, "-o", "BatchMode=yes", "-o", "RequestTTY=no", "-o", "RemoteCommand=none", host, fullCmd],
+    { stdout: "pipe", stderr: "pipe" }
+  )
+  const stdout = await new Response(proc.stdout).text()
+  await new Response(proc.stderr).text()
+  const code = await proc.exited
+  return { stdout: stdout.trim(), ok: code === 0 }
+}
+
 async function checkAndInstall(
-  server: ServerConfig,
+  host: string,
   tool: string,
   whichCmd: string,
   installCmd: string,
   log: (...args: unknown[]) => void,
 ): Promise<StepResult> {
-  // Check if already installed
-  const { ok } = await sshRun(server, whichCmd, { throwOnError: false })
+  const { ok } = await sshExec(host, whichCmd)
   if (ok) {
     log(`  [ok]  ${tool} — already installed`)
     return { step: tool, status: "ok", message: "already installed" }
   }
 
-  // Install
   log(`  [..] ${tool} — installing…`)
-  const { ok: installOk, stdout } = await sshRun(server, installCmd, { throwOnError: false })
+  const { ok: installOk, stdout } = await sshExec(host, installCmd)
   if (installOk) {
     log(`  [ok]  ${tool} — installed`)
     return { step: tool, status: "installed", message: "installed" }
@@ -38,34 +52,25 @@ async function checkAndInstall(
 }
 
 export async function setupServer(
-  sshHost: string,
+  host: string,
   opts?: SetupOpts,
 ): Promise<void> {
   const log = opts?.json ? () => {} : console.log.bind(console)
 
-  // Parse sshHost — could be "user@host" or just a host alias from ssh config
-  // We'll treat it as an SSH host alias and extract user/host from the connection
-  const server: ServerConfig = sshHost.includes("@")
-    ? { user: sshHost.split("@")[0], sshHost: sshHost.split("@")[1] }
-    : { user: "", sshHost }
-
-  // 1. Test connectivity
-  log(`Connecting to ${sshHost}…`)
-  const { ok, stdout: whoami } = await sshRun(server, "whoami && uname -s -m", { throwOnError: false })
+  // 1. Test connectivity (host can be SSH alias like "demo" or "user@ip")
+  log(`Connecting to ${host}…`)
+  const { ok, stdout: whoami } = await sshExec(host, "whoami && uname -s -m")
   if (!ok) {
-    throw new Error(`Cannot connect to ${sshHost} — check SSH config`)
+    throw new Error(`Cannot connect to ${host} — check SSH config`)
   }
   const [user, platform] = whoami.split("\n")
   log(`  Connected as ${user.trim()} (${platform.trim()})`)
 
-  // Fill in user if we didn't have it
-  if (!server.user) server.user = user.trim()
-
   const results: StepResult[] = []
 
-  // 2. tmux — should be pre-installed on most servers, apt install if missing
+  // 2. tmux
   const tmuxResult = await checkAndInstall(
-    server, "tmux",
+    host, "tmux",
     "which tmux",
     "sudo apt-get install -y tmux 2>/dev/null || sudo yum install -y tmux 2>/dev/null",
     log,
@@ -74,8 +79,8 @@ export async function setupServer(
 
   // 3. bun
   const bunResult = await checkAndInstall(
-    server, "bun",
-    "export PATH=$HOME/.bun/bin:$PATH && which bun",
+    host, "bun",
+    "which bun",
     "curl -fsSL https://bun.sh/install | bash",
     log,
   )
@@ -83,33 +88,32 @@ export async function setupServer(
 
   // 4. Claude Code via curl installer (auto-updates)
   const claudeResult = await checkAndInstall(
-    server, "claude",
-    "export PATH=$HOME/.local/bin:$HOME/.bun/bin:$PATH && which claude",
+    host, "claude",
+    "which claude",
     "curl -fsSL https://claude.ai/install.sh | sh",
     log,
   )
   results.push(claudeResult)
 
-  // 5. Verify all installed
+  // 5. Verify
   log("")
   log("Verifying…")
-  const { stdout: versions } = await sshRun(
-    server,
-    "export PATH=$HOME/.bun/bin:$HOME/.local/bin:$PATH && echo \"bun: $(bun --version 2>/dev/null || echo missing)\" && echo \"claude: $(claude --version 2>/dev/null || echo missing)\" && echo \"tmux: $(tmux -V 2>/dev/null || echo missing)\"",
-    { throwOnError: false },
+  const { stdout: versions } = await sshExec(
+    host,
+    "echo \"bun: $(bun --version 2>/dev/null || echo missing)\" && echo \"claude: $(claude --version 2>/dev/null || echo missing)\" && echo \"tmux: $(tmux -V 2>/dev/null || echo missing)\"",
   )
   for (const line of versions.split("\n")) {
     if (line.trim()) log(`  ${line.trim()}`)
   }
 
   if (opts?.json) {
-    console.log(JSON.stringify({ host: sshHost, results }, null, 2))
+    console.log(JSON.stringify({ host, results }, null, 2))
   } else {
     const failed = results.filter(r => r.status === "failed")
     if (failed.length > 0) {
       console.log(`\nSetup incomplete — ${failed.length} step(s) failed`)
     } else {
-      console.log(`\nServer ${sshHost} is ready.`)
+      console.log(`\nServer ${host} is ready.`)
     }
   }
 }
