@@ -2,7 +2,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml"
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs"
 import { join, dirname } from "path"
 import { homedir } from "os"
-import type { FleetConfig, AgentDef, ServerConfig, OrgStructure } from "./types"
+import type { FleetConfig, AgentDef, ServerConfig, OrgStructure, ChannelDef } from "./types"
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -111,14 +111,22 @@ export function loadConfig(dir?: string): FleetConfig {
   }
 
   // ── discord ───────────────────────────────────────────────────────────────
-  const discordRaw = (raw.discord ?? {}) as Record<string, string>
-  if (!discordRaw.channel_id) {
-    throw new Error("fleet.yaml: discord.channel_id is required")
+  const discordRaw = (raw.discord ?? {}) as Record<string, unknown>
+  const channelsRaw = discordRaw.channels as Record<string, Record<string, string>> | undefined
+  if (!channelsRaw || Object.keys(channelsRaw).length === 0) {
+    throw new Error("fleet.yaml: discord.channels is required (channel_id no longer supported — use channels format)")
+  }
+  const channels: Record<string, ChannelDef> = {}
+  for (const [label, chRaw] of Object.entries(channelsRaw)) {
+    channels[label] = {
+      id: chRaw.id,
+      workspace: chRaw.workspace,
+    }
   }
   const discord = {
-    channelId: discordRaw.channel_id,
-    serverId: discordRaw.server_id,
-    userId: discordRaw.user_id,
+    channels,
+    serverId: discordRaw.server_id as string | undefined,
+    userId: discordRaw.user_id as string | undefined,
   }
 
   // ── defaults ──────────────────────────────────────────────────────────────
@@ -197,8 +205,16 @@ export function saveConfig(config: FleetConfig, dir: string): void {
     }
   }
 
-  const discord: Record<string, string> = {
-    channel_id: config.discord.channelId,
+  const channelsOut: Record<string, Record<string, string>> = {}
+  for (const [label, ch] of Object.entries(config.discord.channels)) {
+    channelsOut[label] = {
+      id: ch.id,
+      ...(ch.workspace !== undefined ? { workspace: ch.workspace } : {}),
+    }
+  }
+
+  const discord: Record<string, unknown> = {
+    channels: channelsOut,
     ...(config.discord.serverId !== undefined ? { server_id: config.discord.serverId } : {}),
     ...(config.discord.userId !== undefined ? { user_id: config.discord.userId } : {}),
   }

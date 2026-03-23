@@ -27,7 +27,9 @@ fleet:
   mission: testing
 
 discord:
-  channel_id: "111222333"
+  channels:
+    default:
+      id: "111222333"
   server_id: "999888777"
   user_id: "555444333"
 
@@ -59,7 +61,9 @@ fleet:
   name: mini-fleet
 
 discord:
-  channel_id: "123"
+  channels:
+    default:
+      id: "123"
 
 defaults:
   workspace: ~/workspace
@@ -90,7 +94,7 @@ describe("loadConfig", () => {
 
     expect(config.fleet.name).toBe("test-fleet")
     expect(config.fleet.mission).toBe("testing")
-    expect(config.discord.channelId).toBe("111222333")
+    expect(config.discord.channels["default"].id).toBe("111222333")
     expect(config.discord.serverId).toBe("999888777")
     expect(config.discord.userId).toBe("555444333")
     expect(config.defaults.workspace).toBe("~/workspace")
@@ -127,7 +131,9 @@ describe("loadConfig", () => {
 fleet:
   name: test-fleet
 discord:
-  channel_id: "123"
+  channels:
+    default:
+      id: "123"
 defaults:
   workspace: ~/workspace
 agents:
@@ -150,7 +156,9 @@ agents:
     const yaml = `\
 fleet: {}
 discord:
-  channel_id: "123"
+  channels:
+    default:
+      id: "123"
 defaults:
   workspace: ~/workspace
 agents:
@@ -168,7 +176,9 @@ agents:
 fleet:
   name: broken
 discord:
-  channel_id: "123"
+  channels:
+    default:
+      id: "123"
 defaults:
   workspace: ~/workspace
 agents: {}
@@ -182,9 +192,57 @@ agents: {}
 fleet:
   name: broken
 discord:
-  channel_id: "123"
+  channels:
+    default:
+      id: "123"
 defaults:
   workspace: ~/workspace
+`
+    writeFileSync(join(dir, "fleet.yaml"), yaml)
+    expect(() => loadConfig(dir)).toThrow()
+  })
+
+  it("parses multiple channels with workspace", () => {
+    const yaml = `\
+fleet:
+  name: test-fleet
+discord:
+  channels:
+    store:
+      id: "111"
+      workspace: ~/workspace/store
+    quant:
+      id: "222"
+      workspace: ~/workspace/quant
+defaults:
+  workspace: ~/workspace
+agents:
+  hub:
+    role: hub
+    server: local
+    identity: identities/hub.md
+`
+    writeFileSync(join(dir, "fleet.yaml"), yaml)
+    const config = loadConfig(dir)
+    expect(Object.keys(config.discord.channels)).toHaveLength(2)
+    expect(config.discord.channels["store"].id).toBe("111")
+    expect(config.discord.channels["store"].workspace).toBe("~/workspace/store")
+    expect(config.discord.channels["quant"].id).toBe("222")
+  })
+
+  it("throws when discord.channels is empty", () => {
+    const yaml = `\
+fleet:
+  name: broken
+discord:
+  channels: {}
+defaults:
+  workspace: ~/workspace
+agents:
+  hub:
+    role: hub
+    server: local
+    identity: identities/hub.md
 `
     writeFileSync(join(dir, "fleet.yaml"), yaml)
     expect(() => loadConfig(dir)).toThrow()
@@ -359,7 +417,9 @@ describe("resolveStateDir", () => {
 fleet:
   name: test-fleet
 discord:
-  channel_id: "123"
+  channels:
+    default:
+      id: "123"
 defaults:
   workspace: ~/workspace
 agents:
@@ -498,7 +558,9 @@ describe("server validation", () => {
 fleet:
   name: test-fleet
 discord:
-  channel_id: "123"
+  channels:
+    default:
+      id: "123"
 defaults:
   workspace: ~/workspace
 agents:
@@ -516,7 +578,9 @@ agents:
 fleet:
   name: test-fleet
 discord:
-  channel_id: "123"
+  channels:
+    default:
+      id: "123"
 defaults:
   workspace: ~/workspace
 servers:
@@ -553,7 +617,7 @@ describe("saveConfig", () => {
     const reloaded = loadConfig(dir)
 
     expect(reloaded.fleet.name).toBe(original.fleet.name)
-    expect(reloaded.discord.channelId).toBe(original.discord.channelId)
+    expect(reloaded.discord.channels["default"].id).toBe(original.discord.channels["default"].id)
     expect(reloaded.agents["hub"].tokenEnv).toBe(original.agents["hub"].tokenEnv)
     expect(reloaded.agents["worker-1"].stateDir).toBe(original.agents["worker-1"].stateDir)
   })
