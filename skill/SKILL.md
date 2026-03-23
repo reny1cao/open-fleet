@@ -157,7 +157,7 @@ The CLI auto-detects the Discord server and channel, validates tokens, generates
 
 Share each invite URL with the user: "Open this link, select your server, click Authorize."
 
-**Done when:** `cat fleet.yaml` shows agents and a non-empty `channel_id`. All bots are in the server.
+**Done when:** `cat fleet.yaml` shows agents and a non-empty `channels` section. All bots are in the server.
 
 
 ### Step 5: Start the team
@@ -257,6 +257,18 @@ Stop each agent sequentially:
 for agent in $(fleet status --json | jq -r '.[] | select(.state=="running") | .name'); do fleet stop "$agent"; done
 ```
 
+### "move agent to different server"
+```bash
+fleet move <agent> <server>
+```
+Reassign an agent to a different server (e.g., `fleet move pilot singapore`). Updates fleet.yaml.
+
+### "switch fleet"
+```bash
+fleet use <fleet-name|path>
+```
+Switch the active fleet (updates `~/.fleet/config.json`). Allows `fleet` commands from any directory.
+
 ### "add agent"
 ```bash
 fleet add-agent
@@ -278,6 +290,12 @@ fleet init
 # Non-interactive (agent)
 fleet init --token TOKEN1 --token TOKEN2 --name my-fleet
 fleet init --token TOKEN1 --token TOKEN2 --name my-fleet --agent lead:local:lead --agent worker:local:worker
+
+# With specific guild and auto-create channel
+fleet init --token TOKEN1 --token TOKEN2 --name my-fleet --guild GUILD_ID --create-channel dev
+
+# With explicit channel mapping
+fleet init --token TOKEN1 --token TOKEN2 --name my-fleet --channel dev:CHANNEL_ID:~/workspace/project
 
 # From template
 fleet init --template dev-team --token TOKEN1 --token TOKEN2 --token TOKEN3 --name my-fleet
