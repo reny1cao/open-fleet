@@ -60,6 +60,8 @@ export async function init(opts: {
   name: string
   agents?: string[]
   channel?: string[]
+  guild?: string
+  createChannel?: string
   force?: boolean
   json?: boolean
   template?: string
@@ -116,19 +118,38 @@ export async function init(opts: {
     })
   }
 
-  // ── 4. Detect guild ───────────────────────────────────────────────────────
+  // ── 4. Detect or use specified guild ──────────────────────────────────────
   log("Detecting guild…")
   const servers = await discord.listServers(tokens[0])
   if (servers.length === 0) {
-    throw new Error(
-      "No Discord servers found for the first token. " +
-        "Invite the bot to a server first."
-    )
+    throw new Error("No Discord servers found for the first token. Invite the bot to a server first.")
   }
-  const guild = servers[0]
+
+  let guild: { id: string; name: string; ownerId?: string }
+  if (opts.guild) {
+    const match = servers.find(s => s.id === opts.guild)
+    if (!match) {
+      throw new Error(`Bot is not in guild ${opts.guild}. Available guilds:\n${servers.map(s => `  ${s.id} — ${s.name}`).join("\n")}`)
+    }
+    guild = match
+  } else if (servers.length > 1) {
+    throw new Error(
+      `Bot is in ${servers.length} servers — specify which one with --guild:\n${servers.map(s => `  ${s.id} — ${s.name}`).join("\n")}`
+    )
+  } else {
+    guild = servers[0]
+  }
   const guildId = guild.id
   const ownerId = guild.ownerId
   log(`  Using guild: ${guild.name} (${guildId})`)
+
+  // ── 4b. Auto-create channel if requested ──────────────────────────────────
+  if (opts.createChannel && (!opts.channel || opts.channel.length === 0)) {
+    log(`Creating channel #${opts.createChannel}…`)
+    const created = await discord.createChannel(tokens[0], guildId, opts.createChannel)
+    log(`  Created #${created.name} (${created.id})`)
+    opts.channel = [`${created.name}:${created.id}`]
+  }
 
   // ── 5. Parse channels ─────────────────────────────────────────────────────
   let channels: Record<string, ChannelDef>
@@ -188,7 +209,7 @@ export async function init(opts: {
 
   saveConfig(config, configDir)
   log("  Wrote fleet.yaml")
-  writeGlobalConfig(configDir)
+  writeGlobalConfig(configDir, name)
   if (!opts.json) console.log("  Wrote global config → ~/.fleet/config.json")
 
   // ── 7. Generate .env ──────────────────────────────────────────────────────
@@ -234,6 +255,23 @@ export async function init(opts: {
       userId: config.discord.userId,
     })
     log(`  ${agentName}: access.json → ${stateDir}`)
+  }
+
+  // ── Check bot guild membership ────────────────────────────────────────────
+  const missingBots: Array<{ name: string; appId: string }> = []
+  for (let i = 0; i < tokens.length; i++) {
+    const botServers = await discord.listServers(tokens[i])
+    if (!botServers.some(s => s.id === guildId)) {
+      missingBots.push({ name: agentSpecs[i].name, appId: botInfos[i].appId })
+    }
+  }
+
+  if (missingBots.length > 0 && !opts.json) {
+    console.log("")
+    console.log("⚠ These bots are NOT in the server yet — invite them:")
+    for (const bot of missingBots) {
+      console.log(`  ${bot.name}: ${discord.inviteUrl(bot.appId)}`)
+    }
   }
 
   // ── 10. Print summary ─────────────────────────────────────────────────────

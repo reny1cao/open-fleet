@@ -8,12 +8,13 @@ import { inject } from "./commands/inject"
 import { apply } from "./commands/apply"
 import { addAgent } from "./commands/add-agent"
 import { move } from "./commands/move"
+import { use } from "./commands/use"
 
 function usage(): void {
   console.log(`fleet-next — Agent fleet CLI (TypeScript)
 
 Usage:
-  fleet-next init --token T1 [--token T2 …] --name NAME [--agent name:server:role …] [--channel label:id[:workspace] …] [--force]
+  fleet-next init --token T1 [--token T2 …] --name NAME [--agent name:server:role …] [--channel label:id[:workspace] …] [--guild ID] [--create-channel NAME] [--force]
   fleet-next start <agent> [--wait] [--role <r>]
   fleet-next stop <agent> [--force]
   fleet-next status [--json]
@@ -23,6 +24,7 @@ Usage:
   fleet-next apply [--json]
   fleet-next add-agent --token T --name N --role R [--server S]
   fleet-next move <agent> <server>
+  fleet-next use <fleet-name|path>
   fleet-next help
 
 Flags:
@@ -55,13 +57,17 @@ export async function main(argv: string[]): Promise<void> {
           if (args[i] === "--name" && args[i + 1]) { /* handled by parseFlagValue */ continue }
           if (args[i] === "--agent" && args[i + 1]) { agents.push(args[++i]); continue }
           if (args[i] === "--channel" && args[i + 1]) { channelArgs.push(args[++i]); continue }
+          if (args[i] === "--guild" && args[i + 1]) { /* handled by parseFlagValue */ i++; continue }
+          if (args[i] === "--create-channel" && args[i + 1]) { /* handled by parseFlagValue */ i++; continue }
         }
         const name = parseFlagValue(args, "--name") ?? "my-fleet"
         const template = parseFlagValue(args, "--template")
+        const guild = parseFlagValue(args, "--guild")
+        const createChannel = parseFlagValue(args, "--create-channel")
         if (tokens.length === 0) {
           await interactiveInit(process.cwd())
         } else {
-          await init({ tokens, name, agents: agents.length > 0 ? agents : undefined, channel: channelArgs.length > 0 ? channelArgs : undefined, force: parseFlag(args, "--force"), json: parseFlag(args, "--json"), template })
+          await init({ tokens, name, agents: agents.length > 0 ? agents : undefined, channel: channelArgs.length > 0 ? channelArgs : undefined, guild, createChannel, force: parseFlag(args, "--force"), json: parseFlag(args, "--json"), template })
         }
         break
       }
@@ -119,6 +125,14 @@ export async function main(argv: string[]): Promise<void> {
           throw new Error("Usage: fleet-next move <agent> <server>")
         }
         await move(agent, server, { json: parseFlag(args, "--json") })
+        break
+      }
+      case "use": {
+        const target = args[1]
+        if (!target || target.startsWith("--")) {
+          throw new Error("Usage: fleet-next use <fleet-name-or-path>")
+        }
+        await use(target, { json: parseFlag(args, "--json") })
         break
       }
       case "help":

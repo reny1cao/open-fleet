@@ -78,12 +78,25 @@ export function findConfigDir(startDir?: string, globalConfigDir?: string): stri
 // ── writeGlobalConfig ─────────────────────────────────────────────────────────
 
 /** Write ~/.fleet/config.json so fleet commands work from any directory. */
-export function writeGlobalConfig(fleetDir: string): void {
+export function writeGlobalConfig(fleetDir: string, fleetName?: string): void {
   const globalDir = join(process.env.HOME ?? homedir(), ".fleet")
   mkdirSync(globalDir, { recursive: true })
+  const configPath = join(globalDir, "config.json")
+
+  // Read existing config to preserve fleets registry
+  let existing: Record<string, unknown> = {}
+  if (existsSync(configPath)) {
+    try { existing = JSON.parse(readFileSync(configPath, "utf8")) } catch {}
+  }
+
+  const fleets = (existing.fleets ?? {}) as Record<string, string>
+  if (fleetName) {
+    fleets[fleetName] = fleetDir
+  }
+
   writeFileSync(
-    join(globalDir, "config.json"),
-    JSON.stringify({ defaultFleet: fleetDir }, null, 2) + "\n"
+    configPath,
+    JSON.stringify({ defaultFleet: fleetDir, fleets }, null, 2) + "\n"
   )
 }
 
