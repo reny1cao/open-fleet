@@ -23,11 +23,30 @@ function channelType(t: number): ChannelInfo["type"] | null {
   return null
 }
 
-/** Resolve proxy URL from env vars (standard convention) */
+/**
+ * Resolve proxy URL:
+ *   1. Env var (HTTPS_PROXY / HTTP_PROXY)
+ *   2. ~/.fleet/config.json → proxy field
+ */
 function resolveProxy(): string | undefined {
-  return process.env.HTTPS_PROXY || process.env.https_proxy
+  // 1. Explicit env var (highest priority)
+  const envProxy = process.env.HTTPS_PROXY || process.env.https_proxy
     || process.env.HTTP_PROXY || process.env.http_proxy
-    || undefined
+  if (envProxy) return envProxy
+
+  // 2. Global fleet config
+  try {
+    const { readFileSync, existsSync } = require("fs") as typeof import("fs")
+    const { join } = require("path") as typeof import("path")
+    const { homedir } = require("os") as typeof import("os")
+    const configPath = join(homedir(), ".fleet", "config.json")
+    if (existsSync(configPath)) {
+      const config = JSON.parse(readFileSync(configPath, "utf8"))
+      if (config.proxy) return config.proxy
+    }
+  } catch {}
+
+  return undefined
 }
 
 async function discordFetch(

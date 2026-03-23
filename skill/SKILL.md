@@ -56,6 +56,31 @@ Assume the user has nothing set up. Walk them through one step at a time.
 
 **How to guide:** Be a friendly assistant, not a manual. Show only the current step — don't overwhelm with everything at once. Keep each message short, clear, and focused on one action. After the user completes it, move to the next. The experience should feel light and easy, like a friend helping you set something up over chat.
 
+### Step 0: Network check (China users)
+
+**Why:** Fleet depends on Discord and Anthropic APIs, which are blocked in mainland China. If the user is in China, they need a proxy configured before anything else.
+
+**How to detect:** If `fleet init` or `fleet doctor` fails with connection errors, or the user mentions they're in China, ask:
+
+> "Are you behind a firewall that blocks Discord/GitHub? If you're using Clash, V2Ray, or another proxy, tell me the proxy address (e.g., `http://127.0.0.1:7890`) and I'll configure it."
+
+**Configure:**
+```bash
+# Write proxy to global config (one-time setup)
+# Replace with user's actual proxy address
+echo '{"proxy":"http://127.0.0.1:7890"}' > ~/.fleet/config.json
+```
+
+Or if `config.json` already exists, add the `proxy` field. Fleet CLI reads this automatically for all commands — no env vars needed.
+
+**For install script:** If `curl` from GitHub fails, use a mirror:
+```bash
+git clone https://ghp.ci/https://github.com/reny1cao/open-fleet.git ~/.fleet
+cd ~/.fleet && bash install.sh
+```
+
+**Done when:** `curl -x http://127.0.0.1:7890 https://discord.com/api/v10/gateway` returns JSON (not a timeout or block page).
+
 ### Step 1: Install fleet CLI and verify environment
 
 **Why:** Fleet needs the CLI installed, Claude Code with Channels support, the Discord plugin, and patches applied. The install script handles all of this — including building the Bun/TypeScript binary (`fleet-next`). After install, `fleet` points to the TS binary automatically.

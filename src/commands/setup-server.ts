@@ -1,10 +1,27 @@
 const SSH_TIMEOUT = 10
 const REMOTE_PATH_PREFIX = "export PATH=$HOME/.bun/bin:$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"
 
+/** Resolve proxy from env vars or ~/.fleet/config.json */
+function resolveProxy(): string | undefined {
+  const envProxy = process.env.HTTPS_PROXY || process.env.https_proxy
+    || process.env.HTTP_PROXY || process.env.http_proxy
+  if (envProxy) return envProxy
+  try {
+    const { readFileSync, existsSync } = require("fs") as typeof import("fs")
+    const { join } = require("path") as typeof import("path")
+    const { homedir } = require("os") as typeof import("os")
+    const p = join(homedir(), ".fleet", "config.json")
+    if (existsSync(p)) {
+      const c = JSON.parse(readFileSync(p, "utf8"))
+      if (c.proxy) return c.proxy
+    }
+  } catch {}
+  return undefined
+}
+
 /** Build proxy export prefix for remote shell commands */
 function remoteProxyPrefix(): string {
-  const proxy = process.env.HTTPS_PROXY || process.env.https_proxy
-    || process.env.HTTP_PROXY || process.env.http_proxy
+  const proxy = resolveProxy()
   if (!proxy) return ""
   return `export HTTP_PROXY='${proxy}' && export HTTPS_PROXY='${proxy}' && `
 }

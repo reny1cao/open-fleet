@@ -8,7 +8,7 @@ import type { RuntimeAdapter } from "../runtime/types"
 import { resolveRuntime } from "../runtime/resolve"
 import { homedir } from "os"
 import { join } from "path"
-import { existsSync, mkdirSync, writeFileSync } from "fs"
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
 
 function expandHome(p: string): string {
   if (p.startsWith("~/")) return join(homedir(), p.slice(2))
@@ -197,10 +197,23 @@ export async function start(
     : `bash '${wrapperScript}'`
 
   // 11. Start the session (CWD = stateDir for CLAUDE.md discovery)
-  // Pass through proxy env vars so Claude Code and Discord plugin can use them
+  // Pass through proxy: env vars first, then ~/.fleet/config.json
   const proxyEnv: Record<string, string> = {}
   for (const key of ["HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy"]) {
     if (process.env[key]) proxyEnv[key] = process.env[key]!
+  }
+  // If no env vars set, check global config
+  if (!proxyEnv.HTTP_PROXY && !proxyEnv.HTTPS_PROXY && !proxyEnv.http_proxy && !proxyEnv.https_proxy) {
+    try {
+      const globalConfigPath = join(homedir(), ".fleet", "config.json")
+      if (existsSync(globalConfigPath)) {
+        const globalConfig = JSON.parse(readFileSync(globalConfigPath, "utf8"))
+        if (globalConfig.proxy) {
+          proxyEnv.HTTP_PROXY = globalConfig.proxy
+          proxyEnv.HTTPS_PROXY = globalConfig.proxy
+        }
+      }
+    } catch {}
   }
 
   await runtime.start({
