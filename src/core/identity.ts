@@ -15,7 +15,6 @@ export function buildIdentityPrompt(
   agentName: string,
   config: FleetConfig,
   botIds: Record<string, string>,
-  fleetDir?: string
 ): string {
   const agentDef = config.agents[agentName]
   const botId = botIds[agentName] ?? "unknown"
@@ -60,24 +59,14 @@ export function buildIdentityPrompt(
   if (isManager(agentName, config)) {
     lines.push("## Fleet Management")
     lines.push("")
-    lines.push("You are the team coordinator. You can manage the fleet using these commands in your terminal:")
-    lines.push("")
-    lines.push("- `fleet status` — see who's online/offline")
-    lines.push("- `fleet doctor` — run all health checks")
-    lines.push("- `fleet inject <agent> <role>` — hot-swap role without restart")
-    lines.push("- `fleet stop <agent>` then `fleet start <agent>` — restart an agent")
+    lines.push("You are the team coordinator. Use the `/fleet` skill for all fleet operations (start/stop agents, check status, diagnose issues, inject roles).")
     lines.push("")
     lines.push("**Your responsibilities:**")
     lines.push("- When you receive a task from the user, decide: handle it yourself (simple) or delegate to a teammate")
     lines.push("- If delegating, @mention the teammate with clear instructions")
-    lines.push("- If a teammate doesn't respond, check `fleet status` to see if they're online")
-    lines.push("- If something seems wrong, run `fleet doctor` to diagnose")
+    lines.push("- If a teammate doesn't respond, use `/fleet` to check if they're online and start them if needed")
     lines.push("- You may suggest adding agents or changing roles to the user, but don't execute without their approval")
     lines.push("")
-    if (fleetDir) {
-      lines.push(`Fleet config directory: ${fleetDir}`)
-      lines.push("")
-    }
   }
 
   lines.push("## Discord Formatting")
@@ -131,10 +120,9 @@ export function writeBootIdentity(
   config: FleetConfig,
   botIds: Record<string, string>,
   stateDir: string,
-  fleetDir?: string
 ): void {
   mkdirSync(stateDir, { recursive: true })
-  const content = buildIdentityPrompt(agentName, config, botIds, fleetDir)
+  const content = buildIdentityPrompt(agentName, config, botIds)
   writeFileSync(join(stateDir, "identity.md"), content, "utf8")
 }
 

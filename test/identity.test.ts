@@ -160,11 +160,9 @@ const managerConfig: FleetConfig = {
 }
 
 describe("buildIdentityPrompt — manager knowledge injection", () => {
-  it("lead's identity contains fleet management commands", () => {
+  it("lead's identity references fleet skill", () => {
     const prompt = buildIdentityPrompt("pm", managerConfig, botIds)
-    expect(prompt).toContain("fleet status")
-    expect(prompt).toContain("fleet doctor")
-    expect(prompt).toContain("fleet inject")
+    expect(prompt).toContain("/fleet")
     expect(prompt.toLowerCase()).toContain("coordinator")
   })
 

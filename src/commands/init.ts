@@ -1,4 +1,4 @@
-import { existsSync, writeFileSync, mkdirSync, readFileSync } from "fs"
+import { existsSync, writeFileSync, mkdirSync, readFileSync, symlinkSync } from "fs"
 import { join } from "path"
 import { homedir } from "os"
 import { createInterface } from "readline"
@@ -247,6 +247,16 @@ export async function init(opts: {
   log("  Wrote fleet.yaml")
   writeGlobalConfig(configDir, name)
   if (!opts.json) console.log("  Wrote global config → ~/.fleet/config.json")
+
+  // ── 6e. Install fleet skill globally ────────────────────────────────
+  const skillSource = join(homedir(), ".fleet", "skill", "SKILL.md")
+  const skillDir = join(homedir(), ".claude", "skills", "fleet")
+  const skillTarget = join(skillDir, "SKILL.md")
+  if (existsSync(skillSource) && !existsSync(skillTarget)) {
+    mkdirSync(skillDir, { recursive: true })
+    symlinkSync(skillSource, skillTarget)
+    log("  Installed fleet skill → ~/.claude/skills/fleet/")
+  }
 
   // ── 7. Generate .env ──────────────────────────────────────────────────────
   const envLines: string[] = []
