@@ -52,11 +52,13 @@ export async function main(argv: string[]): Promise<void> {
         const tokens: string[] = []
         const agents: string[] = []
         const channelArgs: string[] = []
+        const serverArgs: string[] = []
         for (let i = 1; i < args.length; i++) {
           if (args[i] === "--token" && args[i + 1]) { tokens.push(args[++i]); continue }
           if (args[i] === "--name" && args[i + 1]) { /* handled by parseFlagValue */ continue }
           if (args[i] === "--agent" && args[i + 1]) { agents.push(args[++i]); continue }
           if (args[i] === "--channel" && args[i + 1]) { channelArgs.push(args[++i]); continue }
+          if (args[i] === "--server" && args[i + 1]) { serverArgs.push(args[++i]); continue }
           if (args[i] === "--guild" && args[i + 1]) { /* handled by parseFlagValue */ i++; continue }
           if (args[i] === "--create-channel" && args[i + 1]) { /* handled by parseFlagValue */ i++; continue }
         }
@@ -67,7 +69,7 @@ export async function main(argv: string[]): Promise<void> {
         if (tokens.length === 0) {
           await interactiveInit(process.cwd())
         } else {
-          await init({ tokens, name, agents: agents.length > 0 ? agents : undefined, channel: channelArgs.length > 0 ? channelArgs : undefined, guild, createChannel, force: parseFlag(args, "--force"), json: parseFlag(args, "--json"), template })
+          await init({ tokens, name, agents: agents.length > 0 ? agents : undefined, channel: channelArgs.length > 0 ? channelArgs : undefined, server: serverArgs.length > 0 ? serverArgs : undefined, guild, createChannel, force: parseFlag(args, "--force"), json: parseFlag(args, "--json"), template })
         }
         break
       }

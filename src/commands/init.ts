@@ -62,6 +62,7 @@ export async function init(opts: {
   channel?: string[]
   guild?: string
   createChannel?: string
+  server?: string[]
   force?: boolean
   json?: boolean
   template?: string
@@ -194,13 +195,48 @@ export async function init(opts: {
     agents[spec.name] = agentEntry
   }
 
+  // ── 6b. Auto-detect structure (star topology if a lead role exists) ───
+  const leadAgent = agentSpecs.find(s => s.role === "lead")
+  const structure = leadAgent
+    ? { topology: "star" as const, lead: leadAgent.name }
+    : undefined
+
+  // ── 6c. Build servers config from --server flags and agent references ─
+  const serverFlags: Record<string, { sshHost: string; user: string }> = {}
+  if (opts.server) {
+    for (const s of opts.server) {
+      const parts = s.split(":")
+      if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) {
+        throw new Error(`Invalid --server format "${s}": expected "name:ssh_host:user"`)
+      }
+      serverFlags[parts[0]] = { sshHost: parts[1], user: parts[2] }
+    }
+  }
+
+  const remoteServers = [...new Set(agentSpecs.map(s => s.server).filter(s => s !== "local"))]
+  let serversConfig: Record<string, { sshHost: string; user: string }> | undefined
+  if (remoteServers.length > 0) {
+    serversConfig = {}
+    for (const srv of remoteServers) {
+      if (serverFlags[srv]) {
+        serversConfig[srv] = serverFlags[srv]
+      } else {
+        throw new Error(
+          `Agent(s) reference server "${srv}" but no --server ${srv}:SSH_HOST:USER provided.`
+        )
+      }
+    }
+  }
+
   const config: FleetConfig = {
     fleet: { name },
+    structure,
     discord: {
       channels,
       serverId: guildId,
       ...(ownerId !== undefined ? { userId: ownerId } : {}),
     },
+    servers: serversConfig,
     defaults: {
       workspace: "~/workspace",
     },
@@ -259,16 +295,20 @@ export async function init(opts: {
 
   // ── Check bot guild membership ────────────────────────────────────────────
   const missingBots: Array<{ name: string; appId: string }> = []
-  for (let i = 0; i < tokens.length; i++) {
-    const botServers = await discord.listServers(tokens[i])
-    if (!botServers.some(s => s.id === guildId)) {
-      missingBots.push({ name: agentSpecs[i].name, appId: botInfos[i].appId })
+  try {
+    for (let i = 0; i < tokens.length; i++) {
+      const botServers = await discord.listServers(tokens[i])
+      if (!botServers.some(s => s.id === guildId)) {
+        missingBots.push({ name: agentSpecs[i].name, appId: botInfos[i].appId })
+      }
     }
+  } catch {
+    if (!opts.json) log("  (Skipped bot invitation check — Discord rate limit)")
   }
 
   if (missingBots.length > 0 && !opts.json) {
     console.log("")
-    console.log("⚠ These bots are NOT in the server yet — invite them:")
+    console.log("Warning: these bots are NOT in the server yet — invite them:")
     for (const bot of missingBots) {
       console.log(`  ${bot.name}: ${discord.inviteUrl(bot.appId)}`)
     }
