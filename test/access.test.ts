@@ -24,8 +24,8 @@ describe("writeAccessConfig", () => {
   it("creates access.json in the given stateDir", () => {
     dir = makeTempDir()
     writeAccessConfig(dir, {
+      channels: { default: { id: "999888777666555444" } },
       partnerBotIds: ["111222333444555666"],
-      channelId: "999888777666555444",
       requireMention: true,
     })
     expect(existsSync(join(dir, "access.json"))).toBe(true)
@@ -36,8 +36,8 @@ describe("writeAccessConfig", () => {
     dir = base
     const nested = join(base, "deep", "nested", "dir")
     writeAccessConfig(nested, {
+      channels: { default: { id: "222" } },
       partnerBotIds: ["111"],
-      channelId: "222",
       requireMention: false,
     })
     expect(existsSync(join(nested, "access.json"))).toBe(true)
@@ -46,8 +46,8 @@ describe("writeAccessConfig", () => {
   it("uses correct field name dmPolicy (not 'policy')", () => {
     dir = makeTempDir()
     writeAccessConfig(dir, {
+      channels: { default: { id: "chan1" } },
       partnerBotIds: ["bot1"],
-      channelId: "chan1",
       requireMention: true,
     })
     const cfg = readAccessConfig(dir)
@@ -58,8 +58,8 @@ describe("writeAccessConfig", () => {
   it("dmPolicy value is 'allowlist' (not 'whitelist')", () => {
     dir = makeTempDir()
     writeAccessConfig(dir, {
+      channels: { default: { id: "chan1" } },
       partnerBotIds: ["bot1"],
-      channelId: "chan1",
       requireMention: true,
     })
     const cfg = readAccessConfig(dir)
@@ -69,8 +69,8 @@ describe("writeAccessConfig", () => {
   it("uses correct field name allowFrom (not 'allowedUserIds', not 'allowedFrom')", () => {
     dir = makeTempDir()
     writeAccessConfig(dir, {
+      channels: { default: { id: "chan1" } },
       partnerBotIds: ["bot1"],
-      channelId: "chan1",
       requireMention: true,
     })
     const cfg = readAccessConfig(dir)
@@ -83,8 +83,8 @@ describe("writeAccessConfig", () => {
     dir = makeTempDir()
     const partnerBotIds = ["111222333444555666", "999888777666555444"]
     writeAccessConfig(dir, {
+      channels: { default: { id: "chan1" } },
       partnerBotIds,
-      channelId: "chan1",
       requireMention: true,
     })
     const cfg = readAccessConfig(dir)
@@ -95,8 +95,8 @@ describe("writeAccessConfig", () => {
     dir = makeTempDir()
     const channelId = "1484935861769601169"
     writeAccessConfig(dir, {
+      channels: { default: { id: channelId } },
       partnerBotIds: ["bot1"],
-      channelId,
       requireMention: true,
     })
     const cfg = readAccessConfig(dir)
@@ -107,8 +107,8 @@ describe("writeAccessConfig", () => {
     dir = makeTempDir()
     const channelId = "123"
     writeAccessConfig(dir, {
+      channels: { default: { id: channelId } },
       partnerBotIds: ["bot1"],
-      channelId,
       requireMention: false,
     })
     const cfg = readAccessConfig(dir)
@@ -119,8 +119,8 @@ describe("writeAccessConfig", () => {
     dir = makeTempDir()
     const channelId = "123"
     writeAccessConfig(dir, {
+      channels: { default: { id: channelId } },
       partnerBotIds: ["bot1"],
-      channelId,
       requireMention: true,
     })
     const cfg = readAccessConfig(dir)
@@ -130,12 +130,30 @@ describe("writeAccessConfig", () => {
   it("pending is an empty object", () => {
     dir = makeTempDir()
     writeAccessConfig(dir, {
+      channels: { default: { id: "chan1" } },
       partnerBotIds: ["bot1"],
-      channelId: "chan1",
       requireMention: true,
     })
     const cfg = readAccessConfig(dir)
     expect(cfg.pending).toEqual({})
+  })
+
+  it("generates groups entry for each channel", () => {
+    dir = makeTempDir()
+    writeAccessConfig(dir, {
+      channels: {
+        store: { id: "111" },
+        quant: { id: "222" },
+      },
+      partnerBotIds: ["bot1"],
+      requireMention: true,
+    })
+    const cfg = readAccessConfig(dir)
+    expect(Object.keys(cfg.groups)).toHaveLength(2)
+    expect(cfg.groups["111"]).toBeDefined()
+    expect(cfg.groups["222"]).toBeDefined()
+    expect(cfg.groups["111"].requireMention).toBe(true)
+    expect(cfg.groups["222"].requireMention).toBe(true)
   })
 })
 
@@ -150,7 +168,7 @@ describe("readAccessConfig", () => {
     dir = makeTempDir()
     const channelId = "1484935861769601169"
     const partnerBotIds = ["1484936271708291124"]
-    writeAccessConfig(dir, { partnerBotIds, channelId, requireMention: true })
+    writeAccessConfig(dir, { channels: { default: { id: channelId } }, partnerBotIds, requireMention: true })
     const cfg = readAccessConfig(dir)
 
     expect(cfg.dmPolicy).toBe("allowlist")

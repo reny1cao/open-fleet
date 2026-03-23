@@ -11,15 +11,18 @@ import type { AccessConfig, AccessConfigOpts } from "../types"
 export function writeAccessConfig(stateDir: string, opts: AccessConfigOpts): void {
   mkdirSync(stateDir, { recursive: true })
 
+  const groups: Record<string, { requireMention: boolean; allowFrom: string[] }> = {}
+  for (const ch of Object.values(opts.channels)) {
+    groups[ch.id] = {
+      requireMention: opts.requireMention,
+      allowFrom: [],
+    }
+  }
+
   const config: AccessConfig = {
     dmPolicy: "allowlist",
     allowFrom: [...opts.partnerBotIds, ...(opts.userId ? [opts.userId] : [])],
-    groups: {
-      [opts.channelId]: {
-        requireMention: opts.requireMention,
-        allowFrom: [],
-      },
-    },
+    groups,
     pending: {},
   }
 
