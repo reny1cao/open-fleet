@@ -9,6 +9,7 @@ import { apply } from "./commands/apply"
 import { addAgent } from "./commands/add-agent"
 import { move } from "./commands/move"
 import { use } from "./commands/use"
+import { setupServer } from "./commands/setup-server"
 
 function usage(): void {
   console.log(`fleet-next — Agent fleet CLI (TypeScript)
@@ -25,6 +26,7 @@ Usage:
   fleet-next add-agent --token T --name N --role R [--server S]
   fleet-next move <agent> <server>
   fleet-next use <fleet-name|path>
+  fleet-next setup-server <ssh-host>
   fleet-next help
 
 Flags:
@@ -135,6 +137,14 @@ export async function main(argv: string[]): Promise<void> {
           throw new Error("Usage: fleet-next use <fleet-name-or-path>")
         }
         await use(target, { json: parseFlag(args, "--json") })
+        break
+      }
+      case "setup-server": {
+        const host = args[1]
+        if (!host || host.startsWith("--")) {
+          throw new Error("Usage: fleet-next setup-server <ssh-host>")
+        }
+        await setupServer(host, { json: parseFlag(args, "--json") })
         break
       }
       case "help":
