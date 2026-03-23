@@ -302,8 +302,7 @@ export function getToken(agentName: string, config: FleetConfig, dir: string): s
 /**
  * Resolve the Discord plugin state directory for an agent.
  *   - If agent has explicit stateDir: expand ~ and return it
- *   - If agent is first in agents map: ~/.claude/channels/discord
- *   - Otherwise: ~/.fleet/state/discord-<name>
+ *   - Otherwise: ~/.fleet/state/<fleetName>-<agentName>
  */
 export function resolveStateDir(agentName: string, config: FleetConfig): string {
   const agent = config.agents[agentName]
@@ -312,14 +311,8 @@ export function resolveStateDir(agentName: string, config: FleetConfig): string 
   // Explicit stateDir on the agent
   if (agent.stateDir) return expandHome(agent.stateDir)
 
-  const agentNames = Object.keys(config.agents)
-  const isFirst = agentNames[0] === agentName
-
-  if (isFirst) {
-    return expandHome("~/.claude/channels/discord")
-  }
-
-  return expandHome(`~/.fleet/state/discord-${agentName}`)
+  // Default: ~/.fleet/state/<fleetName>-<agentName>
+  return expandHome(`~/.fleet/state/${config.fleet.name}-${agentName}`)
 }
 
 // ── sessionName ───────────────────────────────────────────────────────────────

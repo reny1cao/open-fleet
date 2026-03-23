@@ -398,21 +398,7 @@ describe("getToken", () => {
 })
 
 describe("resolveStateDir", () => {
-  it("returns ~/.claude/channels/discord for the first agent", () => {
-    const dir = makeTempDir()
-    try {
-      writeFileSync(join(dir, "fleet.yaml"), VALID_FLEET_YAML)
-      const config = loadConfig(dir)
-      // "hub" is first agent in VALID_FLEET_YAML
-      const stateDir = resolveStateDir("hub", config)
-      expect(stateDir).toBe(`${process.env.HOME}/.claude/channels/discord`)
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
-  })
-
-  it("returns ~/.fleet/state/discord-<name> for subsequent agents without explicit stateDir", () => {
-    // Use MINIMAL_FLEET_YAML with a second agent that has no state_dir
+  it("returns ~/.fleet/state/<fleetName>-<agentName> for agents without explicit stateDir", () => {
     const yaml = `\
 fleet:
   name: test-fleet
@@ -436,8 +422,8 @@ agents:
     try {
       writeFileSync(join(dir, "fleet.yaml"), yaml)
       const config = loadConfig(dir)
-      const stateDir = resolveStateDir("worker-1", config)
-      expect(stateDir).toBe(`${process.env.HOME}/.fleet/state/discord-worker-1`)
+      expect(resolveStateDir("hub", config)).toBe(`${process.env.HOME}/.fleet/state/test-fleet-hub`)
+      expect(resolveStateDir("worker-1", config)).toBe(`${process.env.HOME}/.fleet/state/test-fleet-worker-1`)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
