@@ -167,10 +167,10 @@ export async function start(
     "    RETRY_COUNT=$((RETRY_COUNT + 1))",
     "  fi",
     "  if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then",
-    `    echo "[fleet] ${agentName}: too many rapid restarts ($MAX_RETRIES). Giving up."`,
+    `    echo "[fleet] ${agentName}: too many rapid restarts. Giving up."`,
     "    break",
     "  fi",
-    `  echo "[fleet] ${agentName}: restarting in 3s (uptime ${UPTIME}s)..."`,
+    `  echo "[fleet] ${agentName}: restarting in 3s..."`,
     "  sleep 3",
     "done",
   ]
