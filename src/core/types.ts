@@ -1,7 +1,16 @@
+export interface ChannelDef {
+  id: string
+  workspace?: string
+}
+
 export interface FleetConfig {
   fleet: { name: string; mission?: string }
   structure?: OrgStructure
-  discord: { channelId: string; serverId?: string; userId?: string }
+  discord: {
+    channels: Record<string, ChannelDef>
+    serverId?: string
+    userId?: string
+  }
   servers?: Record<string, ServerConfig>
   defaults: { workspace: string; runtime?: string }
   agents: Record<string, AgentDef>

@@ -1,3 +1,5 @@
+import type { ChannelDef } from "../core/types"
+
 export interface BotInfo { id: string; name: string; appId: string }
 export interface ServerInfo { id: string; name: string; ownerId?: string }
 export interface ChannelInfo { id: string; name: string; type: "text" | "voice" | "category" }
@@ -10,7 +12,7 @@ export interface AccessConfig {
 }
 
 export interface AccessConfigOpts {
-  channelId: string
+  channels: Record<string, ChannelDef>
   userId?: string
   partnerBotIds: string[]
   requireMention: boolean
