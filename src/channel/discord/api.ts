@@ -23,6 +23,13 @@ function channelType(t: number): ChannelInfo["type"] | null {
   return null
 }
 
+/** Resolve proxy URL from env vars (standard convention) */
+function resolveProxy(): string | undefined {
+  return process.env.HTTPS_PROXY || process.env.https_proxy
+    || process.env.HTTP_PROXY || process.env.http_proxy
+    || undefined
+}
+
 async function discordFetch(
   path: string,
   token: string,
@@ -30,13 +37,15 @@ async function discordFetch(
 ): Promise<Response> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+  const proxy = resolveProxy()
 
   try {
     const res = await fetch(`${BASE_URL}${path}`, {
       ...options,
       headers: { Authorization: `Bot ${token}`, "Content-Type": "application/json", ...options.headers },
       signal: controller.signal,
-    })
+      ...(proxy ? { proxy } : {}),
+    } as RequestInit)
     return res
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {

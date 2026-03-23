@@ -197,6 +197,12 @@ export async function start(
     : `bash '${wrapperScript}'`
 
   // 11. Start the session (CWD = stateDir for CLAUDE.md discovery)
+  // Pass through proxy env vars so Claude Code and Discord plugin can use them
+  const proxyEnv: Record<string, string> = {}
+  for (const key of ["HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy"]) {
+    if (process.env[key]) proxyEnv[key] = process.env[key]!
+  }
+
   await runtime.start({
     session,
     env: {
@@ -204,6 +210,7 @@ export async function start(
       DISCORD_STATE_DIR: cmdStateDir,
       DISCORD_ACCESS_MODE: "static",
       FLEET_SELF: agentName,
+      ...proxyEnv,
     },
     workDir: cmdStateDir,
     command,

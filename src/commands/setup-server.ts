@@ -1,6 +1,14 @@
 const SSH_TIMEOUT = 10
 const REMOTE_PATH_PREFIX = "export PATH=$HOME/.bun/bin:$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"
 
+/** Build proxy export prefix for remote shell commands */
+function remoteProxyPrefix(): string {
+  const proxy = process.env.HTTPS_PROXY || process.env.https_proxy
+    || process.env.HTTP_PROXY || process.env.http_proxy
+  if (!proxy) return ""
+  return `export HTTP_PROXY='${proxy}' && export HTTPS_PROXY='${proxy}' && `
+}
+
 interface SetupOpts {
   json?: boolean
 }
@@ -41,7 +49,7 @@ async function checkAndInstall(
   }
 
   log(`  [..] ${tool} — installing…`)
-  const { ok: installOk, stdout } = await sshExec(host, installCmd)
+  const { ok: installOk, stdout } = await sshExec(host, `${remoteProxyPrefix()}${installCmd}`)
   if (installOk) {
     log(`  [ok]  ${tool} — installed`)
     return { step: tool, status: "installed", message: "installed" }
