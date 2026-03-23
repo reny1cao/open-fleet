@@ -1,6 +1,6 @@
 import { findConfigDir, loadConfig, sessionName } from "../core/config"
 import { readRoleOverlay } from "../core/identity"
-import { TmuxLocal } from "../runtime/tmux"
+import { resolveRuntime } from "../runtime/resolve"
 import { readdirSync, existsSync } from "fs"
 import { join } from "path"
 
@@ -14,8 +14,8 @@ export async function inject(agentName: string, roleName: string, opts?: { json?
     throw new Error(`Unknown agent: "${agentName}"`)
   }
 
-  // 2. Check session is running via TmuxLocal
-  const runtime = new TmuxLocal()
+  // 2. Check session is running (local or remote)
+  const runtime = resolveRuntime(agentName, config)
   const session = sessionName(config.fleet.name, agentName)
 
   if (!(await runtime.isRunning(session))) {

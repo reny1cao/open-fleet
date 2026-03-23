@@ -1,5 +1,5 @@
 import { findConfigDir, loadConfig, sessionName } from "../core/config"
-import { TmuxLocal } from "../runtime/tmux"
+import { resolveRuntime } from "../runtime/resolve"
 
 export async function stop(
   agentName: string,
@@ -21,9 +21,9 @@ export async function stop(
     )
   }
 
-  // 3. Get session name, check if running
+  // 3. Get session name, check if running (local or remote)
   const session = sessionName(config.fleet.name, agentName)
-  const runtime = new TmuxLocal()
+  const runtime = resolveRuntime(agentName, config)
 
   if (!(await runtime.isRunning(session))) {
     if (opts?.json) {

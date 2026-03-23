@@ -5,6 +5,7 @@ import { writeAccessConfig } from "../channel/discord/access"
 import { TmuxLocal } from "../runtime/tmux"
 import { TmuxRemote, scp, sshRun } from "../runtime/remote"
 import type { RuntimeAdapter } from "../runtime/types"
+import { resolveRuntime } from "../runtime/resolve"
 import { homedir } from "os"
 import { join } from "path"
 import { existsSync } from "fs"
@@ -38,13 +39,7 @@ export async function start(
   const session = sessionName(config.fleet.name, agentName)
 
   // 5. Check if already running
-  const runtime: RuntimeAdapter = agentDef.server === "local"
-    ? new TmuxLocal()
-    : (() => {
-        const serverConfig = config.servers?.[agentDef.server]
-        if (!serverConfig) throw new Error(`Server "${agentDef.server}" not defined in fleet.yaml servers`)
-        return new TmuxRemote(serverConfig)
-      })()
+  const runtime: RuntimeAdapter = resolveRuntime(agentName, config)
   if (await runtime.isRunning(session)) {
     if (opts.json) {
       console.log(JSON.stringify({ agent: agentName, session, status: "already_running" }))

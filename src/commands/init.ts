@@ -8,6 +8,7 @@ import type { FleetConfig, AgentDef, ChannelDef } from "../core/types"
 import { writeBootIdentity } from "../core/identity"
 import { DiscordApi } from "../channel/discord/api"
 import { writeAccessConfig } from "../channel/discord/access"
+import { patch } from "./patch"
 
 function expandHome(p: string): string {
   if (p.startsWith("~/")) return join(homedir(), p.slice(2))
@@ -274,7 +275,15 @@ export async function init(opts: {
     botIds[agentSpecs[i].name] = botInfos[i].id
   }
 
-  const writtenFiles: string[] = ["fleet.yaml", ".env"]
+  // Write bot-ids.json for cross-fleet discovery (used by fleet patch)
+  writeFileSync(
+    join(configDir, "bot-ids.json"),
+    JSON.stringify(botIds, null, 2) + "\n",
+    "utf8"
+  )
+  log("  Wrote bot-ids.json")
+
+  const writtenFiles: string[] = ["fleet.yaml", ".env", "bot-ids.json"]
   log("Writing identity and access files…")
   for (let i = 0; i < agentSpecs.length; i++) {
     const agentName = agentSpecs[i].name
@@ -324,7 +333,15 @@ export async function init(opts: {
     }
   }
 
-  // ── 10. Print summary ─────────────────────────────────────────────────────
+  // ── 10. Patch Discord plugin (PARTNER_BOT_IDS) on local + remote ─────────
+  log("Patching Discord plugin…")
+  try {
+    await patch({ json: opts.json })
+  } catch (err) {
+    if (!opts.json) console.warn(`  warn: patch failed — ${err instanceof Error ? err.message : err}`)
+  }
+
+  // ── 11. Print summary ─────────────────────────────────────────────────────
   if (opts.json) {
     console.log(JSON.stringify({
       fleet: name,
