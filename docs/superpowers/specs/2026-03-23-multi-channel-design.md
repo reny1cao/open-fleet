@@ -30,17 +30,9 @@ discord:
 
 Each channel has a label (human-readable, used in identity), an `id` (Discord channel ID), and an optional `workspace` (project directory).
 
-### Backward Compatibility
+### No Backward Compatibility
 
-Old `channel_id: "xxx"` format is supported. `loadConfig()` normalizes it to:
-
-```yaml
-channels:
-  default:
-    id: "xxx"
-```
-
-`saveConfig()` always writes the new `channels` format.
+Old `channel_id` format is dropped. Existing `fleet.yaml` must be updated to `channels` format. Single-user project — no migration burden.
 
 ## Type Changes
 
@@ -84,10 +76,9 @@ export interface AccessConfigOpts {
 - Change `discord.channelId: string` to `discord.channels: Record<string, ChannelDef>`
 
 ### 2. `src/core/config.ts` — `loadConfig()`
-- If YAML has `channel_id` (old format), normalize to `channels: { default: { id } }`
-- If YAML has `channels` (new format), parse as `Record<string, ChannelDef>`
+- Parse `channels` as `Record<string, ChannelDef>`
 - Validate: at least one channel entry
-- `saveConfig()`: always write `channels` format (camelCase → snake_case)
+- `saveConfig()`: write `channels` format (camelCase → snake_case)
 
 ### 3. `src/channel/discord/access.ts` — `writeAccessConfig()`
 - Accept `channels: Record<string, ChannelDef>` instead of single `channelId`
@@ -120,7 +111,6 @@ Work in the corresponding workspace directory.
 
 ### 6. `src/commands/init.ts`
 - Non-interactive: accept `--channel label:id:workspace` (repeatable)
-  - Single `--channel 111111` still works (becomes `default` label, no workspace)
 - Interactive: loop to add channels until empty line
 - Build `channels` map instead of single `channelId`
 
@@ -142,12 +132,8 @@ Work in the corresponding workspace directory.
 5. Agent works in the corresponding directory
 6. Agent replies in the same channel
 
-## Migration
-
-Existing `fleet.yaml` files with `channel_id` continue to work unchanged. `loadConfig()` normalizes on read. Users can optionally run `fleet init` with multiple `--channel` args to set up multi-channel from scratch, or manually edit `fleet.yaml` to add channels.
-
 ## Testing
 
-- `config.test.ts`: test old format normalization, new format parsing, validation
+- `config.test.ts`: test new format parsing, validation
 - `access.test.ts`: test multi-channel groups generation
 - `identity.test.ts`: test multi-channel identity section
