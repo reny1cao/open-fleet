@@ -19,7 +19,6 @@ export function buildIdentityPrompt(
 ): string {
   const agentDef = config.agents[agentName]
   const botId = botIds[agentName] ?? "unknown"
-  const channelId = config.discord.channelId
 
   const lines: string[] = []
 
@@ -30,8 +29,13 @@ export function buildIdentityPrompt(
   lines.push(agentDef.role)
   lines.push("")
 
-  lines.push("## Channel")
-  lines.push(`- Channel ID: \`${channelId}\``)
+  lines.push("## Channels")
+  for (const [label, ch] of Object.entries(config.discord.channels)) {
+    const ws = ch.workspace ? ` — workspace: ${ch.workspace}` : ""
+    lines.push(`- **#${label}** (channel \`${ch.id}\`)${ws}`)
+  }
+  lines.push("")
+  lines.push("When you receive a message, check which channel it came from. Work in the corresponding workspace directory.")
   lines.push("")
 
   lines.push("## Rules")

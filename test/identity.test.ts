@@ -7,7 +7,7 @@ import type { FleetConfig } from "../src/core/types"
 
 const config: FleetConfig = {
   fleet: { name: "crew" },
-  discord: { channelId: "chan123" },
+  discord: { channels: { default: { id: "chan123" } } },
   defaults: { workspace: "~/workspace" },
   agents: {
     pm: { role: "lead", tokenEnv: "T_PM", server: "local", identity: "identities/pm.md" },
@@ -32,6 +32,26 @@ describe("buildIdentityPrompt", () => {
   it("contains channel info", () => {
     const prompt = buildIdentityPrompt("pm", config, botIds)
     expect(prompt).toContain("chan123")
+    expect(prompt).toContain("Channels")
+  })
+
+  it("lists all channels with workspace mapping", () => {
+    const multiConfig: FleetConfig = {
+      ...config,
+      discord: {
+        channels: {
+          store: { id: "111", workspace: "~/workspace/store" },
+          quant: { id: "222", workspace: "~/workspace/quant" },
+        },
+      },
+    }
+    const prompt = buildIdentityPrompt("pm", multiConfig, botIds)
+    expect(prompt).toContain("#store")
+    expect(prompt).toContain("111")
+    expect(prompt).toContain("~/workspace/store")
+    expect(prompt).toContain("#quant")
+    expect(prompt).toContain("222")
+    expect(prompt).toContain("~/workspace/quant")
   })
 
   it("contains Discord formatting rules", () => {
@@ -131,7 +151,7 @@ describe("buildIdentityPrompt — collaboration norms", () => {
 const managerConfig: FleetConfig = {
   fleet: { name: "crew" },
   structure: { topology: "star", lead: "pm" },
-  discord: { channelId: "chan123" },
+  discord: { channels: { default: { id: "chan123" } } },
   defaults: { workspace: "~/workspace" },
   agents: {
     pm: { role: "lead", tokenEnv: "T_PM", server: "local", identity: "identities/pm.md" },
