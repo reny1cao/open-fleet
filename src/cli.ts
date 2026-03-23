@@ -7,6 +7,7 @@ import { patch } from "./commands/patch"
 import { inject } from "./commands/inject"
 import { apply } from "./commands/apply"
 import { addAgent } from "./commands/add-agent"
+import { move } from "./commands/move"
 
 function usage(): void {
   console.log(`fleet-next — Agent fleet CLI (TypeScript)
@@ -21,6 +22,7 @@ Usage:
   fleet-next inject <agent> <role>
   fleet-next apply [--json]
   fleet-next add-agent --token T --name N --role R [--server S]
+  fleet-next move <agent> <server>
   fleet-next help
 
 Flags:
@@ -108,6 +110,15 @@ export async function main(argv: string[]): Promise<void> {
           throw new Error("Usage: fleet-next add-agent --token T --name N --role R [--server S]")
         }
         await addAgent({ token, name, role, server, json: parseFlag(args, "--json") })
+        break
+      }
+      case "move": {
+        const agent = args[1]
+        const server = args[2]
+        if (!agent || agent.startsWith("--") || !server || server.startsWith("--")) {
+          throw new Error("Usage: fleet-next move <agent> <server>")
+        }
+        await move(agent, server, { json: parseFlag(args, "--json") })
         break
       }
       case "help":
