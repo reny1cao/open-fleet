@@ -99,7 +99,7 @@ export async function start(
     .filter((id) => id !== "UNKNOWN")
 
   writeAccessConfig(expandedStateDir, {
-    channelId: config.discord.channelId,
+    channels: config.discord.channels,
     partnerBotIds,
     requireMention: true,
     userId: config.discord.userId,

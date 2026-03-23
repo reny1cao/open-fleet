@@ -126,24 +126,20 @@ export class DiscordApi implements ChannelAdapter {
   }
 
   generateAccessConfig(opts: AccessConfigOpts): AccessConfig {
-    const { channelId, userId, partnerBotIds, requireMention } = opts
+    const { channels, userId, partnerBotIds, requireMention } = opts
 
-    const allowFrom: string[] = userId ? [userId] : []
-
-    const groupAllowFrom: string[] = [
-      ...(userId ? [userId] : []),
-      ...partnerBotIds,
-    ]
+    const groups: Record<string, { requireMention: boolean; allowFrom: string[] }> = {}
+    for (const ch of Object.values(channels)) {
+      groups[ch.id] = {
+        requireMention,
+        allowFrom: [],
+      }
+    }
 
     return {
       dmPolicy: "allowlist",
-      allowFrom,
-      groups: {
-        [channelId]: {
-          requireMention,
-          allowFrom: groupAllowFrom,
-        },
-      },
+      allowFrom: [...partnerBotIds, ...(userId ? [userId] : [])],
+      groups,
       pending: {},
     }
   }

@@ -93,7 +93,7 @@ export async function addAgent(opts: {
     .filter((id) => id !== "UNKNOWN")
 
   writeAccessConfig(stateDir, {
-    channelId: config.discord.channelId,
+    channels: config.discord.channels,
     partnerBotIds,
     requireMention: true,
     userId: config.discord.userId,

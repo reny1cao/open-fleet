@@ -40,7 +40,7 @@ describe("pluginId", () => {
 describe("generateAccessConfig", () => {
   it("sets dmPolicy to allowlist", () => {
     const cfg = api.generateAccessConfig({
-      channelId: "chan-001",
+      channels: { default: { id: "chan-001" } },
       partnerBotIds: [],
       requireMention: false,
     })
@@ -49,7 +49,7 @@ describe("generateAccessConfig", () => {
 
   it("allowFrom is empty array when no userId", () => {
     const cfg = api.generateAccessConfig({
-      channelId: "chan-001",
+      channels: { default: { id: "chan-001" } },
       partnerBotIds: [],
       requireMention: false,
     })
@@ -58,7 +58,7 @@ describe("generateAccessConfig", () => {
 
   it("allowFrom contains userId when provided", () => {
     const cfg = api.generateAccessConfig({
-      channelId: "chan-001",
+      channels: { default: { id: "chan-001" } },
       userId: "user-999",
       partnerBotIds: [],
       requireMention: false,
@@ -68,7 +68,7 @@ describe("generateAccessConfig", () => {
 
   it("groups contains an entry keyed by channelId", () => {
     const cfg = api.generateAccessConfig({
-      channelId: "chan-001",
+      channels: { default: { id: "chan-001" } },
       partnerBotIds: [],
       requireMention: true,
     })
@@ -77,7 +77,7 @@ describe("generateAccessConfig", () => {
 
   it("group entry has requireMention set correctly", () => {
     const cfg = api.generateAccessConfig({
-      channelId: "chan-001",
+      channels: { default: { id: "chan-001" } },
       partnerBotIds: [],
       requireMention: true,
     })
@@ -86,28 +86,28 @@ describe("generateAccessConfig", () => {
 
   it("group entry allowFrom includes partnerBotIds", () => {
     const cfg = api.generateAccessConfig({
-      channelId: "chan-001",
+      channels: { default: { id: "chan-001" } },
       partnerBotIds: ["bot-a", "bot-b"],
       requireMention: false,
     })
-    expect(cfg.groups["chan-001"].allowFrom).toContain("bot-a")
-    expect(cfg.groups["chan-001"].allowFrom).toContain("bot-b")
+    expect(cfg.allowFrom).toContain("bot-a")
+    expect(cfg.allowFrom).toContain("bot-b")
   })
 
   it("group entry allowFrom includes userId when provided", () => {
     const cfg = api.generateAccessConfig({
-      channelId: "chan-001",
+      channels: { default: { id: "chan-001" } },
       userId: "user-999",
       partnerBotIds: ["bot-a"],
       requireMention: false,
     })
-    expect(cfg.groups["chan-001"].allowFrom).toContain("user-999")
-    expect(cfg.groups["chan-001"].allowFrom).toContain("bot-a")
+    expect(cfg.allowFrom).toContain("user-999")
+    expect(cfg.allowFrom).toContain("bot-a")
   })
 
   it("pending is an empty object", () => {
     const cfg = api.generateAccessConfig({
-      channelId: "chan-001",
+      channels: { default: { id: "chan-001" } },
       partnerBotIds: [],
       requireMention: false,
     })

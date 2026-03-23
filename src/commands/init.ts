@@ -4,7 +4,7 @@ import { homedir } from "os"
 import { createInterface } from "readline"
 import { parse as parseYaml } from "yaml"
 import { saveConfig, resolveStateDir, writeGlobalConfig } from "../core/config"
-import type { FleetConfig, AgentDef } from "../core/types"
+import type { FleetConfig, AgentDef, ChannelDef } from "../core/types"
 import { writeBootIdentity } from "../core/identity"
 import { DiscordApi } from "../channel/discord/api"
 import { writeAccessConfig } from "../channel/discord/access"
@@ -59,7 +59,7 @@ export async function init(opts: {
   tokens: string[]
   name: string
   agents?: string[]
-  channel?: string
+  channel?: string[]
   force?: boolean
   json?: boolean
   template?: string
@@ -130,23 +130,29 @@ export async function init(opts: {
   const ownerId = guild.ownerId
   log(`  Using guild: ${guild.name} (${guildId})`)
 
-  // ── 5. Detect channel ─────────────────────────────────────────────────────
-  let channelId: string
-  if (opts.channel) {
-    channelId = opts.channel
-    log(`  Using channel (override): ${channelId}`)
+  // ── 5. Parse channels ─────────────────────────────────────────────────────
+  let channels: Record<string, ChannelDef>
+  if (opts.channel && opts.channel.length > 0) {
+    channels = {}
+    for (const ch of opts.channel) {
+      const parts = ch.split(":")
+      if (parts.length === 2) {
+        channels[parts[0]] = { id: parts[1] }
+      } else if (parts.length === 3) {
+        channels[parts[0]] = { id: parts[1], workspace: parts[2] }
+      } else {
+        throw new Error(`Invalid --channel format "${ch}": expected "label:id" or "label:id:workspace"`)
+      }
+    }
   } else {
     log("Detecting channel…")
-    const channels = await discord.listChannels(tokens[0], guildId)
-    const textChannel = channels.find((ch) => ch.type === "text")
+    const allChannels = await discord.listChannels(tokens[0], guildId)
+    const textChannel = allChannels.find((ch) => ch.type === "text")
     if (!textChannel) {
-      throw new Error(
-        "No text channels found in the server. " +
-          "Create a text channel in Discord, or pass --channel <id> to specify one manually."
-      )
+      throw new Error("No text channels found. Create one in Discord, or pass --channel label:id")
     }
-    channelId = textChannel.id
-    log(`  Using channel: #${textChannel.name} (${channelId})`)
+    channels = { default: { id: textChannel.id } }
+    log(`  Using channel: #${textChannel.name} (${textChannel.id})`)
   }
 
   // ── 6. Build FleetConfig and generate fleet.yaml ──────────────────────────
@@ -170,7 +176,7 @@ export async function init(opts: {
   const config: FleetConfig = {
     fleet: { name },
     discord: {
-      channelId,
+      channels,
       serverId: guildId,
       ...(ownerId !== undefined ? { userId: ownerId } : {}),
     },
@@ -222,7 +228,7 @@ export async function init(opts: {
       .map((spec) => botIds[spec.name])
 
     writeAccessConfig(stateDir, {
-      channelId,
+      channels,
       partnerBotIds,
       requireMention: true,
       userId: config.discord.userId,
@@ -235,7 +241,9 @@ export async function init(opts: {
     console.log(JSON.stringify({
       fleet: name,
       agents: agentSpecs.map((s) => s.name),
-      channel_id: channelId,
+      channels: Object.fromEntries(
+        Object.entries(channels).map(([label, ch]) => [label, ch.id])
+      ),
       files: writtenFiles,
     }))
     return
@@ -244,7 +252,11 @@ export async function init(opts: {
   console.log("\n── Fleet initialized ──────────────────────────────────────")
   console.log(`Fleet name : ${name}`)
   console.log(`Guild      : ${guild.name} (${guildId})`)
-  console.log(`Channel ID : ${channelId}`)
+  console.log(`Channels :`)
+  for (const [label, ch] of Object.entries(channels)) {
+    const ws = ch.workspace ? ` → ${ch.workspace}` : ""
+    console.log(`  #${label} (${ch.id})${ws}`)
+  }
   console.log("")
   console.log("Invite URLs (add bots to your server):")
   for (let i = 0; i < agentSpecs.length; i++) {
@@ -311,10 +323,20 @@ export async function interactiveInit(configDir: string): Promise<void> {
       agents.push(`${agentName}:local:${role}`)
     }
 
+    // Step 4: Channels
+    console.log("")
+    console.log("  Channels (label:id or label:id:workspace, empty line when done):")
+    const channelArgs: string[] = []
+    while (true) {
+      const ch = await ask(`  Channel ${channelArgs.length + 1}: `)
+      if (!ch.trim()) break
+      channelArgs.push(ch.trim())
+    }
+
     rl.close()
 
     // Call the existing non-interactive init
-    await init({ tokens, name, agents, force: false })
+    await init({ tokens, name, agents, channel: channelArgs.length > 0 ? channelArgs : undefined, force: false })
 
   } catch (err) {
     rl.close()

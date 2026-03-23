@@ -12,7 +12,7 @@ function usage(): void {
   console.log(`fleet-next — Agent fleet CLI (TypeScript)
 
 Usage:
-  fleet-next init --token T1 [--token T2 …] --name NAME [--agent name:server:role …] [--channel ID] [--force]
+  fleet-next init --token T1 [--token T2 …] --name NAME [--agent name:server:role …] [--channel label:id[:workspace] …] [--force]
   fleet-next start <agent> [--wait] [--role <r>]
   fleet-next stop <agent> [--force]
   fleet-next status [--json]
@@ -47,18 +47,19 @@ export async function main(argv: string[]): Promise<void> {
       case "init": {
         const tokens: string[] = []
         const agents: string[] = []
+        const channelArgs: string[] = []
         for (let i = 1; i < args.length; i++) {
           if (args[i] === "--token" && args[i + 1]) { tokens.push(args[++i]); continue }
           if (args[i] === "--name" && args[i + 1]) { /* handled by parseFlagValue */ continue }
           if (args[i] === "--agent" && args[i + 1]) { agents.push(args[++i]); continue }
+          if (args[i] === "--channel" && args[i + 1]) { channelArgs.push(args[++i]); continue }
         }
         const name = parseFlagValue(args, "--name") ?? "my-fleet"
-        const channel = parseFlagValue(args, "--channel")
         const template = parseFlagValue(args, "--template")
         if (tokens.length === 0) {
           await interactiveInit(process.cwd())
         } else {
-          await init({ tokens, name, agents: agents.length > 0 ? agents : undefined, channel, force: parseFlag(args, "--force"), json: parseFlag(args, "--json"), template })
+          await init({ tokens, name, agents: agents.length > 0 ? agents : undefined, channel: channelArgs.length > 0 ? channelArgs : undefined, force: parseFlag(args, "--force"), json: parseFlag(args, "--json"), template })
         }
         break
       }
