@@ -2,9 +2,10 @@ import { findConfigDir, loadConfig, saveConfig, loadEnv, resolveStateDir } from 
 import { writeBootIdentity, writeRoster, updateAllRosters } from "../core/identity"
 import { DiscordApi } from "../channel/discord/api"
 import { writeAccessConfig } from "../channel/discord/access"
-import { appendFileSync, existsSync, writeFileSync } from "fs"
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "fs"
 import { join } from "path"
 import type { AgentDef } from "../core/types"
+import { patch } from "./patch"
 
 function tokenEnvName(agentName: string): string {
   return `DISCORD_BOT_TOKEN_${agentName.toUpperCase().replace(/-/g, "_")}`
@@ -103,6 +104,24 @@ export async function addAgent(opts: {
   // 7b. Update ALL agents' roster CLAUDE.md (running agents pick this up on next turn)
   updateAllRosters(config, botIds, resolveStateDir)
   log(`  Updated roster for all ${Object.keys(config.agents).length} agents`)
+
+  // 7c. Update bot-ids.json and patch PARTNER_BOT_IDS on all machines
+  const botIdsPath = join(configDir, "bot-ids.json")
+  let existingBotIds: Record<string, string> = {}
+  if (existsSync(botIdsPath)) {
+    try { existingBotIds = JSON.parse(readFileSync(botIdsPath, "utf8")) } catch {}
+  }
+  for (const [n, id] of Object.entries(botIds)) {
+    if (id !== "UNKNOWN") existingBotIds[n] = id
+  }
+  writeFileSync(botIdsPath, JSON.stringify(existingBotIds, null, 2) + "\n", "utf8")
+  log("  Updated bot-ids.json")
+
+  try {
+    await patch({ json: opts.json })
+  } catch (err) {
+    if (!opts.json) console.warn(`  warn: patch failed — ${err instanceof Error ? err.message : err}`)
+  }
 
   // 8. Print invite URL and next steps
   const inviteUrl = discord.inviteUrl(botInfo.appId)
