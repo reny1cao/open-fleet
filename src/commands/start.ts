@@ -142,14 +142,59 @@ export async function start(
   const cmdStateDir = isRemote ? rawStateDir.replace(/^~/, "$HOME") : expandedStateDir
   const cmdWorkspace = isRemote ? rawWorkspace.replace(/^~/, "$HOME") : expandHome(rawWorkspace)
 
-  // 10. Build command
-  const command = [
+  // 10. Build wrapper script with auto-restart
+  const claudeCmd = [
     "claude",
     "--dangerously-skip-permissions",
     `--append-system-prompt-file '${cmdStateDir}/identity.md'`,
     `--add-dir '${cmdWorkspace}'`,
     `--channels ${discord.pluginId()}`,
   ].join(" ")
+
+  const wrapperLines = [
+    "#!/bin/bash",
+    "MAX_RETRIES=5",
+    "RETRY_COUNT=0",
+    "MIN_UPTIME=30",
+    "",
+    "while true; do",
+    "  START_TIME=$(date +%s)",
+    `  ${claudeCmd}`,
+    "  UPTIME=$(($(date +%s) - START_TIME))",
+    "  if [ $UPTIME -gt $MIN_UPTIME ]; then",
+    "    RETRY_COUNT=0",
+    "  else",
+    "    RETRY_COUNT=$((RETRY_COUNT + 1))",
+    "  fi",
+    "  if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then",
+    `    echo "[fleet] ${agentName}: too many rapid restarts ($MAX_RETRIES). Giving up."`,
+    "    break",
+    "  fi",
+    `  echo "[fleet] ${agentName}: restarting in 3s (uptime ${UPTIME}s)..."`,
+    "  sleep 3",
+    "done",
+  ]
+
+  const wrapperScript = isRemote
+    ? `/tmp/fleet-wrapper-${session}.sh`
+    : join(expandedStateDir, `wrapper.sh`)
+  writeFileSync(
+    isRemote ? `/tmp/fleet-wrapper-${session}-local.sh` : wrapperScript,
+    wrapperLines.join("\n") + "\n",
+    "utf8"
+  )
+
+  if (isRemote) {
+    const serverConfig = config.servers![agentDef.server]
+    const remoteWrapper = `/tmp/fleet-wrapper-${session}.sh`
+    await scp(serverConfig, `/tmp/fleet-wrapper-${session}-local.sh`, remoteWrapper)
+    await sshRun(serverConfig, `chmod +x '${remoteWrapper}'`)
+    try { (await import("fs")).unlinkSync(`/tmp/fleet-wrapper-${session}-local.sh`) } catch {}
+  }
+
+  const command = isRemote
+    ? `bash /tmp/fleet-wrapper-${session}.sh`
+    : `bash '${wrapperScript}'`
 
   // 11. Start the session (CWD = stateDir for CLAUDE.md discovery)
   await runtime.start({

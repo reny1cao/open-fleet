@@ -10,6 +10,7 @@ import { addAgent } from "./commands/add-agent"
 import { move } from "./commands/move"
 import { use } from "./commands/use"
 import { setupServer } from "./commands/setup-server"
+import { restart } from "./commands/restart"
 
 function usage(): void {
   console.log(`fleet-next — Agent fleet CLI (TypeScript)
@@ -17,6 +18,7 @@ function usage(): void {
 Usage:
   fleet-next init --token T1 [--token T2 …] --name NAME [--agent name:server:role …] [--channel label:id[:workspace] …] [--guild ID] [--create-channel NAME] [--force]
   fleet-next start <agent> [--wait] [--role <r>]
+  fleet-next restart <agent>
   fleet-next stop <agent> [--force]
   fleet-next status [--json]
   fleet-next doctor [--json]
@@ -83,6 +85,12 @@ export async function main(argv: string[]): Promise<void> {
           role: parseFlagValue(args, "--role"),
           json: parseFlag(args, "--json"),
         })
+        break
+      }
+      case "restart": {
+        const agent = args[1]
+        if (!agent || agent.startsWith("--")) throw new Error("Usage: fleet-next restart <agent>")
+        await restart(agent, { json: parseFlag(args, "--json") })
         break
       }
       case "stop": {

@@ -235,6 +235,15 @@ fleet inject <agent> <role>
 ```
 Hot-inject a role into a running agent without restart.
 
+### "restart <agent>"
+```bash
+fleet restart <agent>
+```
+Gracefully restart an agent — sends `/exit`, the wrapper auto-restarts with fresh context. Use this to reload MCP configs, refresh identity, or recover from stuck state.
+
+### "self-restart"
+If you need to restart yourself (e.g., to load new MCP servers), run `/exit`. The wrapper script will auto-restart you within seconds. Your conversation context resets but all config files (identity, roster, MCP, settings) persist.
+
 ### "stop <agent>"
 ```bash
 fleet stop <agent>
@@ -333,6 +342,12 @@ Available roles in `identities/roles/`:
 - **ops** — Server operations
 
 Add new roles by creating `identities/roles/<name>.md`.
+
+### "setup remote server"
+```bash
+fleet setup-server <ssh-host>
+```
+Install bun, claude, and tmux on a remote server. Accepts SSH aliases (e.g., `fleet setup-server demo`).
 
 ## Rules
 
