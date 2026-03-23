@@ -4,7 +4,7 @@ import { DiscordApi } from "../channel/discord/api"
 import { writeAccessConfig } from "../channel/discord/access"
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "fs"
 import { join } from "path"
-import type { AgentDef } from "../core/types"
+import type { AgentDef, AgentAdapterKind } from "../core/types"
 import { patch } from "./patch"
 
 function tokenEnvName(agentName: string): string {
@@ -16,9 +16,10 @@ export async function addAgent(opts: {
   name: string
   role: string
   server?: string
+  adapter?: AgentAdapterKind
   json?: boolean
 }): Promise<void> {
-  const { token, name, role, server = "local" } = opts
+  const { token, name, role, server = "local", adapter = "claude" } = opts
   const log = opts.json ? () => {} : console.log
   const write = opts.json ? () => {} : (s: string) => process.stdout.write(s)
 
@@ -31,6 +32,10 @@ export async function addAgent(opts: {
     throw new Error(`Agent "${name}" already exists in fleet.yaml`)
   }
 
+  if (adapter === "codex" && server !== "local") {
+    throw new Error(`Codex agent "${name}" currently supports only server=local`)
+  }
+
   // 3. Validate token via DiscordApi
   const discord = new DiscordApi()
   write(`Validating token for "${name}"… `)
@@ -40,6 +45,7 @@ export async function addAgent(opts: {
   // 4. Add agent to config.agents, save fleet.yaml via saveConfig
   const tokenEnv = tokenEnvName(name)
   const agentDef: AgentDef = {
+    ...(adapter !== "claude" ? { agentAdapter: adapter } : {}),
     role,
     tokenEnv,
     server,
@@ -117,10 +123,15 @@ export async function addAgent(opts: {
   writeFileSync(botIdsPath, JSON.stringify(existingBotIds, null, 2) + "\n", "utf8")
   log("  Updated bot-ids.json")
 
-  try {
-    await patch({ json: opts.json })
-  } catch (err) {
-    if (!opts.json) console.warn(`  warn: patch failed — ${err instanceof Error ? err.message : err}`)
+  const needsClaudePatch = Object.values(config.agents).some((agent) => (agent.agentAdapter ?? "claude") === "claude")
+  if (needsClaudePatch) {
+    try {
+      await patch({ json: opts.json })
+    } catch (err) {
+      if (!opts.json) console.warn(`  warn: patch failed — ${err instanceof Error ? err.message : err}`)
+    }
+  } else if (!opts.json) {
+    console.log("  Skipped Claude Discord plugin patch (no Claude agents in fleet)")
   }
 
   // 8. Print invite URL and next steps
@@ -140,6 +151,7 @@ export async function addAgent(opts: {
   console.log(`\n── Agent "${name}" added ──────────────────────────────────`)
   console.log(`Bot     : ${botInfo.name} (${botInfo.id})`)
   console.log(`Role    : ${role}`)
+  console.log(`Adapter : ${adapter}`)
   console.log(`Server  : ${server}`)
   console.log(`Token env: ${tokenEnv}`)
   console.log("")

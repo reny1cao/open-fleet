@@ -99,6 +99,7 @@ describe("loadConfig", () => {
     expect(config.discord.userId).toBe("555444333")
     expect(config.defaults.workspace).toBe("~/workspace")
     expect(config.defaults.runtime).toBe("claude")
+    expect(config.defaults.agentAdapter).toBe("claude")
   })
 
   it("parses agent fields correctly", () => {
@@ -106,12 +107,14 @@ describe("loadConfig", () => {
     const config = loadConfig(dir)
 
     expect(config.agents["hub"]).toBeDefined()
+    expect(config.agents["hub"].agentAdapter).toBe("claude")
     expect(config.agents["hub"].role).toBe("hub")
     expect(config.agents["hub"].tokenEnv).toBe("DISCORD_BOT_TOKEN_HUB")
     expect(config.agents["hub"].server).toBe("local")
     expect(config.agents["hub"].identity).toBe("identities/hub.md")
 
     expect(config.agents["worker-1"]).toBeDefined()
+    expect(config.agents["worker-1"].agentAdapter).toBe("claude")
     expect(config.agents["worker-1"].tokenEnv).toBe("DISCORD_BOT_TOKEN_WORKER1")
     expect(config.agents["worker-1"].stateDir).toBe("~/.fleet/state/discord-worker1")
   })
@@ -146,6 +149,36 @@ agents:
     const config = loadConfig(dir)
     // my-bot → DISCORD_BOT_TOKEN_MY_BOT (upper, hyphens → underscores)
     expect(config.agents["my-bot"].tokenEnv).toBe("DISCORD_BOT_TOKEN_MY_BOT")
+  })
+
+  it("supports agentAdapter defaults and per-agent override", () => {
+    const yaml = `\
+fleet:
+  name: adapter-fleet
+discord:
+  channels:
+    default:
+      id: "123"
+defaults:
+  workspace: ~/workspace
+  agent_adapter: codex
+agents:
+  coder:
+    role: worker
+    server: local
+    identity: identities/coder.md
+  lead:
+    role: lead
+    agent_adapter: claude
+    server: local
+    identity: identities/lead.md
+`
+    writeFileSync(join(dir, "fleet.yaml"), yaml)
+    const config = loadConfig(dir)
+
+    expect(config.defaults.agentAdapter).toBe("codex")
+    expect(config.agents["coder"].agentAdapter).toBe("codex")
+    expect(config.agents["lead"].agentAdapter).toBe("claude")
   })
 
   it("throws when fleet.yaml is missing", () => {
@@ -305,7 +338,12 @@ describe("findConfigDir", () => {
   it("throws when fleet.yaml cannot be found anywhere", () => {
     delete process.env.FLEET_CONFIG
     delete process.env.FLEET_DIR
-    expect(() => findConfigDir(dir)).toThrow("fleet.yaml not found")
+    const isolatedGlobalConfigDir = makeTempDir()
+    try {
+      expect(() => findConfigDir(dir, isolatedGlobalConfigDir)).toThrow("fleet.yaml not found")
+    } finally {
+      rmSync(isolatedGlobalConfigDir, { recursive: true, force: true })
+    }
   })
 })
 
@@ -604,6 +642,8 @@ describe("saveConfig", () => {
 
     expect(reloaded.fleet.name).toBe(original.fleet.name)
     expect(reloaded.discord.channels["default"].id).toBe(original.discord.channels["default"].id)
+    expect(reloaded.defaults.agentAdapter).toBe(original.defaults.agentAdapter)
+    expect(reloaded.agents["hub"].agentAdapter).toBe(original.agents["hub"].agentAdapter)
     expect(reloaded.agents["hub"].tokenEnv).toBe(original.agents["hub"].tokenEnv)
     expect(reloaded.agents["worker-1"].stateDir).toBe(original.agents["worker-1"].stateDir)
   })

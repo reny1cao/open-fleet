@@ -1,12 +1,16 @@
 ---
 name: fleet
-description: Manage an AI agent fleet — start, stop, inject roles, check status, and diagnose issues across local and remote servers
+description: Manage an AI agent fleet — start, stop, inject roles, check status, and diagnose issues across Claude and Codex agents on Discord
 user_invocable: true
 ---
 
 # Fleet — Agent Fleet Manager
 
 You help users design and deploy AI agent teams. You understand organizational structure principles for AI agents and guide users through building effective teams. All operations go through the `fleet` CLI.
+
+Open Fleet currently supports two agent adapters:
+- `claude` — Claude Code using the Discord plugin path
+- `codex` — Codex using the Fleet-owned Discord bridge
 
 ## Org Design Principles
 
@@ -83,7 +87,7 @@ cd ~/.fleet && bash install.sh
 
 ### Step 1: Install fleet CLI and verify environment
 
-**Why:** Fleet needs the CLI installed, Claude Code with Channels support, the Discord plugin, and patches applied. The install script handles all of this — including building the Bun/TypeScript binary (`fleet-next`). After install, `fleet` points to the TS binary automatically.
+**Why:** Fleet needs the CLI installed plus adapter-specific tooling. Claude agents need Claude Code with Channels support and the Discord plugin. Codex agents need the Codex CLI logged in. The install script builds the Bun/TypeScript binary (`fleet-next`). After install, `fleet` points to the TS binary automatically.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/reny1cao/open-fleet/master/install.sh | bash
@@ -95,14 +99,17 @@ fleet doctor
 ```
 
 Check the output for:
-- **Claude Code version** — needs **v2.1.80+** for `--channels` support. Run `claude --version` to check. If older, update: `npm update -g @anthropic-ai/claude-code`. Note: requires claude.ai login (Console/API key auth not supported for Channels).
-- **Discord plugin** — `fleet doctor` checks if `server.ts` exists at the plugin path
-- **Patches** — STATE_DIR and PARTNER_BOT_IDS must show as applied
+- **Claude Code version** — only required if the fleet includes Claude agents; needs **v2.1.80+**
+- **Codex login** — only required if the fleet includes Codex agents; `codex login status` should report logged in
+- **Discord plugin** — only required for Claude agents
+- **Patches** — STATE_DIR and PARTNER_BOT_IDS only matter for Claude agents
 - **Bun** — the TS binary requires Bun. `fleet doctor` checks it is installed and in PATH.
 
 If `fleet doctor` shows failures:
 - Claude Code not installed → tell user: `npm install -g @anthropic-ai/claude-code`
 - Claude Code not logged in → tell user: `claude auth login`
+- Codex not installed → tell user to install the Codex CLI
+- Codex not logged in → tell user: `codex login`
 - Plugin missing → run: `fleet patch` (install.sh should have handled this, but re-run if needed)
 - Patches missing → run: `fleet patch`
 - Bun missing → install from https://bun.sh, then re-run `install.sh`
@@ -146,9 +153,9 @@ Ask: "Do you have a Discord server for your fleet?"
 
 5. **Confirm with the user** — how many agents, what each one does, what to name them. Names become the bot display names in Discord.
 
-6. **Emit the exact `fleet init` command** with agreed names and roles:
+6. **Emit the exact `fleet init` command** with agreed names, roles, and adapters:
    ```bash
-   fleet init --token T1 --token T2 --name my-team --agent lead:local:lead --agent coder:local:worker
+   fleet init --token T1 --token T2 --name my-team --agent lead:local:lead:claude --agent coder:local:worker:codex
    ```
    Or if using a template:
    ```bash
@@ -162,7 +169,7 @@ Ask: "Do you have a Discord server for your fleet?"
 
 ### Step 4: Create bots, configure, and invite
 
-**Why:** Each agent needs a Discord bot identity (token). `fleet add-agent` handles tokens, identity generation, access configuration, and invite URLs — the user just provides the tokens.
+**Why:** Each agent needs a Discord bot identity (token). `fleet add-agent` handles tokens, identity generation, access configuration, and invite URLs — the user just provides the tokens and chooses the adapter when needed.
 
 **Create one bot at a time. For each bot:**
 
@@ -175,7 +182,7 @@ Ask: "Do you have a Discord server for your fleet?"
 Collect all tokens, then run the `fleet init` command from Step 3 (with actual tokens substituted):
 
 ```bash
-fleet init --token T1 --token T2 --name FLEET_NAME --agent lead:local:lead --agent worker:local:worker
+fleet init --token T1 --token T2 --name FLEET_NAME --agent lead:local:lead:claude --agent worker:local:worker:codex
 ```
 
 The CLI auto-detects the Discord server and channel, validates tokens, generates fleet.yaml, .env, identity files, access.json, and prints invite URLs.
@@ -187,14 +194,14 @@ Share each invite URL with the user: "Open this link, select your server, click 
 
 ### Step 5: Start the team
 
-**Why:** This launches each agent as a Claude Code process connected to Discord. Identity is injected at boot via `--append-system-prompt-file` — the agent knows its name, role, and collaboration norms from the very first message, with no race condition. Collaboration norms (ack, completion, failure, handoff) are automatically included in every agent's identity.
+**Why:** This launches each agent on its configured adapter. Claude agents start as Claude Code processes connected through the Discord plugin. Codex agents start as Fleet-managed Discord workers backed by Codex app-server. Collaboration norms are injected into every agent's identity before the first task.
 
-**Before starting:** Claude Code needs `--dangerously-skip-permissions` to run unattended. Fleet auto-handles the first-run confirmation prompt (sends "y" automatically via tmux). But if a bot doesn't come online after `fleet start`:
+**Before starting:** Claude agents need `--dangerously-skip-permissions` to run unattended. Fleet auto-handles the first-run confirmation prompt via tmux. Codex agents need `codex login` completed first. If a bot doesn't come online after `fleet start`:
 
 1. Check: `fleet status` — is it `[on]` or `[off]`?
 2. If `[off]`: run `tmux attach -t <session-name>` (shown in `fleet start` output) to see what's happening
 3. If there's a confirmation prompt stuck: type `y` and Enter
-4. If Claude Code crashed: check the error, fix it, then `fleet stop <agent>` and `fleet start <agent>`
+4. If the agent process crashed: check the error, fix it, then `fleet stop <agent>` and `fleet start <agent>`
 5. Detach from tmux: `Ctrl+B, D`
 
 ```bash
@@ -214,7 +221,7 @@ To add an agent to an existing fleet:
 fleet add-agent
 
 # Non-interactive
-fleet add-agent --token TOKEN --name reviewer --role reviewer
+fleet add-agent --token TOKEN --name reviewer --role reviewer --adapter codex
 ```
 
 `fleet add-agent` handles everything: appends to fleet.yaml, saves the token to .env, generates an identity file with collaboration norms, and prints the invite URL. The user needs to:
@@ -223,6 +230,8 @@ fleet add-agent --token TOKEN --name reviewer --role reviewer
 3. **Enable Message Content Intent** (Privileged Gateway Intents section) — critical, without this the bot can't read messages
 4. Invite the bot using the invite URL from `fleet add-agent`
 5. `fleet start <new-agent>`
+
+Use `--adapter codex` for Codex workers. Omit it for Claude agents.
 
 ## Quick-Start Templates
 
@@ -306,7 +315,7 @@ Switch the active fleet (updates `~/.fleet/config.json`). Allows `fleet` command
 ### "add agent"
 ```bash
 fleet add-agent
-fleet add-agent --token TOKEN --name reviewer --role reviewer
+fleet add-agent --token TOKEN --name reviewer --role reviewer --adapter codex
 ```
 Add a new agent to an existing fleet.
 
@@ -323,7 +332,7 @@ fleet init
 
 # Non-interactive (agent)
 fleet init --token TOKEN1 --token TOKEN2 --name my-fleet
-fleet init --token TOKEN1 --token TOKEN2 --name my-fleet --agent lead:local:lead --agent worker:local:worker
+fleet init --token TOKEN1 --token TOKEN2 --name my-fleet --agent lead:local:lead:claude --agent worker:local:worker:codex
 
 # With specific guild and auto-create channel
 fleet init --token TOKEN1 --token TOKEN2 --name my-fleet --guild GUILD_ID --create-channel dev

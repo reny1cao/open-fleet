@@ -51,8 +51,9 @@ describe("writeAccessConfig", () => {
       requireMention: true,
     })
     const cfg = readAccessConfig(dir)
-    expect((cfg as Record<string, unknown>).dmPolicy).toBeDefined()
-    expect((cfg as Record<string, unknown>).policy).toBeUndefined()
+    const cfgRecord = cfg as unknown as Record<string, unknown>
+    expect(cfgRecord.dmPolicy).toBeDefined()
+    expect(cfgRecord.policy).toBeUndefined()
   })
 
   it("dmPolicy value is 'allowlist' (not 'whitelist')", () => {
@@ -74,9 +75,10 @@ describe("writeAccessConfig", () => {
       requireMention: true,
     })
     const cfg = readAccessConfig(dir)
-    expect((cfg as Record<string, unknown>).allowFrom).toBeDefined()
-    expect((cfg as Record<string, unknown>).allowedUserIds).toBeUndefined()
-    expect((cfg as Record<string, unknown>).allowedFrom).toBeUndefined()
+    const cfgRecord = cfg as unknown as Record<string, unknown>
+    expect(cfgRecord.allowFrom).toBeDefined()
+    expect(cfgRecord.allowedUserIds).toBeUndefined()
+    expect(cfgRecord.allowedFrom).toBeUndefined()
   })
 
   it("allowFrom contains the partner bot IDs", () => {

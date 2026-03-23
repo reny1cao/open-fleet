@@ -144,6 +144,32 @@ export class DiscordApi implements ChannelAdapter {
     return { id: ch.id, name: ch.name, type: "text" }
   }
 
+  async getGatewayUrl(token: string): Promise<string> {
+    const res = await discordFetch("/gateway/bot", token)
+    if (!res.ok) {
+      throw new Error(`Failed to fetch Discord gateway URL: ${res.status} ${res.statusText}`)
+    }
+    const body = (await res.json()) as { url: string }
+    return `${body.url}?v=10&encoding=json`
+  }
+
+  async getChannel(
+    token: string,
+    channelId: string,
+  ): Promise<{ id: string; name?: string; type: number; parentId?: string }> {
+    const res = await discordFetch(`/channels/${channelId}`, token)
+    if (!res.ok) {
+      throw new Error(`Failed to fetch channel ${channelId}: ${res.status} ${res.statusText}`)
+    }
+    const body = (await res.json()) as { id: string; name?: string; type: number; parent_id?: string }
+    return {
+      id: body.id,
+      name: body.name,
+      type: body.type,
+      parentId: body.parent_id,
+    }
+  }
+
   async getChannelByName(
     token: string,
     serverId: string,
@@ -151,6 +177,38 @@ export class DiscordApi implements ChannelAdapter {
   ): Promise<ChannelInfo | null> {
     const channels = await this.listChannels(token, serverId)
     return channels.find((ch) => ch.name === name && ch.type === "text") ?? null
+  }
+
+  async triggerTyping(token: string, channelId: string): Promise<void> {
+    const res = await discordFetch(`/channels/${channelId}/typing`, token, {
+      method: "POST",
+    })
+    if (!res.ok) {
+      throw new Error(`Failed to send typing indicator: ${res.status} ${res.statusText}`)
+    }
+  }
+
+  async sendMessage(
+    token: string,
+    channelId: string,
+    content: string,
+    replyToMessageId?: string,
+  ): Promise<void> {
+    const body: Record<string, unknown> = { content }
+    if (replyToMessageId) {
+      body.message_reference = {
+        message_id: replyToMessageId,
+        fail_if_not_exists: false,
+      }
+    }
+
+    const res = await discordFetch(`/channels/${channelId}/messages`, token, {
+      method: "POST",
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) {
+      throw new Error(`Failed to send Discord message: ${res.status} ${res.statusText}`)
+    }
   }
 
   generateAccessConfig(opts: AccessConfigOpts): AccessConfig {

@@ -4,7 +4,7 @@ import { homedir } from "os"
 import { createInterface } from "readline"
 import { parse as parseYaml } from "yaml"
 import { saveConfig, resolveStateDir, writeGlobalConfig } from "../core/config"
-import type { FleetConfig, AgentDef, ChannelDef } from "../core/types"
+import type { FleetConfig, AgentDef, ChannelDef, AgentAdapterKind } from "../core/types"
 import { writeBootIdentity } from "../core/identity"
 import { DiscordApi } from "../channel/discord/api"
 import { writeAccessConfig } from "../channel/discord/access"
@@ -24,25 +24,32 @@ interface AgentSpec {
   name: string
   server: string
   role: string
+  adapter?: AgentAdapterKind
 }
 
 function parseAgentSpec(spec: string): AgentSpec {
   const parts = spec.split(":")
-  if (parts.length !== 3) {
+  if (parts.length !== 3 && parts.length !== 4) {
     throw new Error(
-      `Invalid --agent format "${spec}": expected "name:server:role"`
+      `Invalid --agent format "${spec}": expected "name:server:role[:adapter]"`
     )
   }
-  const [name, server, role] = parts
+  const [name, server, role, adapter] = parts
   if (!name || !server || !role) {
     throw new Error(
       `Invalid --agent format "${spec}": name, server, and role must be non-empty`
     )
   }
-  return { name, server, role }
+  if (adapter && adapter !== "claude" && adapter !== "codex") {
+    throw new Error(
+      `Invalid --agent format "${spec}": adapter must be "claude" or "codex"`
+    )
+  }
+  const normalizedAdapter = adapter as AgentAdapterKind | undefined
+  return { name, server, role, ...(normalizedAdapter ? { adapter: normalizedAdapter } : {}) }
 }
 
-function loadTemplate(name: string): { agents: Array<{ name: string; role: string; server: string }> } | null {
+function loadTemplate(name: string): { agents: Array<{ name: string; role: string; server: string; adapter?: AgentAdapterKind }> } | null {
   // Check ~/.fleet/templates/ first (user overrides), then repo templates/
   const paths = [
     join(process.env.HOME ?? "", ".fleet", "templates", `${name}.yaml`),
@@ -86,7 +93,7 @@ export async function init(opts: {
     const tmpl = loadTemplate(opts.template)
     if (!tmpl) throw new Error(`Template not found: ${opts.template}. Available: dev-team, research, ops`)
     if (!opts.agents || opts.agents.length === 0) {
-      opts.agents = tmpl.agents.map(a => `${a.name}:${a.server}:${a.role}`)
+      opts.agents = tmpl.agents.map((a) => [a.name, a.server, a.role, a.adapter].filter(Boolean).join(":"))
     }
   }
 
@@ -183,7 +190,11 @@ export async function init(opts: {
   for (let i = 0; i < agentSpecs.length; i++) {
     const spec = agentSpecs[i]
     const envVar = tokenEnvName(spec.name)
+    if (spec.adapter === "codex" && spec.server !== "local") {
+      throw new Error(`Codex agent "${spec.name}" currently supports only server=local`)
+    }
     const agentEntry: AgentDef = {
+      ...(spec.adapter ? { agentAdapter: spec.adapter } : {}),
       role: spec.role,
       tokenEnv: envVar,
       server: spec.server,
@@ -334,11 +345,16 @@ export async function init(opts: {
   }
 
   // ── 10. Patch Discord plugin (PARTNER_BOT_IDS) on local + remote ─────────
-  log("Patching Discord plugin…")
-  try {
-    await patch({ json: opts.json })
-  } catch (err) {
-    if (!opts.json) console.warn(`  warn: patch failed — ${err instanceof Error ? err.message : err}`)
+  const needsClaudePatch = agentSpecs.some((spec) => (spec.adapter ?? "claude") === "claude")
+  if (needsClaudePatch) {
+    log("Patching Discord plugin…")
+    try {
+      await patch({ json: opts.json })
+    } catch (err) {
+      if (!opts.json) console.warn(`  warn: patch failed — ${err instanceof Error ? err.message : err}`)
+    }
+  } else {
+    log("Skipping Claude Discord plugin patch (no Claude agents configured)")
   }
 
   // ── 11. Print summary ─────────────────────────────────────────────────────

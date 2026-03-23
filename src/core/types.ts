@@ -1,3 +1,5 @@
+export type AgentAdapterKind = "claude" | "codex"
+
 export interface ChannelDef {
   id: string
   workspace?: string
@@ -12,7 +14,7 @@ export interface FleetConfig {
     userId?: string
   }
   servers?: Record<string, ServerConfig>
-  defaults: { workspace: string; runtime?: string }
+  defaults: { workspace: string; runtime?: string; agentAdapter?: AgentAdapterKind }
   agents: Record<string, AgentDef>
 }
 
@@ -22,6 +24,7 @@ export interface OrgStructure {
 }
 
 export interface AgentDef {
+  agentAdapter?: AgentAdapterKind
   role: string
   tokenEnv: string
   server: string

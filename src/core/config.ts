@@ -2,7 +2,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml"
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs"
 import { join, dirname } from "path"
 import { homedir } from "os"
-import type { FleetConfig, AgentDef, ServerConfig, OrgStructure, ChannelDef } from "./types"
+import type { FleetConfig, AgentDef, ServerConfig, OrgStructure, ChannelDef, AgentAdapterKind } from "./types"
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -25,6 +25,10 @@ function toSnake(s: string): string {
 /** Derive a default tokenEnv from the agent name: my-bot → DISCORD_BOT_TOKEN_MY_BOT */
 function deriveTokenEnv(agentName: string): string {
   return `DISCORD_BOT_TOKEN_${agentName.toUpperCase().replace(/-/g, "_")}`
+}
+
+function normalizeAgentAdapter(value: unknown): AgentAdapterKind {
+  return value === "codex" ? "codex" : "claude"
 }
 
 // ── findConfigDir ─────────────────────────────────────────────────────────────
@@ -147,6 +151,7 @@ export function loadConfig(dir?: string): FleetConfig {
   const defaults = {
     workspace: defaultsRaw.workspace,
     runtime: defaultsRaw.runtime,
+    agentAdapter: normalizeAgentAdapter(defaultsRaw.agent_adapter),
   }
 
   // ── servers ───────────────────────────────────────────────────────────────
@@ -175,6 +180,7 @@ export function loadConfig(dir?: string): FleetConfig {
   const agents: Record<string, AgentDef> = {}
   for (const [name, aRaw] of Object.entries(agentsRaw)) {
     agents[name] = {
+      agentAdapter: normalizeAgentAdapter(aRaw.agent_adapter ?? defaults.agentAdapter),
       role: aRaw.role as string,
       tokenEnv: (aRaw.token_env as string | undefined) ?? deriveTokenEnv(name),
       server: aRaw.server as string,
@@ -209,6 +215,9 @@ export function saveConfig(config: FleetConfig, dir: string): void {
   const agents: Record<string, Record<string, unknown>> = {}
   for (const [name, def] of Object.entries(config.agents)) {
     agents[name] = {
+      ...(def.agentAdapter !== undefined && def.agentAdapter !== config.defaults.agentAdapter
+        ? { agent_adapter: def.agentAdapter }
+        : {}),
       role: def.role,
       token_env: def.tokenEnv,
       server: def.server,
@@ -235,6 +244,9 @@ export function saveConfig(config: FleetConfig, dir: string): void {
   const defaults: Record<string, string> = {
     workspace: config.defaults.workspace,
     ...(config.defaults.runtime !== undefined ? { runtime: config.defaults.runtime } : {}),
+    ...(config.defaults.agentAdapter !== undefined && config.defaults.agentAdapter !== "claude"
+      ? { agent_adapter: config.defaults.agentAdapter }
+      : {}),
   }
 
   const out: Record<string, unknown> = {

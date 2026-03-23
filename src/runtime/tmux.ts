@@ -1,4 +1,4 @@
-import type { RuntimeAdapter, StartOpts } from "./types.ts"
+import type { RuntimeAdapter, StartOpts } from "./types"
 
 interface RunResult {
   stdout: string

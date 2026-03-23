@@ -11,12 +11,14 @@ import { move } from "./commands/move"
 import { use } from "./commands/use"
 import { setupServer } from "./commands/setup-server"
 import { restart } from "./commands/restart"
+import { runAgent } from "./commands/run-agent"
+import type { AgentAdapterKind } from "./core/types"
 
 function usage(): void {
   console.log(`fleet-next — Agent fleet CLI (TypeScript)
 
 Usage:
-  fleet-next init --token T1 [--token T2 …] --name NAME [--agent name:server:role …] [--channel label:id[:workspace] …] [--guild ID] [--create-channel NAME] [--force]
+  fleet-next init --token T1 [--token T2 …] --name NAME [--agent name:server:role[:adapter] …] [--channel label:id[:workspace] …] [--guild ID] [--create-channel NAME] [--force]
   fleet-next start <agent> [--wait] [--role <r>]
   fleet-next restart <agent>
   fleet-next stop <agent> [--force]
@@ -25,10 +27,11 @@ Usage:
   fleet-next patch [--json]
   fleet-next inject <agent> <role>
   fleet-next apply [--json]
-  fleet-next add-agent --token T --name N --role R [--server S]
+  fleet-next add-agent --token T --name N --role R [--server S] [--adapter claude|codex]
   fleet-next move <agent> <server>
   fleet-next use <fleet-name|path>
   fleet-next setup-server <ssh-host>
+  fleet-next run-agent <agent>
   fleet-next help
 
 Flags:
@@ -124,10 +127,15 @@ export async function main(argv: string[]): Promise<void> {
         const name = parseFlagValue(args, "--name")
         const role = parseFlagValue(args, "--role")
         const server = parseFlagValue(args, "--server")
+        const adapterValue = parseFlagValue(args, "--adapter")
         if (!token || !name || !role) {
-          throw new Error("Usage: fleet-next add-agent --token T --name N --role R [--server S]")
+          throw new Error("Usage: fleet-next add-agent --token T --name N --role R [--server S] [--adapter claude|codex]")
         }
-        await addAgent({ token, name, role, server, json: parseFlag(args, "--json") })
+        if (adapterValue && adapterValue !== "claude" && adapterValue !== "codex") {
+          throw new Error(`Invalid --adapter "${adapterValue}". Expected "claude" or "codex"`)
+        }
+        const adapter = adapterValue as AgentAdapterKind | undefined
+        await addAgent({ token, name, role, server, adapter, json: parseFlag(args, "--json") })
         break
       }
       case "move": {
@@ -153,6 +161,14 @@ export async function main(argv: string[]): Promise<void> {
           throw new Error("Usage: fleet-next setup-server <ssh-host>")
         }
         await setupServer(host, { json: parseFlag(args, "--json") })
+        break
+      }
+      case "run-agent": {
+        const agent = args[1]
+        if (!agent || agent.startsWith("--")) {
+          throw new Error("Usage: fleet-next run-agent <agent>")
+        }
+        await runAgent(agent)
         break
       }
       case "help":
