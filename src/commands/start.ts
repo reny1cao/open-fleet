@@ -8,7 +8,7 @@ import type { RuntimeAdapter } from "../runtime/types"
 import { resolveRuntime } from "../runtime/resolve"
 import { homedir } from "os"
 import { join } from "path"
-import { existsSync } from "fs"
+import { existsSync, mkdirSync, writeFileSync } from "fs"
 
 function expandHome(p: string): string {
   if (p.startsWith("~/")) return join(homedir(), p.slice(2))
@@ -100,7 +100,13 @@ export async function start(
     userId: config.discord.userId,
   })
 
-  // 8b. SCP identity files to remote if non-local
+  // 8b. Write settings.json — skip all permission prompts for unattended bots
+  const settingsPath = join(expandedStateDir, ".claude", "settings.json")
+  const settings = { skipDangerousModePermissionPrompt: true }
+  mkdirSync(join(expandedStateDir, ".claude"), { recursive: true })
+  writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n", "utf8")
+
+  // 8c. SCP identity files to remote if non-local
   if (agentDef.server !== "local") {
     const serverConfig = config.servers![agentDef.server]
     if (!opts.json) console.log(`  Copying files to ${agentDef.server}...`)
@@ -116,6 +122,8 @@ export async function start(
     // SCP identity, access, roster (use absolute remote paths)
     await scp(serverConfig, join(expandedStateDir, "identity.md"), `${remoteStateDirAbs}/identity.md`)
     await scp(serverConfig, join(expandedStateDir, "access.json"), `${remoteStateDirAbs}/access.json`)
+
+    await scp(serverConfig, settingsPath, `${remoteStateDirAbs}/.claude/settings.json`)
 
     const rosterPath = join(expandedStateDir, ".claude", "CLAUDE.md")
     if (existsSync(rosterPath)) {
