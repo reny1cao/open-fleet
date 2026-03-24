@@ -32,10 +32,6 @@ export async function addAgent(opts: {
     throw new Error(`Agent "${name}" already exists in fleet.yaml`)
   }
 
-  if (adapter === "codex" && server !== "local") {
-    throw new Error(`Codex agent "${name}" currently supports only server=local`)
-  }
-
   // 3. Validate token via DiscordApi
   const discord = new DiscordApi()
   write(`Validating token for "${name}"… `)

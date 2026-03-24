@@ -129,7 +129,7 @@ fi
 step "Step 2/6: Building fleet (TypeScript)"
 
 if command -v bun &>/dev/null; then
-  (cd "$SCRIPT_DIR" && bun install --frozen-lockfile 2>/dev/null && bun build --compile --outfile fleet-next src/index.ts 2>/dev/null)
+  (cd "$SCRIPT_DIR" && bun install --frozen-lockfile 2>/dev/null && bun run build 2>/dev/null)
   if [[ -f "$SCRIPT_DIR/fleet-next" ]]; then
     ln -sf "$SCRIPT_DIR/fleet-next" "$BIN_DIR/$CLI_NAME"
     ok "fleet → fleet-next (TypeScript)"
@@ -170,7 +170,7 @@ fi
 # Retry fleet build if bun was just installed
 if [[ ! -f "$SCRIPT_DIR/fleet-next" ]] && command -v bun &>/dev/null; then
   echo "  Building fleet (bun now available)..."
-  (cd "$SCRIPT_DIR" && bun install --frozen-lockfile 2>/dev/null && bun build --compile --outfile fleet-next src/index.ts 2>/dev/null)
+  (cd "$SCRIPT_DIR" && bun install --frozen-lockfile 2>/dev/null && bun run build 2>/dev/null)
   if [[ -f "$SCRIPT_DIR/fleet-next" ]]; then
     ln -sf "$SCRIPT_DIR/fleet-next" "$BIN_DIR/$CLI_NAME"
     ok "fleet → fleet-next (TypeScript)"

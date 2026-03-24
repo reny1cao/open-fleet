@@ -47,6 +47,7 @@ fleet apply                      # Start all agents
 fleet status                     # Who's online
 fleet inject <agent> <role>      # Change an agent's role
 fleet add-agent                  # Add a new agent to the fleet
+fleet set-adapter <agent> codex  # Switch an existing agent to Codex or Claude
 fleet doctor                     # Diagnose issues
 fleet init                       # Set up a new fleet
 ```
@@ -55,11 +56,17 @@ All commands support `--json` for machine-readable output.
 
 ## Remote Servers
 
-Remote server support (SSH + tmux) is coming in v1.1. For now, all agents run on the local machine.
+Remote agents run through SSH + tmux. Claude and Codex agents can both run on configured remote servers.
+
+Defaults:
+- Workspace defaults to `~/workspace`
+- Agent state defaults to `~/.fleet/state/discord-<agent>`
+
+Override `workspace` or `state_dir` per agent only when you need a custom layout.
 
 ## Contribute
 
-Open Fleet currently works with Claude Code. The goal: **support every agent, every platform.**
+Open Fleet currently supports Claude Code and Codex on Discord. The goal remains: **support every agent, every platform.**
 
 Agents we want to support:
 - Codex, Kimi, OpenCode, Aider, Gemini CLI, and more

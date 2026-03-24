@@ -1,11 +1,61 @@
-import { join } from "path"
+import { existsSync, realpathSync } from "fs"
+import { basename, dirname, join } from "path"
 import { writeBootIdentity, writeRoster } from "../../core/identity"
 import { getToken } from "../../core/config"
 import { DiscordApi } from "../../channel/discord/api"
+import { scp, sshRun } from "../../runtime/remote"
 import type { AgentAdapter, StartAgentContext } from "../types"
+import {
+  resolveBundledCodexWorkerCommand,
+  resolveCodexRemoteBundleDir,
+  resolveCodexStateDir,
+  resolveLocalCodexWorkerCommand,
+  resolveRemoteCodexWorkerCommand,
+} from "./bootstrap"
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`
+}
+
+function resolveFleetBinaryPath(): string {
+  const currentExecutable = resolveCurrentExecutablePath()
+  const executableName = basename(currentExecutable)
+  if (executableName === "fleet" || executableName === "fleet-next") {
+    return currentExecutable
+  }
+
+  const repoBinary = join(import.meta.dir, "..", "..", "..", "fleet-next")
+  if (existsSync(repoBinary)) {
+    return repoBinary
+  }
+
+  throw new Error("fleet-next binary not found. Run `bun run build` or reinstall Open Fleet before starting remote Codex agents.")
+}
+
+function resolveCurrentExecutablePath(): string {
+  try {
+    return realpathSync(process.execPath)
+  } catch {
+    return process.execPath
+  }
+}
+
+function resolveFleetRemoteBundlePath(): string {
+  const currentExecutable = resolveCurrentExecutablePath()
+  const executableName = basename(currentExecutable)
+  if (executableName === "fleet" || executableName === "fleet-next") {
+    const siblingBundle = join(dirname(currentExecutable), "fleet-remote.mjs")
+    if (existsSync(siblingBundle)) {
+      return siblingBundle
+    }
+  }
+
+  const repoBundle = join(import.meta.dir, "..", "..", "..", "fleet-remote.mjs")
+  if (existsSync(repoBundle)) {
+    return repoBundle
+  }
+
+  throw new Error("fleet-remote.mjs not found. Run `bun run build` or reinstall Open Fleet before starting remote Codex agents.")
 }
 
 export class CodexAgentAdapter implements AgentAdapter {
@@ -14,9 +64,7 @@ export class CodexAgentAdapter implements AgentAdapter {
   async start(ctx: StartAgentContext): Promise<void> {
     const { agentName, configDir, config, runtime, token, session, stateDir, opts } = ctx
     const agentDef = config.agents[agentName]
-    if (agentDef.server !== "local") {
-      throw new Error("Codex agents currently support local startup only")
-    }
+    const isRemote = agentDef.server !== "local"
 
     const discord = new DiscordApi()
     const botIds: Record<string, string> = {}
@@ -52,23 +100,57 @@ export class CodexAgentAdapter implements AgentAdapter {
     writeBootIdentity(agentName, config, botIds, stateDir)
     writeRoster(agentName, config, botIds, stateDir)
 
-    const entrypoint = join(import.meta.dir, "..", "..", "index.ts")
-    const command = [
-      "bun",
-      "run",
-      shellQuote(entrypoint),
-      "run-agent",
-      shellQuote(agentName),
-    ].join(" ")
+    let command: string
+    let workDir = configDir
+    let fleetConfigPath = join(configDir, "fleet.yaml")
+
+    if (isRemote) {
+      const serverConfig = config.servers?.[agentDef.server]
+      if (!serverConfig) {
+        throw new Error(`Server "${agentDef.server}" not defined in fleet.yaml servers`)
+      }
+
+      const { stdout: remoteHome } = await sshRun(serverConfig, "echo $HOME")
+      const remoteStateDir = resolveCodexStateDir(agentName, agentDef.stateDir, remoteHome)
+      const remoteBundleDir = resolveCodexRemoteBundleDir(remoteStateDir)
+
+      await sshRun(serverConfig, `mkdir -p "${remoteStateDir}/.claude" "${remoteBundleDir}"`)
+      await scp(serverConfig, join(stateDir, "identity.md"), `${remoteStateDir}/identity.md`)
+
+      const rosterPath = join(stateDir, ".claude", "CLAUDE.md")
+      if (existsSync(rosterPath)) {
+        await scp(serverConfig, rosterPath, `${remoteStateDir}/.claude/CLAUDE.md`)
+      }
+
+      const localBundle = resolveFleetRemoteBundlePath()
+      const remoteBundle = `${remoteBundleDir}/fleet-remote.mjs`
+      const remoteFleetConfig = `${remoteBundleDir}/fleet.yaml`
+      await scp(serverConfig, localBundle, remoteBundle)
+      await scp(serverConfig, fleetConfigPath, remoteFleetConfig)
+
+      command = resolveBundledCodexWorkerCommand(remoteBundle, agentName)
+      workDir = remoteBundleDir
+      fleetConfigPath = remoteFleetConfig
+    } else {
+      const currentExecutable = process.execPath
+      const executableName = basename(currentExecutable)
+      if (executableName === "fleet" || executableName === "fleet-next") {
+        command = resolveRemoteCodexWorkerCommand(currentExecutable, agentName)
+      } else {
+        const entrypoint = join(import.meta.dir, "..", "..", "index.ts")
+        command = resolveLocalCodexWorkerCommand(entrypoint, agentName)
+      }
+    }
 
     await runtime.start({
       session,
       env: {
         DISCORD_BOT_TOKEN: token,
-        FLEET_CONFIG: join(configDir, "fleet.yaml"),
+        [agentDef.tokenEnv]: token,
+        FLEET_CONFIG: fleetConfigPath,
         FLEET_SELF: agentName,
       },
-      workDir: configDir,
+      workDir,
       command,
     })
 

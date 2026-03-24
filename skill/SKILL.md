@@ -187,6 +187,12 @@ fleet init --token T1 --token T2 --name FLEET_NAME --agent lead:local:lead:claud
 
 The CLI auto-detects the Discord server and channel, validates tokens, generates fleet.yaml, .env, identity files, access.json, and prints invite URLs.
 
+Path defaults:
+- If the user does not care, do **not** ask about paths.
+- Default workspace is `~/workspace`.
+- Default agent state path is `~/.fleet/state/discord-<agent>`.
+- Only ask about `workspace` or `state_dir` if they want a custom path or a different disk layout.
+
 Share each invite URL with the user: "Open this link, select your server, click Authorize."
 
 **Done when:** `cat fleet.yaml` shows agents and a non-empty `channels` section. All bots are in the server.
@@ -231,7 +237,7 @@ fleet add-agent --token TOKEN --name reviewer --role reviewer --adapter codex
 4. Invite the bot using the invite URL from `fleet add-agent`
 5. `fleet start <new-agent>`
 
-Use `--adapter codex` for Codex workers. Omit it for Claude agents.
+Use `--adapter codex` for Codex workers. Omit it for Claude agents. If a Codex agent runs on a remote server, Fleet stages the worker under that agent's `state_dir` and uses the configured `workspace` on that machine. If those fields are omitted, Fleet uses the defaults above.
 
 ## Quick-Start Templates
 
@@ -305,6 +311,12 @@ for agent in $(fleet status --json | jq -r '.[] | select(.state=="running") | .n
 fleet move <agent> <server>
 ```
 Reassign an agent to a different server (e.g., `fleet move pilot singapore`). Updates fleet.yaml.
+
+### "switch agent adapter"
+```bash
+fleet set-adapter <agent> <claude|codex>
+```
+Switch an existing agent between Claude and Codex without manually editing `fleet.yaml`.
 
 ### "switch fleet"
 ```bash
@@ -381,7 +393,7 @@ Add new roles by creating `identities/roles/<name>.md`.
 ```bash
 fleet setup-server <ssh-host>
 ```
-Install bun, claude, and tmux on a remote server. Accepts SSH aliases (e.g., `fleet setup-server demo`).
+Install bun, claude, npm, codex, and tmux on a remote server. Fleet also reuses local Codex login by copying `~/.codex/auth.json` when available. Accepts SSH aliases (e.g., `fleet setup-server demo`).
 
 ## Rules
 

@@ -1,3 +1,7 @@
+import { existsSync } from "fs"
+import { homedir } from "os"
+import { join } from "path"
+
 const SSH_TIMEOUT = 10
 const REMOTE_PATH_PREFIX = "export PATH=$HOME/.bun/bin:$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"
 
@@ -52,6 +56,21 @@ async function sshExec(
   return { stdout: stdout.trim(), ok: code === 0 }
 }
 
+async function scpToHost(
+  host: string,
+  localPath: string,
+  remotePath: string,
+): Promise<boolean> {
+  const proc = Bun.spawn(
+    ["scp", "-o", `ConnectTimeout=${SSH_TIMEOUT}`, "-o", "BatchMode=yes", localPath, `${host}:${remotePath}`],
+    { stdout: "pipe", stderr: "pipe" }
+  )
+  await new Response(proc.stdout).text()
+  await new Response(proc.stderr).text()
+  const code = await proc.exited
+  return code === 0
+}
+
 async function checkAndInstall(
   host: string,
   tool: string,
@@ -74,6 +93,42 @@ async function checkAndInstall(
     log(`  [!!] ${tool} — install failed`)
     return { step: tool, status: "failed", message: stdout.slice(0, 200) }
   }
+}
+
+async function syncCodexAuth(
+  host: string,
+  log: (...args: unknown[]) => void,
+): Promise<StepResult> {
+  const localAuthPath = join(homedir(), ".codex", "auth.json")
+  if (!existsSync(localAuthPath)) {
+    log("  [..] codex auth — skipped (local ~/.codex/auth.json not found)")
+    return { step: "codex-auth", status: "skipped", message: "local auth.json not found" }
+  }
+
+  log("  [..] codex auth — copying local auth…")
+  const { ok: mkdirOk } = await sshExec(host, "mkdir -p ~/.codex")
+  if (!mkdirOk) {
+    log("  [!!] codex auth — could not create ~/.codex on remote")
+    return { step: "codex-auth", status: "failed", message: "could not create ~/.codex on remote" }
+  }
+
+  const copied = await scpToHost(host, localAuthPath, "~/.codex/auth.json")
+  if (!copied) {
+    log("  [!!] codex auth — copy failed")
+    return { step: "codex-auth", status: "failed", message: "copy failed" }
+  }
+
+  const { ok: loginOk, stdout } = await sshExec(
+    host,
+    "codex login status"
+  )
+  if (loginOk) {
+    log("  [ok]  codex auth — reused local login")
+    return { step: "codex-auth", status: "installed", message: stdout || "reused local login" }
+  }
+
+  log("  [!!] codex auth — copied auth but login status failed")
+  return { step: "codex-auth", status: "failed", message: stdout || "copied auth but login status failed" }
 }
 
 export async function setupServer(
@@ -120,12 +175,34 @@ export async function setupServer(
   )
   results.push(claudeResult)
 
-  // 5. Verify
+  // 5. npm (needed for Codex CLI install)
+  const npmResult = await checkAndInstall(
+    host, "npm",
+    "which npm",
+    "sudo apt-get install -y npm 2>/dev/null || sudo yum install -y npm 2>/dev/null",
+    log,
+  )
+  results.push(npmResult)
+
+  // 6. Codex CLI via npm
+  const codexResult = await checkAndInstall(
+    host, "codex",
+    "which codex",
+    "mkdir -p ~/.npm-global && NPM_CONFIG_PREFIX=$HOME/.npm-global npm install -g @openai/codex",
+    log,
+  )
+  results.push(codexResult)
+
+  // 7. Reuse local Codex auth when available
+  const codexAuthResult = await syncCodexAuth(host, log)
+  results.push(codexAuthResult)
+
+  // 8. Verify
   log("")
   log("Verifying…")
   const { stdout: versions } = await sshExec(
     host,
-    "echo \"bun: $(bun --version 2>/dev/null || echo missing)\" && echo \"claude: $(claude --version 2>/dev/null || echo missing)\" && echo \"tmux: $(tmux -V 2>/dev/null || echo missing)\"",
+    "echo \"bun: $(bun --version 2>/dev/null || echo missing)\" && echo \"claude: $(claude --version 2>/dev/null || echo missing)\" && echo \"codex: $(codex --version 2>/dev/null || echo missing)\" && echo \"tmux: $(tmux -V 2>/dev/null || echo missing)\"",
   )
   for (const line of versions.split("\n")) {
     if (line.trim()) log(`  ${line.trim()}`)

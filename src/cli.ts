@@ -8,6 +8,7 @@ import { inject } from "./commands/inject"
 import { apply } from "./commands/apply"
 import { addAgent } from "./commands/add-agent"
 import { move } from "./commands/move"
+import { setAdapter } from "./commands/set-adapter"
 import { use } from "./commands/use"
 import { setupServer } from "./commands/setup-server"
 import { restart } from "./commands/restart"
@@ -29,6 +30,7 @@ Usage:
   fleet-next apply [--json]
   fleet-next add-agent --token T --name N --role R [--server S] [--adapter claude|codex]
   fleet-next move <agent> <server>
+  fleet-next set-adapter <agent> <claude|codex>
   fleet-next use <fleet-name|path>
   fleet-next setup-server <ssh-host>
   fleet-next run-agent <agent>
@@ -145,6 +147,18 @@ export async function main(argv: string[]): Promise<void> {
           throw new Error("Usage: fleet-next move <agent> <server>")
         }
         await move(agent, server, { json: parseFlag(args, "--json") })
+        break
+      }
+      case "set-adapter": {
+        const agent = args[1]
+        const adapter = args[2]
+        if (!agent || agent.startsWith("--") || !adapter || adapter.startsWith("--")) {
+          throw new Error("Usage: fleet-next set-adapter <agent> <claude|codex>")
+        }
+        if (adapter !== "claude" && adapter !== "codex") {
+          throw new Error(`Invalid adapter "${adapter}". Expected "claude" or "codex"`)
+        }
+        await setAdapter(agent, adapter as AgentAdapterKind, { json: parseFlag(args, "--json") })
         break
       }
       case "use": {

@@ -5,7 +5,7 @@
   "bin": { "fleet-next": "src/index.ts" },
   "scripts": {
     "dev": "bun run src/index.ts",
-    "build": "bun build --compile --outfile fleet-next src/index.ts",
+    "build": "bun build --compile --outfile fleet-next src/index.ts && bun build --target bun --outfile fleet-remote.mjs src/index.ts",
     "test": "bun test"
   },
   "dependencies": {

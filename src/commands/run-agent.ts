@@ -31,10 +31,6 @@ export async function runAgent(agentName: string): Promise<void> {
     throw new Error(`run-agent currently only supports Codex agents. "${agentName}" is configured as ${getAgentAdapterKind(agentName, config)}.`)
   }
 
-  if (agentDef.server !== "local") {
-    throw new Error("Codex run-agent currently supports local agents only")
-  }
-
   const token = getToken(agentName, config, configDir)
   const stateDir = resolveStateDir(agentName, config)
   const api = new DiscordApi()

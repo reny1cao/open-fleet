@@ -190,9 +190,6 @@ export async function init(opts: {
   for (let i = 0; i < agentSpecs.length; i++) {
     const spec = agentSpecs[i]
     const envVar = tokenEnvName(spec.name)
-    if (spec.adapter === "codex" && spec.server !== "local") {
-      throw new Error(`Codex agent "${spec.name}" currently supports only server=local`)
-    }
     const agentEntry: AgentDef = {
       ...(spec.adapter ? { agentAdapter: spec.adapter } : {}),
       role: spec.role,

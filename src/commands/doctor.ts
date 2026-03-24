@@ -3,7 +3,7 @@ import { join } from "path"
 import { homedir } from "os"
 import { findConfigDir, loadConfig, loadEnv, resolveStateDir, sessionName } from "../core/config"
 import { DiscordApi } from "../channel/discord/api"
-import { TmuxLocal } from "../runtime/tmux"
+import { resolveRuntime } from "../runtime/resolve"
 import type { FleetConfig } from "../core/types"
 
 export interface CheckResult {
@@ -374,15 +374,6 @@ async function checkAdapterConstraints(configDir: string): Promise<CheckResult[]
   const results: CheckResult[] = []
 
   for (const [name, agent] of Object.entries(config.agents)) {
-    if ((agent.agentAdapter ?? "claude") === "codex" && agent.server !== "local") {
-      results.push({
-        check: `adapter:${name}`,
-        status: "fail",
-        message: `${name}: Codex agents currently support only local execution`,
-      })
-      continue
-    }
-
     results.push({
       check: `adapter:${name}`,
       status: "pass",
@@ -396,11 +387,11 @@ async function checkAdapterConstraints(configDir: string): Promise<CheckResult[]
 /** Check 9: Running sessions — per agent (informational) */
 async function checkSessions(configDir: string): Promise<CheckResult[]> {
   const config = loadConfig(configDir)
-  const runtime = new TmuxLocal()
   const results: CheckResult[] = []
 
   for (const [name] of Object.entries(config.agents)) {
     const session = sessionName(config.fleet.name, name)
+    const runtime = resolveRuntime(name, config)
     const running = await runtime.isRunning(session)
     results.push({
       check: `session:${name}`,
@@ -459,7 +450,7 @@ async function checkRemoteServers(configDir: string): Promise<CheckResult[]> {
       for (const tool of prereqs) {
         try {
           const { exitCode } = await runWithTimeout(
-            ["ssh", "-o", "RequestTTY=no", "-o", "RemoteCommand=none", target, `export PATH=$HOME/.bun/bin:$HOME/.local/bin:$PATH && which ${tool}`],
+            ["ssh", "-o", "RequestTTY=no", "-o", "RemoteCommand=none", target, `export PATH=$HOME/.bun/bin:$HOME/.local/bin:$HOME/.npm-global/bin:$PATH && which ${tool}`],
             5000
           )
           results.push({
@@ -477,11 +468,25 @@ async function checkRemoteServers(configDir: string): Promise<CheckResult[]> {
       }
 
       if (serverRequirements.codex) {
-        results.push({
-          check: `remote:${name}:codex-support`,
-          status: "fail",
-          message: `${name}: remote Codex agents are not supported yet`,
-        })
+        try {
+          const { stdout, exitCode } = await runWithTimeout(
+            ["ssh", "-o", "RequestTTY=no", "-o", "RemoteCommand=none", target, "export PATH=$HOME/.bun/bin:$HOME/.local/bin:$HOME/.npm-global/bin:$PATH && codex login status"],
+            5000
+          )
+          results.push({
+            check: `remote:${name}:codex-auth`,
+            status: exitCode === 0 ? "pass" : "warn",
+            message: exitCode === 0
+              ? `${name} codex auth: ${stdout || "logged in"}`
+              : `${name} codex auth: ${stdout || "not logged in"}`,
+          })
+        } catch {
+          results.push({
+            check: `remote:${name}:codex-auth`,
+            status: "warn",
+            message: `${name} codex auth: not checked`,
+          })
+        }
       }
     }
   }

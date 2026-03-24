@@ -21,6 +21,7 @@ config.json
 # Bun/TS build artifacts
 node_modules/
 fleet-next
+fleet-remote.mjs
 dist/
 *.bun-build
 .*.bun-build
