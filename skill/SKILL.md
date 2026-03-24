@@ -392,8 +392,9 @@ Add new roles by creating `identities/roles/<name>.md`.
 ### "setup remote server"
 ```bash
 fleet setup-server <ssh-host>
+fleet setup-server <ssh-host> --reuse-codex-auth
 ```
-Install bun, claude, npm, codex, and tmux on a remote server. Fleet also reuses local Codex login by copying `~/.codex/auth.json` when available. Accepts SSH aliases (e.g., `fleet setup-server demo`).
+Install bun, claude, npm, codex, and tmux on a remote server. Codex auth reuse must be explicitly approved: Fleet asks before copying `~/.codex/auth.json`, or you can pass `--reuse-codex-auth`. Accepts SSH aliases (e.g., `fleet setup-server demo`).
 
 ## Rules
 

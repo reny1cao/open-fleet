@@ -122,3 +122,39 @@ describe("validateToken", () => {
     await expect(api.validateToken("invalid-token")).rejects.toThrow()
   })
 })
+
+// ── sendMessage ───────────────────────────────────────────────────────────────
+
+describe("sendMessage", () => {
+  it("disables reply mentions when posting a Discord reply", async () => {
+    const originalFetch = globalThis.fetch
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(url), init })
+      return new Response("{}", { status: 200 })
+    }) as typeof fetch
+
+    try {
+      await api.sendMessage("token-123", "chan-001", "hello", "msg-999")
+
+      expect(calls).toHaveLength(1)
+      expect(calls[0].url).toContain("/channels/chan-001/messages")
+
+      const body = JSON.parse(String(calls[0].init?.body))
+      expect(body).toEqual({
+        content: "hello",
+        message_reference: {
+          message_id: "msg-999",
+          fail_if_not_exists: false,
+        },
+        allowed_mentions: {
+          parse: ["users", "roles", "everyone"],
+          replied_user: false,
+        },
+      })
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+})

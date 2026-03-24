@@ -3,11 +3,19 @@ import { isBotMentioned, resolveScopeKey, stripBotMention } from "../src/channel
 
 describe("isBotMentioned", () => {
   it("returns true when the bot is explicitly mentioned", () => {
-    expect(isBotMentioned({ mentions: [{ id: "bot-1" }, { id: "bot-2" }] }, "bot-2")).toBe(true)
+    expect(isBotMentioned({ content: "hi <@bot-2>", mentions: [{ id: "bot-1" }, { id: "bot-2" }] }, "bot-2")).toBe(true)
+  })
+
+  it("returns true for the nickname mention syntax", () => {
+    expect(isBotMentioned({ content: "hi <@!bot-2>", mentions: [{ id: "bot-2" }] }, "bot-2")).toBe(true)
+  })
+
+  it("returns false when the mention is only implicit in metadata", () => {
+    expect(isBotMentioned({ content: "reply without visible mention", mentions: [{ id: "bot-2" }] }, "bot-2")).toBe(false)
   })
 
   it("returns false when the bot is not mentioned", () => {
-    expect(isBotMentioned({ mentions: [{ id: "bot-1" }] }, "bot-2")).toBe(false)
+    expect(isBotMentioned({ content: "hello", mentions: [{ id: "bot-1" }] }, "bot-2")).toBe(false)
   })
 })
 

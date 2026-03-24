@@ -20,10 +20,15 @@ export interface DiscordChannelRecord {
 }
 
 export function isBotMentioned(
-  message: Pick<DiscordMessageEvent, "mentions">,
+  message: Pick<DiscordMessageEvent, "content" | "mentions">,
   botId: string,
 ): boolean {
-  return (message.mentions ?? []).some((mention) => mention.id === botId)
+  const explicitMentionPatterns = [`<@${botId}>`, `<@!${botId}>`]
+  if (explicitMentionPatterns.some((pattern) => message.content.includes(pattern))) {
+    return true
+  }
+
+  return false
 }
 
 export function stripBotMention(content: string, botId: string): string {

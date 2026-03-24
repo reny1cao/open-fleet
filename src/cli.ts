@@ -32,7 +32,7 @@ Usage:
   fleet-next move <agent> <server>
   fleet-next set-adapter <agent> <claude|codex>
   fleet-next use <fleet-name|path>
-  fleet-next setup-server <ssh-host>
+  fleet-next setup-server <ssh-host> [--reuse-codex-auth|--no-reuse-codex-auth]
   fleet-next run-agent <agent>
   fleet-next help
 
@@ -172,9 +172,14 @@ export async function main(argv: string[]): Promise<void> {
       case "setup-server": {
         const host = args[1]
         if (!host || host.startsWith("--")) {
-          throw new Error("Usage: fleet-next setup-server <ssh-host>")
+          throw new Error("Usage: fleet-next setup-server <ssh-host> [--reuse-codex-auth|--no-reuse-codex-auth]")
         }
-        await setupServer(host, { json: parseFlag(args, "--json") })
+        const reuseCodexAuth = parseFlag(args, "--reuse-codex-auth")
+          ? true
+          : parseFlag(args, "--no-reuse-codex-auth")
+            ? false
+            : undefined
+        await setupServer(host, { json: parseFlag(args, "--json"), reuseCodexAuth })
         break
       }
       case "run-agent": {

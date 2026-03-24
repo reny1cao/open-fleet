@@ -1,3 +1,4 @@
+import { createInterface } from "readline/promises"
 import { existsSync } from "fs"
 import { homedir } from "os"
 import { join } from "path"
@@ -32,6 +33,7 @@ function remoteProxyPrefix(): string {
 
 interface SetupOpts {
   json?: boolean
+  reuseCodexAuth?: boolean
 }
 
 interface StepResult {
@@ -131,6 +133,33 @@ async function syncCodexAuth(
   return { step: "codex-auth", status: "failed", message: stdout || "copied auth but login status failed" }
 }
 
+async function shouldReuseCodexAuth(opts?: SetupOpts): Promise<boolean> {
+  if (opts?.reuseCodexAuth !== undefined) {
+    return opts.reuseCodexAuth
+  }
+
+  if (!process.stdin.isTTY || !process.stdout.isTTY || opts?.json) {
+    return false
+  }
+
+  const localAuthPath = join(homedir(), ".codex", "auth.json")
+  if (!existsSync(localAuthPath)) {
+    return false
+  }
+
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  })
+
+  try {
+    const answer = await rl.question("Reuse local Codex login on the remote server by copying ~/.codex/auth.json? [y/N] ")
+    return /^y(es)?$/i.test(answer.trim())
+  } finally {
+    rl.close()
+  }
+}
+
 export async function setupServer(
   host: string,
   opts?: SetupOpts,
@@ -193,9 +222,18 @@ export async function setupServer(
   )
   results.push(codexResult)
 
-  // 7. Reuse local Codex auth when available
-  const codexAuthResult = await syncCodexAuth(host, log)
-  results.push(codexAuthResult)
+  // 7. Reuse local Codex auth only with explicit consent
+  if (await shouldReuseCodexAuth(opts)) {
+    const codexAuthResult = await syncCodexAuth(host, log)
+    results.push(codexAuthResult)
+  } else {
+    log("  [..] codex auth — skipped (not approved)")
+    results.push({
+      step: "codex-auth",
+      status: "skipped",
+      message: "not approved",
+    })
+  }
 
   // 8. Verify
   log("")

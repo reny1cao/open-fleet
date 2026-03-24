@@ -200,6 +200,10 @@ export class DiscordApi implements ChannelAdapter {
         message_id: replyToMessageId,
         fail_if_not_exists: false,
       }
+      body.allowed_mentions = {
+        parse: ["users", "roles", "everyone"],
+        replied_user: false,
+      }
     }
 
     const res = await discordFetch(`/channels/${channelId}/messages`, token, {
