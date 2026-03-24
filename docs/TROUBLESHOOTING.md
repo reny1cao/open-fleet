@@ -98,9 +98,10 @@ lsof -i -P -n -p <server.ts PID> | grep ESTABLISHED
 # Check which guilds a bot is in
 curl -s -H "Authorization: Bot <TOKEN>" https://discord.com/api/v10/users/@me/guilds | jq '.[].name'
 
-# Check if patches are applied
-grep "PARTNER_BOT_IDS" ~/.claude/plugins/cache/claude-plugins-official/discord/0.0.1/server.ts
-grep "DISCORD_STATE_DIR" ~/.claude/plugins/cache/claude-plugins-official/discord/0.0.1/server.ts
+# Check if patches are applied (use the latest installed Discord plugin version)
+PLUGIN="$(find ~/.claude/plugins/cache/claude-plugins-official/discord -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -V | tail -n 1)/server.ts"
+grep "PARTNER_BOT_IDS" "$PLUGIN"
+grep "DISCORD_STATE_DIR" "$PLUGIN"
 
 # Check access.json (first agent uses default path, others use state_dir)
 cat ~/.claude/channels/discord/access.json | jq .

@@ -25,7 +25,7 @@ BIN_DIR="${BIN_DIR:-$HOME/.local/bin}"
 COMP_DIR_BASH="${BASH_COMPLETION_DIR:-$HOME/.local/share/bash-completion/completions}"
 COMP_DIR_ZSH="${ZSH_COMPLETION_DIR:-${ZDOTDIR:-$HOME}/.zfunc}"
 CLI_NAME="fleet"
-PLUGIN_DIR="$HOME/.claude/plugins/cache/claude-plugins-official/discord/0.0.1"
+PLUGIN_CACHE_ROOT="$HOME/.claude/plugins/cache/claude-plugins-official/discord"
 
 # ── Helpers ──
 
@@ -55,6 +55,16 @@ install_pkg() {
             return 1 ;;
   esac
 }
+
+resolve_plugin_dir() {
+  if [[ ! -d "$PLUGIN_CACHE_ROOT" ]]; then
+    return 1
+  fi
+
+  find "$PLUGIN_CACHE_ROOT" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -V | tail -n 1
+}
+
+PLUGIN_DIR="$(resolve_plugin_dir || true)"
 
 echo ""
 echo "Fleet — Let your AI agents work as a team"
@@ -220,13 +230,14 @@ fi
 
 step "Step 5/6: Discord plugin"
 
-if [[ -f "$PLUGIN_DIR/server.ts" ]]; then
+if [[ -n "$PLUGIN_DIR" && -f "$PLUGIN_DIR/server.ts" ]]; then
   ok "Discord plugin installed"
 else
   echo "  Installing Discord plugin..."
   if claude plugin install discord@claude-plugins-official 2>/dev/null; then
+    PLUGIN_DIR="$(resolve_plugin_dir || true)"
     ok "Discord plugin installed"
-  elif [[ -f "$PLUGIN_DIR/server.ts" ]]; then
+  elif [[ -n "$PLUGIN_DIR" && -f "$PLUGIN_DIR/server.ts" ]]; then
     ok "Discord plugin installed"
   else
     warn "Could not install plugin automatically"
@@ -240,7 +251,9 @@ fi
 
 step "Step 6/6: Discord plugin patches"
 
-if [[ -f "$PLUGIN_DIR/server.ts" ]]; then
+PLUGIN_DIR="$(resolve_plugin_dir || true)"
+
+if [[ -n "$PLUGIN_DIR" && -f "$PLUGIN_DIR/server.ts" ]]; then
   SERVER_TS="$PLUGIN_DIR/server.ts"
 
   # STATE_DIR

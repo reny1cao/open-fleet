@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "fs"
+import { existsSync, readFileSync, readdirSync, statSync } from "fs"
 import { join } from "path"
 import { homedir } from "os"
 import { findConfigDir, loadConfig, loadEnv, resolveStateDir, sessionName } from "../core/config"
@@ -23,6 +23,38 @@ function expandHome(p: string): string {
   if (p.startsWith("~/")) return join(homedir(), p.slice(2))
   if (p === "~") return homedir()
   return p
+}
+
+function compareVersionSegments(a: string, b: string): number {
+  const aParts = a.split(".").map(part => Number(part))
+  const bParts = b.split(".").map(part => Number(part))
+  const max = Math.max(aParts.length, bParts.length)
+  for (let i = 0; i < max; i++) {
+    const diff = (aParts[i] ?? 0) - (bParts[i] ?? 0)
+    if (diff !== 0) return diff
+  }
+  return 0
+}
+
+function resolveClaudeDiscordPluginPath(): string | null {
+  const pluginRoot = expandHome("~/.claude/plugins/cache/claude-plugins-official/discord")
+  if (!existsSync(pluginRoot)) {
+    return null
+  }
+
+  const versions = readdirSync(pluginRoot)
+    .filter((entry) => {
+      const entryPath = join(pluginRoot, entry)
+      const serverPath = join(entryPath, "server.ts")
+      return statSync(entryPath).isDirectory() && existsSync(serverPath)
+    })
+    .sort(compareVersionSegments)
+
+  if (versions.length === 0) {
+    return null
+  }
+
+  return join(pluginRoot, versions[versions.length - 1], "server.ts")
 }
 
 async function runWithTimeout(
@@ -239,10 +271,8 @@ async function checkPluginInstalled(required: boolean): Promise<CheckResult> {
   if (!required) {
     return { check: "plugin:installed", status: "info", message: "Discord Claude plugin skipped (no Claude agents configured)" }
   }
-  const pluginPath = expandHome(
-    "~/.claude/plugins/cache/claude-plugins-official/discord/0.0.1/server.ts"
-  )
-  if (existsSync(pluginPath)) {
+  const pluginPath = resolveClaudeDiscordPluginPath()
+  if (pluginPath && existsSync(pluginPath)) {
     return { check: "plugin:installed", status: "pass", message: "Discord plugin installed" }
   }
   return { check: "plugin:installed", status: "fail", message: "Discord plugin not found" }
@@ -264,11 +294,9 @@ async function checkPatches(required: boolean): Promise<CheckResult[]> {
       },
     ]
   }
-  const pluginPath = expandHome(
-    "~/.claude/plugins/cache/claude-plugins-official/discord/0.0.1/server.ts"
-  )
+  const pluginPath = resolveClaudeDiscordPluginPath()
 
-  if (!existsSync(pluginPath)) {
+  if (!pluginPath || !existsSync(pluginPath)) {
     return [
       {
         check: "patch:STATE_DIR",

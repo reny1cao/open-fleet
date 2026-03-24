@@ -1,13 +1,59 @@
-import { readFileSync, writeFileSync, existsSync } from "fs"
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from "fs"
 import { join } from "path"
 import { homedir } from "os"
 import { loadConfig } from "../core/config"
 import { sshRun } from "../runtime/remote"
 import type { ServerConfig } from "../core/types"
 
-const PLUGIN_RELATIVE = ".claude/plugins/cache/claude-plugins-official/discord/0.0.1/server.ts"
-const PLUGIN_SERVER_PATH = join(homedir(), PLUGIN_RELATIVE)
+const PLUGIN_ROOT_RELATIVE = ".claude/plugins/cache/claude-plugins-official/discord"
 const PATTERN = /const PARTNER_BOT_IDS = new Set\(\[[\s\S]*?\]\)/
+const MESSAGE_CREATE_NEEDLE = "client.on('messageCreate', msg => {"
+const BOT_DROP_NEEDLE = "if (msg.author.bot) return"
+const PARTNER_BOT_IDS_COMMENT = [
+  "// Allow messages from partner bots to enable cross-bot collaboration.",
+  "// Loop safety: requireMention in group config means only explicit @mentions trigger responses.",
+].join("\n")
+
+function compareVersionSegments(a: string, b: string): number {
+  const aParts = a.split(".").map(part => Number(part))
+  const bParts = b.split(".").map(part => Number(part))
+  const max = Math.max(aParts.length, bParts.length)
+  for (let i = 0; i < max; i++) {
+    const diff = (aParts[i] ?? 0) - (bParts[i] ?? 0)
+    if (diff !== 0) return diff
+  }
+  return 0
+}
+
+function resolveLocalPluginServerPath(): string | null {
+  const pluginRoot = join(homedir(), PLUGIN_ROOT_RELATIVE)
+  if (!existsSync(pluginRoot)) {
+    return null
+  }
+
+  const versions = readdirSync(pluginRoot)
+    .filter((entry) => {
+      const entryPath = join(pluginRoot, entry)
+      const serverPath = join(entryPath, "server.ts")
+      return statSync(entryPath).isDirectory() && existsSync(serverPath)
+    })
+    .sort(compareVersionSegments)
+
+  if (versions.length === 0) {
+    return null
+  }
+
+  return join(pluginRoot, versions[versions.length - 1], "server.ts")
+}
+
+function remoteResolvePluginServerPathCmd(): string {
+  const root = `$HOME/${PLUGIN_ROOT_RELATIVE}`
+  return [
+    `ROOT='${root}'`,
+    "if [ ! -d \"$ROOT\" ]; then exit 0; fi",
+    "ls -1d \"$ROOT\"/*/server.ts 2>/dev/null | sort -V | tail -n 1",
+  ].join("; ")
+}
 
 /**
  * Collect ALL bot IDs from ALL registered fleets via bot-ids.json.
@@ -79,9 +125,24 @@ function buildReplacement(botIds: string[]): string {
 }
 
 function patchContent(content: string, replacement: string): { updated: string; changed: boolean; patternFound: boolean } {
-  const patternFound = PATTERN.test(content)
-  const updated = content.replace(PATTERN, replacement)
-  return { updated, changed: updated !== content, patternFound }
+  if (PATTERN.test(content)) {
+    const updated = content.replace(PATTERN, replacement)
+    return { updated, changed: updated !== content, patternFound: true }
+  }
+
+  if (!content.includes(MESSAGE_CREATE_NEEDLE) || !content.includes(BOT_DROP_NEEDLE)) {
+    return { updated: content, changed: false, patternFound: false }
+  }
+
+  const withPartnerBlock = content.replace(
+    MESSAGE_CREATE_NEEDLE,
+    `${PARTNER_BOT_IDS_COMMENT}\n${replacement}\n\n${MESSAGE_CREATE_NEEDLE}`
+  )
+  const updated = withPartnerBlock.replace(
+    BOT_DROP_NEEDLE,
+    "if (msg.author.bot && !PARTNER_BOT_IDS.has(msg.author.id)) return"
+  )
+  return { updated, changed: updated !== content, patternFound: true }
 }
 
 export async function patch(opts?: { json?: boolean }): Promise<void> {
@@ -99,8 +160,9 @@ export async function patch(opts?: { json?: boolean }): Promise<void> {
   const replacement = buildReplacement(botIds)
 
   // 2. Patch local server.ts
-  if (existsSync(PLUGIN_SERVER_PATH)) {
-    const content = readFileSync(PLUGIN_SERVER_PATH, "utf8")
+  const localPluginPath = resolveLocalPluginServerPath()
+  if (localPluginPath && existsSync(localPluginPath)) {
+    const content = readFileSync(localPluginPath, "utf8")
     const { updated, changed, patternFound } = patchContent(content, replacement)
 
     if (!patternFound) {
@@ -108,7 +170,7 @@ export async function patch(opts?: { json?: boolean }): Promise<void> {
     } else if (!changed) {
       log(`  Local: already up to date (${botIds.length} bot IDs)`)
     } else {
-      writeFileSync(PLUGIN_SERVER_PATH, updated, "utf8")
+      writeFileSync(localPluginPath, updated, "utf8")
       log(`  Local: updated PARTNER_BOT_IDS (${botIds.length} bot IDs)`)
     }
 
@@ -119,7 +181,7 @@ export async function patch(opts?: { json?: boolean }): Promise<void> {
       )
     }
   } else {
-    warn(`  warn: local server.ts not found at ${PLUGIN_SERVER_PATH}`)
+    warn(`  warn: local Discord plugin server.ts not found under ~/${PLUGIN_ROOT_RELATIVE}`)
   }
 
   // 3. Patch remote servers
@@ -132,7 +194,17 @@ export async function patch(opts?: { json?: boolean }): Promise<void> {
         warn(`  ${server.sshHost}: SSH failed — skipped`)
         continue
       }
-      const remotePath = `${remoteHome.trim()}/${PLUGIN_RELATIVE}`
+      const { stdout: remotePathRaw, ok: pathOk } = await sshRun(
+        server,
+        remoteResolvePluginServerPathCmd(),
+        { throwOnError: false }
+      )
+      const remotePath = remotePathRaw.trim()
+
+      if (!pathOk || !remotePath) {
+        warn(`  ${server.sshHost}: server.ts not found — skipped`)
+        continue
+      }
 
       const { stdout: content, ok: readOk } = await sshRun(
         server,
