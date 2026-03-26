@@ -6,17 +6,40 @@ export interface DiscordMention {
   id: string
 }
 
+export interface DiscordMessageReference {
+  message_id?: string
+}
+
+export interface DiscordAuthor {
+  id: string
+  username?: string
+  bot?: boolean
+}
+
 export interface DiscordMessageEvent {
   id: string
   channel_id: string
   content: string
+  author?: DiscordAuthor
   mentions?: DiscordMention[]
+  message_reference?: DiscordMessageReference
 }
 
 export interface DiscordChannelRecord {
   id: string
   type: number
   parent_id?: string
+}
+
+export type DiscordDeliveryReason =
+  | "explicit_mention"
+  | "human_reply_to_recent_bot"
+  | "bot_reply_without_explicit_mention"
+  | "no_trigger"
+
+export interface DiscordDeliveryDecision {
+  deliver: boolean
+  reason: DiscordDeliveryReason
 }
 
 export function isBotMentioned(
@@ -29,6 +52,57 @@ export function isBotMentioned(
   }
 
   return false
+}
+
+export function isReplyToRecentBotMessage(
+  message: Pick<DiscordMessageEvent, "message_reference">,
+  recentMessageIds: ReadonlySet<string>,
+): boolean {
+  const refId = message.message_reference?.message_id
+  if (!refId) {
+    return false
+  }
+  return recentMessageIds.has(refId)
+}
+
+export function evaluateDiscordMessageDelivery(
+  message: Pick<DiscordMessageEvent, "content" | "mentions" | "author" | "message_reference">,
+  botId: string,
+  recentMessageIds: ReadonlySet<string>,
+): DiscordDeliveryDecision {
+  if (isBotMentioned(message, botId)) {
+    return {
+      deliver: true,
+      reason: "explicit_mention",
+    }
+  }
+
+  if (message.author?.bot) {
+    return {
+      deliver: false,
+      reason: "bot_reply_without_explicit_mention",
+    }
+  }
+
+  if (isReplyToRecentBotMessage(message, recentMessageIds)) {
+    return {
+      deliver: true,
+      reason: "human_reply_to_recent_bot",
+    }
+  }
+
+  return {
+    deliver: false,
+    reason: "no_trigger",
+  }
+}
+
+export function shouldDeliverDiscordMessage(
+  message: Pick<DiscordMessageEvent, "content" | "mentions" | "author" | "message_reference">,
+  botId: string,
+  recentMessageIds: ReadonlySet<string>,
+): boolean {
+  return evaluateDiscordMessageDelivery(message, botId, recentMessageIds).deliver
 }
 
 export function stripBotMention(content: string, botId: string): string {

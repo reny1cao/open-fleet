@@ -1,5 +1,12 @@
 import { describe, expect, it } from "bun:test"
-import { isBotMentioned, resolveScopeKey, stripBotMention } from "../src/channel/discord/events"
+import {
+  evaluateDiscordMessageDelivery,
+  isBotMentioned,
+  isReplyToRecentBotMessage,
+  resolveScopeKey,
+  shouldDeliverDiscordMessage,
+  stripBotMention,
+} from "../src/channel/discord/events"
 
 describe("isBotMentioned", () => {
   it("returns true when the bot is explicitly mentioned", () => {
@@ -48,6 +55,140 @@ describe("resolveScopeKey", () => {
     )
 
     expect(scopeKey).toBeNull()
+  })
+})
+
+describe("isReplyToRecentBotMessage", () => {
+  it("returns true when the message replies to a tracked bot message", () => {
+    expect(
+      isReplyToRecentBotMessage(
+        { message_reference: { message_id: "msg-1" } },
+        new Set(["msg-1"]),
+      ),
+    ).toBe(true)
+  })
+
+  it("returns false when the reply target is not tracked", () => {
+    expect(
+      isReplyToRecentBotMessage(
+        { message_reference: { message_id: "msg-2" } },
+        new Set(["msg-1"]),
+      ),
+    ).toBe(false)
+  })
+})
+
+describe("shouldDeliverDiscordMessage", () => {
+  it("allows a human reply to one of the bot's recent messages", () => {
+    expect(
+      shouldDeliverDiscordMessage(
+        {
+          content: "follow-up",
+          author: { id: "user-1", bot: false },
+          message_reference: { message_id: "msg-1" },
+        },
+        "bot-2",
+        new Set(["msg-1"]),
+      ),
+    ).toBe(true)
+  })
+
+  it("requires an explicit mention for bot-authored replies", () => {
+    expect(
+      shouldDeliverDiscordMessage(
+        {
+          content: "follow-up",
+          author: { id: "bot-1", bot: true },
+          message_reference: { message_id: "msg-1" },
+          mentions: [{ id: "bot-2" }],
+        },
+        "bot-2",
+        new Set(["msg-1"]),
+      ),
+    ).toBe(false)
+  })
+
+  it("still allows explicit bot-to-bot handoffs", () => {
+    expect(
+      shouldDeliverDiscordMessage(
+        {
+          content: "<@bot-2> take this",
+          author: { id: "bot-1", bot: true },
+          mentions: [{ id: "bot-2" }],
+        },
+        "bot-2",
+        new Set(["msg-1"]),
+      ),
+    ).toBe(true)
+  })
+})
+
+describe("evaluateDiscordMessageDelivery", () => {
+  it("returns explicit_mention when a visible mention is present", () => {
+    expect(
+      evaluateDiscordMessageDelivery(
+        {
+          content: "<@bot-2> take this",
+          author: { id: "bot-1", bot: true },
+          mentions: [{ id: "bot-2" }],
+        },
+        "bot-2",
+        new Set(["msg-1"]),
+      ),
+    ).toEqual({
+      deliver: true,
+      reason: "explicit_mention",
+    })
+  })
+
+  it("returns human_reply_to_recent_bot for human reply continuation", () => {
+    expect(
+      evaluateDiscordMessageDelivery(
+        {
+          content: "follow-up",
+          author: { id: "user-1", bot: false },
+          message_reference: { message_id: "msg-1" },
+        },
+        "bot-2",
+        new Set(["msg-1"]),
+      ),
+    ).toEqual({
+      deliver: true,
+      reason: "human_reply_to_recent_bot",
+    })
+  })
+
+  it("returns bot_reply_without_explicit_mention for bot replies without a visible mention", () => {
+    expect(
+      evaluateDiscordMessageDelivery(
+        {
+          content: "follow-up",
+          author: { id: "bot-1", bot: true },
+          message_reference: { message_id: "msg-1" },
+        },
+        "bot-2",
+        new Set(["msg-1"]),
+      ),
+    ).toEqual({
+      deliver: false,
+      reason: "bot_reply_without_explicit_mention",
+    })
+  })
+
+  it("returns no_trigger for unrelated human messages", () => {
+    expect(
+      evaluateDiscordMessageDelivery(
+        {
+          content: "hello there",
+          author: { id: "user-1", bot: false },
+        },
+        "bot-2",
+        new Set(["msg-1"]),
+      ),
+    ).toEqual({
+      deliver: false,
+      reason: "no_trigger",
+    })
   })
 })
 

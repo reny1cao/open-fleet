@@ -193,7 +193,7 @@ export class DiscordApi implements ChannelAdapter {
     channelId: string,
     content: string,
     replyToMessageId?: string,
-  ): Promise<void> {
+  ): Promise<string> {
     const body: Record<string, unknown> = { content }
     if (replyToMessageId) {
       body.message_reference = {
@@ -213,6 +213,12 @@ export class DiscordApi implements ChannelAdapter {
     if (!res.ok) {
       throw new Error(`Failed to send Discord message: ${res.status} ${res.statusText}`)
     }
+
+    const sent = (await res.json()) as { id?: string }
+    if (typeof sent.id !== "string" || sent.id.length === 0) {
+      throw new Error("Discord sendMessage response did not include a message id")
+    }
+    return sent.id
   }
 
   generateAccessConfig(opts: AccessConfigOpts): AccessConfig {

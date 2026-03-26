@@ -132,14 +132,15 @@ describe("sendMessage", () => {
 
     globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
       calls.push({ url: String(url), init })
-      return new Response("{}", { status: 200 })
+      return new Response('{"id":"sent-123"}', { status: 200 })
     }) as typeof fetch
 
     try {
-      await api.sendMessage("token-123", "chan-001", "hello", "msg-999")
+      const sentId = await api.sendMessage("token-123", "chan-001", "hello", "msg-999")
 
       expect(calls).toHaveLength(1)
       expect(calls[0].url).toContain("/channels/chan-001/messages")
+      expect(sentId).toBe("sent-123")
 
       const body = JSON.parse(String(calls[0].init?.body))
       expect(body).toEqual({

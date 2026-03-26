@@ -1,6 +1,8 @@
 import type { ChannelDef } from "../../core/types"
+import type { ChannelAction, ChannelEvent } from "../protocol"
 import { DiscordApi } from "./api"
-import { isBotMentioned, resolveScopeKey, stripBotMention } from "./events"
+import { executeDiscordActions } from "./executor"
+import { evaluateDiscordMessageDelivery, resolveScopeKey, stripBotMention } from "./events"
 
 const DISCORD_GATEWAY_HELLO = 10
 const DISCORD_GATEWAY_HEARTBEAT_ACK = 11
@@ -8,8 +10,6 @@ const DISCORD_GATEWAY_DISPATCH = 0
 const DISCORD_GATEWAY_IDENTIFY = 2
 const DISCORD_GATEWAY_HEARTBEAT = 1
 const DISCORD_GATEWAY_INTENTS = 1 | 512 | 32768
-const MAX_DISCORD_MESSAGE_LENGTH = 2000
-
 interface DiscordGatewayEnvelope {
   op: number
   d?: Record<string, unknown>
@@ -29,57 +29,25 @@ interface DiscordMessagePayload {
   content: string
   author: DiscordAuthor
   mentions?: Array<{ id: string }>
-}
-
-export interface DiscordMentionContext {
-  channelId: string
-  scopeKey: string
-  workspace: string
-  prompt: string
-  replyToMessageId: string
+  message_reference?: { message_id?: string }
 }
 
 interface DiscordBotOptions {
+  agentName: string
   token: string
   botUserId: string
   channels: Record<string, ChannelDef>
   defaultWorkspace: string
   api?: DiscordApi
-  onMention(context: DiscordMentionContext): Promise<string>
-}
-
-function splitDiscordMessage(content: string): string[] {
-  if (content.length <= MAX_DISCORD_MESSAGE_LENGTH) {
-    return [content]
-  }
-
-  const chunks: string[] = []
-  let remaining = content.trim()
-
-  while (remaining.length > MAX_DISCORD_MESSAGE_LENGTH) {
-    let splitAt = remaining.lastIndexOf("\n", MAX_DISCORD_MESSAGE_LENGTH)
-    if (splitAt < MAX_DISCORD_MESSAGE_LENGTH / 2) {
-      splitAt = remaining.lastIndexOf(" ", MAX_DISCORD_MESSAGE_LENGTH)
-    }
-    if (splitAt < MAX_DISCORD_MESSAGE_LENGTH / 2) {
-      splitAt = MAX_DISCORD_MESSAGE_LENGTH
-    }
-
-    chunks.push(remaining.slice(0, splitAt).trim())
-    remaining = remaining.slice(splitAt).trim()
-  }
-
-  if (remaining.length > 0) {
-    chunks.push(remaining)
-  }
-
-  return chunks
+  onEvent(event: ChannelEvent): Promise<ChannelAction[]>
 }
 
 export class DiscordBot {
   private readonly api: DiscordApi
   private readonly managedChannels = new Map<string, ChannelDef>()
   private readonly channelCache = new Map<string, { id: string; type: number; parentId?: string }>()
+  private readonly recentSentMessageIds = new Set<string>()
+  private readonly recentSeenMessageIds = new Set<string>()
   private socket: WebSocket | null = null
   private sequence: number | null = null
   private heartbeatTimer: Timer | null = null
@@ -102,6 +70,60 @@ export class DiscordBot {
     this.closedPromise = new Promise<void>((resolve) => {
       this.closeResolve = resolve
     })
+  }
+
+  private noteRecentMessageId(target: Set<string>, messageId: string, cap: number): void {
+    target.add(messageId)
+    if (target.size > cap) {
+      const first = target.values().next().value
+      if (typeof first === "string") {
+        target.delete(first)
+      }
+    }
+  }
+
+  private previewContent(content: string): string {
+    const singleLine = content.replace(/\s+/g, " ").trim()
+    if (singleLine.length <= 80) {
+      return singleLine
+    }
+    return `${singleLine.slice(0, 77)}...`
+  }
+
+  private logMessageDecision(
+    message: DiscordMessagePayload,
+    deliver: boolean,
+    reason: string,
+    extra?: { scopeKey?: string; workspace?: string; actions?: number; sent?: number; error?: string },
+  ): void {
+    const parts = [
+      `[fleet][discord][${this.opts.agentName}]`,
+      `deliver=${deliver ? "yes" : "no"}`,
+      `reason=${reason}`,
+      `message=${message.id}`,
+      `channel=${message.channel_id}`,
+      `author_id=${message.author?.id ?? "unknown"}`,
+      `author_type=${message.author?.bot ? "bot" : "human"}`,
+      `preview=${JSON.stringify(this.previewContent(message.content))}`,
+    ]
+
+    if (extra?.scopeKey) {
+      parts.push(`scope=${extra.scopeKey}`)
+    }
+    if (extra?.workspace) {
+      parts.push(`workspace=${JSON.stringify(extra.workspace)}`)
+    }
+    if (typeof extra?.actions === "number") {
+      parts.push(`actions=${extra.actions}`)
+    }
+    if (typeof extra?.sent === "number") {
+      parts.push(`sent=${extra.sent}`)
+    }
+    if (extra?.error) {
+      parts.push(`error=${JSON.stringify(extra.error)}`)
+    }
+
+    console.log(parts.join(" "))
   }
 
   async start(): Promise<void> {
@@ -165,6 +187,11 @@ export class DiscordBot {
 
     if (payload.t === "MESSAGE_CREATE" && payload.d) {
       const message = payload.d as unknown as DiscordMessagePayload
+      if (this.recentSeenMessageIds.has(message.id)) {
+        this.logMessageDecision(message, false, "duplicate")
+        return
+      }
+      this.noteRecentMessageId(this.recentSeenMessageIds, message.id, 500)
       this.queue = this.queue
         .then(() => this.handleMessage(message))
         .catch((error) => console.error(`[fleet] Discord bot handler error: ${error instanceof Error ? error.message : error}`))
@@ -212,10 +239,13 @@ export class DiscordBot {
 
   private async handleMessage(message: DiscordMessagePayload): Promise<void> {
     if (!message.author || message.author.id === this.opts.botUserId) {
+      this.logMessageDecision(message, false, "self_message")
       return
     }
 
-    if (!isBotMentioned(message, this.opts.botUserId)) {
+    const delivery = evaluateDiscordMessageDelivery(message, this.opts.botUserId, this.recentSentMessageIds)
+    if (!delivery.deliver) {
+      this.logMessageDecision(message, false, delivery.reason)
       return
     }
 
@@ -226,42 +256,53 @@ export class DiscordBot {
       this.managedChannels.keys(),
     )
     if (!scopeKey) {
+      this.logMessageDecision(message, false, "unmanaged_scope")
       return
     }
 
     const workspace = this.resolveWorkspace(message.channel_id, channel)
+    this.logMessageDecision(message, true, delivery.reason, { scopeKey, workspace })
+
     const stripped = stripBotMention(message.content, this.opts.botUserId)
-    const prompt = [
-      `Discord mention from ${message.author.username ?? message.author.id}.`,
-      `Scope: ${scopeKey}`,
-      `Workspace: ${workspace}`,
-      "",
-      "Message:",
-      stripped.length > 0
-        ? stripped
-        : "You were explicitly mentioned in Discord without any additional text. Ask the user what they need.",
-    ].join("\n")
+    const event: ChannelEvent = {
+      source: "discord",
+      channelId: message.channel_id,
+      messageId: message.id,
+      scopeKey,
+      workspace,
+      author: {
+        id: message.author.id,
+        name: message.author.username,
+        isBot: Boolean(message.author.bot),
+      },
+      content: stripped,
+    }
 
     try {
       await this.api.triggerTyping(this.opts.token, message.channel_id)
     } catch {}
 
     try {
-      const reply = await this.opts.onMention({
-        channelId: message.channel_id,
+      const actions = await this.opts.onEvent(event)
+      const sent = await this.executeActions(message.channel_id, actions)
+      this.logMessageDecision(message, true, "actions_executed", {
         scopeKey,
         workspace,
-        prompt,
-        replyToMessageId: message.id,
+        actions: actions.length,
+        sent,
       })
-      await this.reply(message.channel_id, reply, message.id)
     } catch (error) {
       const messageText = error instanceof Error ? error.message : String(error)
-      await this.reply(
-        message.channel_id,
-        `I hit an internal error while handling this request:\n\n\`${messageText}\``,
-        message.id,
-      )
+      this.logMessageDecision(message, true, "handler_error", {
+        scopeKey,
+        workspace,
+        error: messageText,
+      })
+      await this.executeActions(message.channel_id, [{
+        type: "reply",
+        text: `I hit an internal error while handling this request:\n\n\`${messageText}\``,
+        replyToMessageId: message.id,
+      }])
     }
   }
 
@@ -306,15 +347,11 @@ export class DiscordBot {
     return this.opts.defaultWorkspace
   }
 
-  private async reply(channelId: string, content: string, replyToMessageId: string): Promise<void> {
-    const chunks = splitDiscordMessage(content)
-    for (const [index, chunk] of chunks.entries()) {
-      await this.api.sendMessage(
-        this.opts.token,
-        channelId,
-        chunk,
-        index === 0 ? replyToMessageId : undefined,
-      )
+  private async executeActions(channelId: string, actions: ChannelAction[]): Promise<number> {
+    const sentIds = await executeDiscordActions(this.api, this.opts.token, channelId, actions)
+    for (const sentId of sentIds) {
+      this.noteRecentMessageId(this.recentSentMessageIds, sentId, 200)
     }
+    return sentIds.length
   }
 }

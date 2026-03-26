@@ -1,5 +1,6 @@
 import { homedir } from "os"
 import { isAbsolute, join } from "path"
+import { buildCodexChannelPrompt, parseCodexChannelActions } from "../agents/codex/channel-actions"
 import { getToken, loadConfig, findConfigDir, resolveStateDir } from "../core/config"
 import { getAgentAdapterKind } from "../agents/resolve"
 import { buildCodexDeveloperInstructions } from "../agents/codex/instructions"
@@ -41,23 +42,27 @@ export async function runAgent(agentName: string): Promise<void> {
   )
 
   const bot = new DiscordBot({
+    agentName,
     token,
     botUserId: me.id,
     channels: config.discord.channels,
     defaultWorkspace,
     api,
-    onMention: async (context) => {
+    onEvent: async (event) => {
       const developerInstructions = buildCodexDeveloperInstructions(stateDir)
-      const workspacePath = resolveWorkspacePath(configDir, context.workspace)
-      const prompt = context.prompt.replace(`Workspace: ${context.workspace}`, `Workspace: ${workspacePath}`)
+      const workspacePath = resolveWorkspacePath(configDir, event.workspace)
+      const prompt = buildCodexChannelPrompt({
+        ...event,
+        workspace: workspacePath,
+      })
       const result = await runCodexTurn({
         cwd: workspacePath,
         developerInstructions,
         prompt,
-        existingThreadId: getCodexThreadId(stateDir, context.scopeKey),
+        existingThreadId: getCodexThreadId(stateDir, event.scopeKey),
       })
-      setCodexThreadId(stateDir, context.scopeKey, result.threadId)
-      return result.reply.length > 0 ? result.reply : "I completed the turn but did not generate a reply. Please ask a more specific question."
+      setCodexThreadId(stateDir, event.scopeKey, result.threadId)
+      return parseCodexChannelActions(result.reply, event)
     },
   })
 
