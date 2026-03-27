@@ -24,13 +24,14 @@ export class ClaudeAgentAdapter implements AgentAdapter {
 
     const discord = new DiscordApi()
     const botIds: Record<string, string> = {}
+    const botDisplayNames: Record<string, string> = {}
 
     const entries = Object.entries(config.agents)
     const results = await Promise.allSettled(
       entries.map(async ([name]) => {
         const agentToken = getToken(name, config, configDir)
         const info = await discord.validateToken(agentToken)
-        return { name, id: info.id }
+        return { name, id: info.id, displayName: info.name }
       })
     )
 
@@ -39,6 +40,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       const result = results[i]
       if (result.status === "fulfilled") {
         botIds[name] = result.value.id
+        botDisplayNames[name] = result.value.displayName
       } else {
         if (name === agentName) {
           throw new Error(
@@ -49,6 +51,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
           console.warn(`  Warning: ${name} token validation failed — ${result.reason instanceof Error ? result.reason.message : result.reason}`)
         }
         botIds[name] = "UNKNOWN"
+        botDisplayNames[name] = name
       }
     }
 
@@ -57,8 +60,8 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       console.warn(`  Warning: ${unknownAgents.length} agent(s) have unknown bot IDs: ${unknownAgents.join(", ")}`)
     }
 
-    writeBootIdentity(agentName, config, botIds, stateDir)
-    writeRoster(agentName, config, botIds, stateDir)
+    writeBootIdentity(agentName, config, botIds, stateDir, botDisplayNames)
+    writeRoster(agentName, config, botIds, stateDir, botDisplayNames)
 
     const partnerBotIds = Object.entries(botIds)
       .filter(([name]) => name !== agentName)

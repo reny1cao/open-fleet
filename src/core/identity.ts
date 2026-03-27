@@ -15,21 +15,26 @@ export function buildIdentityPrompt(
   agentName: string,
   config: FleetConfig,
   botIds: Record<string, string>,
+  displayNames?: Record<string, string>,
 ): string {
   const agentDef = config.agents[agentName]
   const botId = botIds[agentName] ?? "unknown"
+  const myDisplayName = displayNames?.[agentName] ?? agentName
 
   const lines: string[] = []
 
-  lines.push(`You are **${agentName}**, a ${agentDef.role} in the fleet. Bot ID \`${botId}\`.`)
+  lines.push(`You are **${myDisplayName}** (${agentName}), a ${agentDef.role} in the fleet. Bot ID \`${botId}\`.`)
   lines.push("")
 
   lines.push("## Role")
   lines.push(agentDef.role)
   lines.push("")
 
+  // Only show channels this agent is scoped to
+  const myChannels = agentDef.channels
   lines.push("## Channels")
   for (const [label, ch] of Object.entries(config.discord.channels)) {
+    if (myChannels && !myChannels.includes(label)) continue
     const ws = ch.workspace ? ` — workspace: ${ch.workspace}` : ""
     lines.push(`- **#${label}** (channel \`${ch.id}\`)${ws}`)
   }
@@ -87,27 +92,92 @@ export function buildIdentityPrompt(
 export function buildRosterClaudeMd(
   agentName: string,
   config: FleetConfig,
-  botIds: Record<string, string>
+  botIds: Record<string, string>,
+  displayNames?: Record<string, string>,
 ): string {
   const lines: string[] = []
+  const myDef = config.agents[agentName]
+  const myChannels = myDef?.channels
+  const myDisplayName = displayNames?.[agentName] ?? agentName
+  const isLead = myDef?.role === "lead"
 
   lines.push("# Fleet Team Roster")
   lines.push("")
-  lines.push(`You are **${agentName}**. Your teammates:`)
+  lines.push(`You are **${myDisplayName}** (${agentName}).`)
   lines.push("")
+
+  // Show which channels this agent operates in
+  if (myChannels) {
+    lines.push("## Your channels")
+    for (const ch of myChannels) {
+      const chDef = config.discord.channels[ch]
+      if (chDef) {
+        const ws = chDef.workspace ? ` — workspace: ${chDef.workspace}` : ""
+        lines.push(`- **#${ch}** (channel \`${chDef.id}\`)${ws}`)
+      }
+    }
+    lines.push("")
+  }
+
+  // Collect visible peers (share at least one channel)
+  const teamMembers: Array<{ name: string; def: typeof myDef; peerId: string; peerDisplay: string }> = []
+  const otherLeads: typeof teamMembers = []
 
   for (const [name, def] of Object.entries(config.agents)) {
     if (name === agentName) continue
+    const peerChannels = def.channels
+    if (myChannels && peerChannels) {
+      const shared = myChannels.some(ch => peerChannels.includes(ch))
+      if (!shared) continue
+    }
     const peerId = botIds[name] ?? "unknown"
-    lines.push(`- **${name}** (\`${peerId}\`) — ${def.server} — ${def.role} — mention: \`<@${peerId}>\``)
+    const peerDisplay = displayNames?.[name] ?? name
+    const entry = { name, def, peerId, peerDisplay }
+
+    // Separate team members from other leads
+    if (def.role === "lead" && isLead) {
+      otherLeads.push(entry)
+    } else {
+      teamMembers.push(entry)
+    }
   }
 
-  if (Object.keys(config.agents).length <= 1) {
-    lines.push("- (no teammates yet)")
+  // Show team members
+  if (teamMembers.length > 0) {
+    lines.push(isLead ? "## Your team" : "## Your teammates")
+    for (const { name, def, peerId, peerDisplay } of teamMembers) {
+      lines.push(`- **${peerDisplay}** (${name}) — ${def.role} — mention: \`<@${peerId}>\``)
+    }
+    lines.push("")
   }
 
-  lines.push("")
-  lines.push("Use this roster to know who to delegate to or mention in Discord.")
+  // Show other leads (only visible to leads)
+  if (otherLeads.length > 0) {
+    lines.push("## Other leads")
+    for (const { name, def, peerId, peerDisplay } of otherLeads) {
+      // Figure out which channels the other lead manages
+      const theirChannels = def.channels?.filter(ch => !myChannels?.includes(ch)) ?? []
+      const scope = theirChannels.length > 0 ? ` — leads #${theirChannels.join(", #")}` : ""
+      lines.push(`- **${peerDisplay}** (${name})${scope} — mention: \`<@${peerId}>\``)
+    }
+    lines.push("")
+  }
+
+  if (teamMembers.length === 0 && otherLeads.length === 0) {
+    lines.push("(no teammates yet)")
+    lines.push("")
+  }
+
+  // How to work
+  lines.push("## How to work")
+  if (isLead) {
+    lines.push("- Receive tasks from the user, delegate to your team")
+    lines.push("- Only @mention agents listed above — other teams have their own lead")
+    lines.push("- If a task belongs to another team, @mention their lead")
+  } else {
+    lines.push("- You receive tasks from your lead — complete them and report back")
+    lines.push("- Only @mention agents listed above")
+  }
 
   return lines.join("\n")
 }
@@ -120,9 +190,10 @@ export function writeBootIdentity(
   config: FleetConfig,
   botIds: Record<string, string>,
   stateDir: string,
+  displayNames?: Record<string, string>,
 ): void {
   mkdirSync(stateDir, { recursive: true })
-  const content = buildIdentityPrompt(agentName, config, botIds)
+  const content = buildIdentityPrompt(agentName, config, botIds, displayNames)
   writeFileSync(join(stateDir, "identity.md"), content, "utf8")
 }
 
@@ -134,11 +205,12 @@ export function writeRoster(
   agentName: string,
   config: FleetConfig,
   botIds: Record<string, string>,
-  stateDir: string
+  stateDir: string,
+  displayNames?: Record<string, string>,
 ): void {
   const claudeDir = join(stateDir, ".claude")
   mkdirSync(claudeDir, { recursive: true })
-  const content = buildRosterClaudeMd(agentName, config, botIds)
+  const content = buildRosterClaudeMd(agentName, config, botIds, displayNames)
   writeFileSync(join(claudeDir, "CLAUDE.md"), content, "utf8")
 }
 

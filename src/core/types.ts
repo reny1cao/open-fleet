@@ -38,3 +38,11 @@ export interface ServerConfig {
   sshHost: string
   user: string
 }
+
+export interface BotEntry {
+  id: string
+  displayName: string
+}
+
+/** Bot IDs map: agent name → { id, displayName } */
+export type BotIdsMap = Record<string, BotEntry>
