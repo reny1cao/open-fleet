@@ -37,24 +37,30 @@ function compareVersionSegments(a: string, b: string): number {
 }
 
 function resolveClaudeDiscordPluginPath(): string | null {
-  const pluginRoot = expandHome("~/.claude/plugins/cache/claude-plugins-official/discord")
-  if (!existsSync(pluginRoot)) {
-    return null
+  // Check cache directory (versioned: cache/.../discord/0.0.4/server.ts)
+  const cacheRoot = expandHome("~/.claude/plugins/cache/claude-plugins-official/discord")
+  if (existsSync(cacheRoot)) {
+    const versions = readdirSync(cacheRoot)
+      .filter((entry) => {
+        const entryPath = join(cacheRoot, entry)
+        const serverPath = join(entryPath, "server.ts")
+        return statSync(entryPath).isDirectory() && existsSync(serverPath)
+      })
+      .sort(compareVersionSegments)
+    if (versions.length > 0) {
+      return join(cacheRoot, versions[versions.length - 1], "server.ts")
+    }
   }
 
-  const versions = readdirSync(pluginRoot)
-    .filter((entry) => {
-      const entryPath = join(pluginRoot, entry)
-      const serverPath = join(entryPath, "server.ts")
-      return statSync(entryPath).isDirectory() && existsSync(serverPath)
-    })
-    .sort(compareVersionSegments)
-
-  if (versions.length === 0) {
-    return null
+  // Check marketplace directory (flat: marketplaces/.../discord/server.ts)
+  const marketplacePath = expandHome(
+    "~/.claude/plugins/marketplaces/claude-plugins-official/external_plugins/discord/server.ts"
+  )
+  if (existsSync(marketplacePath)) {
+    return marketplacePath
   }
 
-  return join(pluginRoot, versions[versions.length - 1], "server.ts")
+  return null
 }
 
 async function runWithTimeout(

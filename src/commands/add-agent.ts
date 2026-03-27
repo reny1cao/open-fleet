@@ -95,8 +95,16 @@ export async function addAgent(opts: {
     .map(([, id]) => id)
     .filter((id) => id !== "UNKNOWN")
 
+  const agentChannelScopes = config.agents[name]?.channels
+  const scopedChannels = agentChannelScopes
+    ? Object.fromEntries(
+        Object.entries(config.discord.channels)
+          .filter(([label]) => agentChannelScopes.includes(label))
+      )
+    : config.discord.channels
+
   writeAccessConfig(stateDir, {
-    channels: config.discord.channels,
+    channels: scopedChannels,
     partnerBotIds,
     requireMention: true,
     userId: config.discord.userId,

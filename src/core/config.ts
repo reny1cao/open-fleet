@@ -187,6 +187,7 @@ export function loadConfig(dir?: string): FleetConfig {
       identity: aRaw.identity as string,
       workspace: aRaw.workspace as string | undefined,
       stateDir: aRaw.state_dir as string | undefined,
+      channels: aRaw.channels as string[] | undefined,
     }
   }
 
@@ -224,6 +225,7 @@ export function saveConfig(config: FleetConfig, dir: string): void {
       identity: def.identity,
       ...(def.workspace !== undefined ? { workspace: def.workspace } : {}),
       ...(def.stateDir !== undefined ? { state_dir: def.stateDir } : {}),
+      ...(def.channels !== undefined ? { channels: def.channels } : {}),
     }
   }
 

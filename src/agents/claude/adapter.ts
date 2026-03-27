@@ -65,8 +65,17 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       .map(([, id]) => id)
       .filter((id) => id !== "UNKNOWN")
 
+    // Scope agent to specific channels if configured, otherwise all channels
+    const agentChannelScopes = config.agents[agentName]?.channels
+    const scopedChannels = agentChannelScopes
+      ? Object.fromEntries(
+          Object.entries(config.discord.channels)
+            .filter(([label]) => agentChannelScopes.includes(label))
+        )
+      : config.discord.channels
+
     writeAccessConfig(stateDir, {
-      channels: config.discord.channels,
+      channels: scopedChannels,
       partnerBotIds,
       requireMention: true,
       userId: config.discord.userId,
@@ -102,16 +111,18 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     const cmdStateDir = isRemote ? rawStateDir.replace(/^~/, "$HOME") : stateDir
     const cmdWorkspace = isRemote ? rawWorkspace.replace(/^~/, "$HOME") : expandHome(rawWorkspace)
 
+    const quote = isRemote ? '"' : "'"
     const claudeCmd = [
       "claude",
       "--dangerously-skip-permissions",
-      `--append-system-prompt-file '${cmdStateDir}/identity.md'`,
-      `--add-dir '${cmdWorkspace}'`,
+      `--append-system-prompt-file ${quote}${cmdStateDir}/identity.md${quote}`,
+      `--add-dir ${quote}${cmdWorkspace}${quote}`,
       `--channels ${discord.pluginId()}`,
     ].join(" ")
 
     const wrapperLines = [
       "#!/bin/bash",
+      ...(isRemote ? ['export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"'] : []),
       "MAX_RETRIES=5",
       "RETRY_COUNT=0",
       "MIN_UPTIME=30",

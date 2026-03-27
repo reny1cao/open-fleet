@@ -5,13 +5,24 @@ import { loadConfig } from "../core/config"
 import { sshRun } from "../runtime/remote"
 import type { ServerConfig } from "../core/types"
 
-const PLUGIN_ROOT_RELATIVE = ".claude/plugins/cache/claude-plugins-official/discord"
+const PLUGIN_CACHE_ROOT = ".claude/plugins/cache/claude-plugins-official/discord"
+const PLUGIN_MARKETPLACE_ROOT = ".claude/plugins/marketplaces/claude-plugins-official/external_plugins/discord"
 const PATTERN = /const PARTNER_BOT_IDS = new Set\(\[[\s\S]*?\]\)/
 const MESSAGE_CREATE_NEEDLE = "client.on('messageCreate', msg => {"
 const BOT_DROP_NEEDLE = "if (msg.author.bot) return"
 const PARTNER_BOT_IDS_COMMENT = [
   "// Allow messages from partner bots to enable cross-bot collaboration.",
   "// Loop safety: requireMention in group config means only explicit @mentions trigger responses.",
+].join("\n")
+
+// Mention fallback patch: Discord.js msg.mentions.has() fails for bot-to-bot
+// mentions without GuildMembers intent. This adds a raw content check.
+const MENTION_FALLBACK_NEEDLE = "  if (client.user && msg.mentions.has(client.user)) return true"
+const MENTION_FALLBACK_REPLACEMENT = [
+  "  if (client.user && msg.mentions.has(client.user)) return true",
+  "  // Fallback: check raw content for <@BOT_ID> — msg.mentions may miss bot",
+  "  // mentions without GuildMembers intent (needed for bot-to-bot messaging).",
+  "  if (client.user && msg.content.includes(`<@${client.user.id}>`)) return true",
 ].join("\n")
 
 function compareVersionSegments(a: string, b: string): number {
@@ -25,33 +36,43 @@ function compareVersionSegments(a: string, b: string): number {
   return 0
 }
 
-function resolveLocalPluginServerPath(): string | null {
-  const pluginRoot = join(homedir(), PLUGIN_ROOT_RELATIVE)
-  if (!existsSync(pluginRoot)) {
-    return null
+function resolveLocalPluginServerPaths(): string[] {
+  const paths: string[] = []
+
+  // Check cache directory (versioned: cache/.../discord/0.0.4/server.ts)
+  const cacheRoot = join(homedir(), PLUGIN_CACHE_ROOT)
+  if (existsSync(cacheRoot)) {
+    const versions = readdirSync(cacheRoot)
+      .filter((entry) => {
+        const entryPath = join(cacheRoot, entry)
+        const serverPath = join(entryPath, "server.ts")
+        return statSync(entryPath).isDirectory() && existsSync(serverPath)
+      })
+      .sort(compareVersionSegments)
+    if (versions.length > 0) {
+      paths.push(join(cacheRoot, versions[versions.length - 1], "server.ts"))
+    }
   }
 
-  const versions = readdirSync(pluginRoot)
-    .filter((entry) => {
-      const entryPath = join(pluginRoot, entry)
-      const serverPath = join(entryPath, "server.ts")
-      return statSync(entryPath).isDirectory() && existsSync(serverPath)
-    })
-    .sort(compareVersionSegments)
-
-  if (versions.length === 0) {
-    return null
+  // Check marketplace directory (flat: marketplaces/.../discord/server.ts)
+  const marketplacePath = join(homedir(), PLUGIN_MARKETPLACE_ROOT, "server.ts")
+  if (existsSync(marketplacePath)) {
+    paths.push(marketplacePath)
   }
 
-  return join(pluginRoot, versions[versions.length - 1], "server.ts")
+  return paths
 }
 
-function remoteResolvePluginServerPathCmd(): string {
-  const root = `$HOME/${PLUGIN_ROOT_RELATIVE}`
+function remoteResolvePluginServerPathsCmd(): string {
+  const cacheRoot = `$HOME/${PLUGIN_CACHE_ROOT}`
+  const marketplaceRoot = `$HOME/${PLUGIN_MARKETPLACE_ROOT}`
   return [
-    `ROOT='${root}'`,
-    "if [ ! -d \"$ROOT\" ]; then exit 0; fi",
-    "ls -1d \"$ROOT\"/*/server.ts 2>/dev/null | sort -V | tail -n 1",
+    `CACHE_ROOT="${cacheRoot}"`,
+    `MARKET_ROOT="${marketplaceRoot}"`,
+    "PATHS=''",
+    "if [ -d \"$CACHE_ROOT\" ]; then PATHS=$(ls -1d \"$CACHE_ROOT\"/*/server.ts 2>/dev/null | sort -V | tail -n 1); fi",
+    "if [ -f \"$MARKET_ROOT/server.ts\" ]; then PATHS=\"$PATHS $MARKET_ROOT/server.ts\"; fi",
+    "echo $PATHS",
   ].join("; ")
 }
 
@@ -124,6 +145,18 @@ function buildReplacement(botIds: string[]): string {
   return `const PARTNER_BOT_IDS = new Set([\n${lines}\n])`
 }
 
+function patchMentionFallback(content: string): { updated: string; changed: boolean } {
+  // Already patched — the fallback line is present
+  if (content.includes("msg.content.includes(`<@${client.user.id}>`")) {
+    return { updated: content, changed: false }
+  }
+  if (!content.includes(MENTION_FALLBACK_NEEDLE)) {
+    return { updated: content, changed: false }
+  }
+  const updated = content.replace(MENTION_FALLBACK_NEEDLE, MENTION_FALLBACK_REPLACEMENT)
+  return { updated, changed: updated !== content }
+}
+
 function patchContent(content: string, replacement: string): { updated: string; changed: boolean; patternFound: boolean } {
   if (PATTERN.test(content)) {
     const updated = content.replace(PATTERN, replacement)
@@ -159,29 +192,48 @@ export async function patch(opts?: { json?: boolean }): Promise<void> {
 
   const replacement = buildReplacement(botIds)
 
-  // 2. Patch local server.ts
-  const localPluginPath = resolveLocalPluginServerPath()
-  if (localPluginPath && existsSync(localPluginPath)) {
-    const content = readFileSync(localPluginPath, "utf8")
+  // 2. Patch local server.ts (both cache and marketplace paths)
+  const localPluginPaths = resolveLocalPluginServerPaths()
+  if (localPluginPaths.length === 0) {
+    warn(`  warn: local Discord plugin server.ts not found under cache or marketplace`)
+  }
+  for (const localPluginPath of localPluginPaths) {
+    const label = localPluginPath.includes("marketplace") ? "Marketplace" : "Cache"
+    let content = readFileSync(localPluginPath, "utf8")
+    let fileChanged = false
+
     const { updated, changed, patternFound } = patchContent(content, replacement)
 
     if (!patternFound) {
-      warn("warn: PARTNER_BOT_IDS pattern not found in local server.ts")
+      warn(`  warn: ${label}: PARTNER_BOT_IDS pattern not found`)
     } else if (!changed) {
-      log(`  Local: already up to date (${botIds.length} bot IDs)`)
+      log(`  ${label}: PARTNER_BOT_IDS already up to date (${botIds.length} bot IDs)`)
     } else {
-      writeFileSync(localPluginPath, updated, "utf8")
-      log(`  Local: updated PARTNER_BOT_IDS (${botIds.length} bot IDs)`)
+      content = updated
+      fileChanged = true
+      log(`  ${label}: updated PARTNER_BOT_IDS (${botIds.length} bot IDs)`)
+    }
+
+    // Apply mention fallback patch
+    const mentionResult = patchMentionFallback(content)
+    if (mentionResult.changed) {
+      content = mentionResult.updated
+      fileChanged = true
+      log(`  ${label}: mention fallback patch applied`)
+    } else if (content.includes("msg.content.includes(`<@${client.user.id}>`")) {
+      log(`  ${label}: mention fallback already applied`)
+    }
+
+    if (fileChanged) {
+      writeFileSync(localPluginPath, content, "utf8")
     }
 
     // Check STATE_DIR patch
     if (!content.includes("DISCORD_STATE_DIR")) {
       warn(
-        "  warn: STATE_DIR patch not detected — check if your plugin version is up to date."
+        `  warn: ${label}: STATE_DIR patch not detected — check if your plugin version is up to date.`
       )
     }
-  } else {
-    warn(`  warn: local Discord plugin server.ts not found under ~/${PLUGIN_ROOT_RELATIVE}`)
   }
 
   // 3. Patch remote servers
@@ -194,44 +246,50 @@ export async function patch(opts?: { json?: boolean }): Promise<void> {
         warn(`  ${server.sshHost}: SSH failed — skipped`)
         continue
       }
-      const { stdout: remotePathRaw, ok: pathOk } = await sshRun(
+      const { stdout: remotePathsRaw, ok: pathOk } = await sshRun(
         server,
-        remoteResolvePluginServerPathCmd(),
+        remoteResolvePluginServerPathsCmd(),
         { throwOnError: false }
       )
-      const remotePath = remotePathRaw.trim()
+      const remotePaths = remotePathsRaw.trim().split(/\s+/).filter(Boolean)
 
-      if (!pathOk || !remotePath) {
+      if (!pathOk || remotePaths.length === 0) {
         warn(`  ${server.sshHost}: server.ts not found — skipped`)
         continue
       }
 
-      const { stdout: content, ok: readOk } = await sshRun(
-        server,
-        `cat '${remotePath}'`,
-        { throwOnError: false }
-      )
-      if (!readOk) {
-        warn(`  ${server.sshHost}: server.ts not found — skipped`)
-        continue
-      }
+      for (const remotePath of remotePaths) {
+        const { stdout: content, ok: readOk } = await sshRun(
+          server,
+          `cat '${remotePath}'`,
+          { throwOnError: false }
+        )
+        if (!readOk) continue
 
-      const { updated, changed, patternFound } = patchContent(content, replacement)
-      if (!patternFound) {
-        warn(`  ${server.sshHost}: PARTNER_BOT_IDS pattern not found`)
-      } else if (!changed) {
-        log(`  ${server.sshHost}: already up to date`)
-      } else {
-        // Write via heredoc to avoid quoting issues
-        const escapedContent = updated.replace(/'/g, "'\\''")
-        // Use a temp file to avoid shell escaping issues with large content
-        const { writeFileSync: writeLocal, unlinkSync } = await import("fs")
-        const tmpLocal = `/tmp/fleet-patch-${Date.now()}.ts`
-        writeLocal(tmpLocal, updated)
-        const { scp: scpFn } = await import("../runtime/remote")
-        await scpFn(server, tmpLocal, remotePath)
-        try { unlinkSync(tmpLocal) } catch {}
-        log(`  ${server.sshHost}: updated PARTNER_BOT_IDS (${botIds.length} bot IDs)`)
+        const { updated, changed, patternFound } = patchContent(content, replacement)
+        let finalContent = changed ? updated : content
+        if (!patternFound) {
+          warn(`  ${server.sshHost}: PARTNER_BOT_IDS pattern not found`)
+        } else if (!changed) {
+          log(`  ${server.sshHost}: already up to date`)
+        } else {
+          log(`  ${server.sshHost}: updated PARTNER_BOT_IDS (${botIds.length} bot IDs)`)
+        }
+
+        const mentionResult = patchMentionFallback(finalContent)
+        if (mentionResult.changed) {
+          finalContent = mentionResult.updated
+          log(`  ${server.sshHost}: mention fallback patch applied`)
+        }
+
+        if (changed || mentionResult.changed) {
+          const { writeFileSync: writeLocal, unlinkSync } = await import("fs")
+          const tmpLocal = `/tmp/fleet-patch-${Date.now()}.ts`
+          writeLocal(tmpLocal, finalContent)
+          const { scp: scpFn } = await import("../runtime/remote")
+          await scpFn(server, tmpLocal, remotePath)
+          try { unlinkSync(tmpLocal) } catch {}
+        }
       }
     } catch (err) {
       warn(`  ${server.sshHost}: failed — ${err instanceof Error ? err.message : err}`)

@@ -149,7 +149,11 @@ export async function init(opts: {
     guild = servers[0]
   }
   const guildId = guild.id
-  const ownerId = guild.ownerId
+  // Fetch the full guild to get owner_id (/users/@me/guilds doesn't include it)
+  const ownerId = await discord.getGuildOwnerId(tokens[0], guildId)
+  if (!ownerId) {
+    log(`  warn: could not fetch guild owner — userId will be unset`)
+  }
   log(`  Using guild: ${guild.name} (${guildId})`)
 
   // ── 4b. Auto-create channel if requested ──────────────────────────────────
@@ -311,8 +315,16 @@ export async function init(opts: {
       .filter((_, j) => j !== i)
       .map((spec) => botIds[spec.name])
 
+    const agentDef = config.agents[agentName]
+    const agentChannels = agentDef?.channels
+      ? Object.fromEntries(
+          Object.entries(channels)
+            .filter(([label]) => agentDef.channels!.includes(label))
+        )
+      : channels
+
     writeAccessConfig(stateDir, {
-      channels,
+      channels: agentChannels,
       partnerBotIds,
       requireMention: true,
       userId: config.discord.userId,

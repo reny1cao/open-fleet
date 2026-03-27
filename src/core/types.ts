@@ -31,6 +31,7 @@ export interface AgentDef {
   identity: string
   workspace?: string
   stateDir?: string
+  channels?: string[]
 }
 
 export interface ServerConfig {

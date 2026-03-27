@@ -92,12 +92,12 @@ If `fleet doctor` shows failures:
 **Done when:** `fleet doctor` shows all checks green (or only non-blocking warnings). `fleet help` works.
 
 
-### Step 2: Discord server
+### Step 2: Discord server and channel
 
-**Why:** Discord is where your agents communicate. Each agent joins as a bot in your server. You see their conversations in real time.
+**Why:** Discord is where your agents communicate. Each agent joins as a bot in your server. You see their conversations in real time. You need to know the exact server and channel so `fleet init` targets the right place — auto-detection can pick the wrong server if bots are already in other servers.
 
 Ask: "Do you have a Discord server for your fleet?"
-- If yes → continue to Step 3
+- If yes → ask: **"What's the server name?"** (so you can confirm it later) and continue to Step 3
 - If no → tell them:
   1. Open https://discord.com/channels/@me in browser (or Discord app) — log in or create a free account
   2. **Left sidebar**, find the round **"+"** button (below your existing servers — hover shows "Add a Server") → click it
@@ -105,46 +105,79 @@ Ask: "Do you have a Discord server for your fleet?"
   4. Name it anything (e.g. "My Fleet") → click **"Create"**
   5. You're now inside your new server. There's a default `#general` channel — that's enough.
 
-**Done when:** User confirms they have a Discord server with at least one text channel.
+Then ask: **"Which channel should the agents use?"**
+- If the server has multiple text channels (e.g. `#general`, `#dev`, `#infra`), let the user choose
+- If they want a new channel created, note it — you'll use `--create-channel <name>` in Step 4
+- If they don't care, default to `#general`
+
+Record the **server name** and **preferred channel** — you'll need them in Step 4 to verify or pass `--guild`/`--channel` flags.
+
+**Done when:** User confirms they have a Discord server, and you know which server and channel to target.
 
 
 ### Step 3: Understand user needs and design the team
 
-**Why:** Before creating any bots, understand what the user wants to accomplish. This determines how many agents they need, what roles to assign, and whether remote servers are involved. This step is the heart of the experience — you're acting as an org design consultant.
+**Why:** Before creating any bots, understand what the user wants to accomplish. This determines how many agents they need, what roles to assign, where they run (local vs remote), and which adapter to use. This step is the heart of the experience — you're acting as an org design consultant.
 
 **Wizard flow:**
 
 1. **Ask what they want to accomplish.** Examples: writing code + review, managing infrastructure, content creation, research + analysis, something else.
 
-2. **Ask what machines they have.** Local only? Any remote servers? This determines whether P5 applies.
+2. **Ask where agents should run — local, remote, or both.**
+   - "Will all agents run on this machine (local), or do some need to run on remote servers?"
+   - If **all local** → all agents use `local` as their server. Continue to step 3.
+   - If **some remote** → for each remote server, collect:
+     - A short name (e.g. `prod`, `staging`)
+     - SSH host (e.g. `deploy.example.com`) or SSH config alias (e.g. `prod-server`)
+     - SSH user (e.g. `ubuntu`)
+     - These become `--server name:ssh_host:user` flags in the `fleet init` command
+     - Note: remote servers need SSH key access and `fleet setup-server` before agents can start (covered in Step 4b)
+   - **Verify SSH access now** before proceeding — ask: "Can you SSH into the server without a password? Try `ssh user@host echo ok`"
+     - If yes → continue
+     - If no → guide them through SSH key setup (see Step 4b below)
 
-3. **Based on P1-P6, suggest a team with reasoning.** For example:
+3. **Ask which adapter each agent should use.**
+   - "Do you want your agents to use Claude Code, Codex, or a mix?"
+   - **Claude** (default) — Claude Code with Discord plugin. Good for general-purpose reasoning and code.
+   - **Codex** — Fleet-managed Discord worker backed by Codex. Alternative option.
+   - If user doesn't care, default all agents to Claude.
+
+4. **Based on P1-P6, suggest a team with reasoning.** For example:
    - "I suggest a lead agent because P1 says the coordinator shouldn't do heavy work — if lead is also coding, it'll fill its context and stop responding."
    - "Starting with 2 agents per P6 — we can always add more later with `fleet add-agent`."
    - "Adding a reviewer because P4 says verification prevents error amplification — critical paths need a check."
    - "Putting an ops agent on your remote server per P5 — better than having lead SSH in."
 
-4. **If the use case maps to a template, offer it.** "This sounds like a dev team — want to use the `dev-team` template as a starting point (Lead + Coder + Reviewer), or customize?" If the use case doesn't fit any template, default to P6: lead + 1 worker.
+5. **If the use case maps to a template, offer it.** "This sounds like a dev team — want to use the `dev-team` template as a starting point (Lead + Coder + Reviewer), or customize?" If the use case doesn't fit any template, default to P6: lead + 1 worker.
 
-5. **Confirm with the user** — how many agents, what each one does, what to name them. Names become the bot display names in Discord.
+6. **Confirm with the user** — present a summary table showing each agent's name, role, location (local/remote), and adapter. Names become the bot display names in Discord.
 
-6. **Emit the exact `fleet init` command** with agreed names, roles, and adapters:
+7. **Emit the exact `fleet init` command** with agreed names, roles, locations, adapters, and the server/channel info from Step 2:
    ```bash
-   fleet init --token T1 --token T2 --name my-team --agent lead:local:lead:claude --agent coder:local:worker:codex
+   # All local, same adapter
+   fleet init --token T1 --token T2 --name my-team --guild GUILD_ID --agent lead:local:lead:claude --agent coder:local:worker:claude
+
+   # Mixed local/remote
+   fleet init --token T1 --token T2 --name my-team --guild GUILD_ID --server prod:deploy.example.com:ubuntu --agent lead:local:lead:claude --agent ops:prod:ops:codex
+
+   # With a specific channel
+   fleet init --token T1 --token T2 --name my-team --guild GUILD_ID --channel dev:CHANNEL_ID:~/workspace/project
+
+   # Create a new channel
+   fleet init --token T1 --token T2 --name my-team --guild GUILD_ID --create-channel dev
+
+   # From template (always include --guild if known)
+   fleet init --template dev-team --token T1 --token T2 --token T3 --name my-team --guild GUILD_ID
    ```
-   Or if using a template:
-   ```bash
-   fleet init --template dev-team --token T1 --token T2 --token T3 --name my-team
-   ```
 
-7. Once user agrees on the team composition and command, move to Step 4 (token creation).
+8. Once user agrees on the team composition and command, move to Step 4 (token creation).
 
-**Done when:** User has confirmed the team design and you've emitted the `fleet init` command they'll run after collecting tokens in Step 4.
+**Done when:** User has confirmed the team design (agents, roles, locations, adapters) and you've emitted the `fleet init` command they'll run after collecting tokens in Step 4.
 
 
-### Step 4: Create bots, configure, and invite
+### Step 4: Create bots, invite to server, then configure
 
-**Why:** Each agent needs a Discord bot identity (token). `fleet add-agent` handles tokens, identity generation, access configuration, and invite URLs — the user just provides the tokens and chooses the adapter when needed.
+**Why:** Each agent needs a Discord bot identity (token). The bots must be invited to the target Discord server **before** running `fleet init`, so that init can detect the correct server and channel. If bots are in multiple servers, auto-detection may pick the wrong one.
 
 **Create one bot at a time. For each bot:**
 
@@ -154,13 +187,26 @@ Ask: "Do you have a Discord server for your fleet?"
 4. "Click 'Reset Token', confirm, and paste the token to me."
 5. "Scroll down to 'Privileged Gateway Intents', turn on 'Message Content Intent', click Save."
 
-Collect all tokens, then run the `fleet init` command from Step 3 (with actual tokens substituted):
+After collecting each token, **immediately generate an invite URL** and have the user invite that bot to their server before moving to the next bot. The invite URL format is:
+```
+https://discord.com/oauth2/authorize?client_id=BOT_CLIENT_ID&scope=bot&permissions=117840
+```
+To get the client ID: it's on the "General Information" page of the application, or extract it from the token (the base64-encoded part before the first dot is the bot's user/client ID).
+
+Tell user: "Open this link, select **[server name from Step 2]**, click Authorize."
+
+**Once all bots are created and invited**, run the `fleet init` command from Step 3 (with actual tokens substituted). Because the bots are already in the target server, auto-detection will work correctly. If the bots are in multiple servers, always pass `--guild GUILD_ID` explicitly.
 
 ```bash
-fleet init --token T1 --token T2 --name FLEET_NAME --agent lead:local:lead:claude --agent worker:local:worker:codex
+fleet init --token T1 --token T2 --name FLEET_NAME --guild GUILD_ID --agent lead:local:lead:claude --agent worker:local:worker:codex
 ```
 
-The CLI auto-detects the Discord server and channel, validates tokens, generates fleet.yaml, .env, identity files, access.json, and prints invite URLs.
+The CLI validates tokens, detects the server and channel, generates fleet.yaml, .env, identity files, access.json, and prints confirmation.
+
+**After `fleet init` runs**, verify the output:
+- Confirm the detected server name matches what the user expects
+- Confirm the channel is the one chosen in Step 2
+- If either is wrong, re-run with explicit `--guild` and/or `--channel` flags
 
 Path defaults:
 - If the user does not care, do **not** ask about paths.
@@ -168,9 +214,67 @@ Path defaults:
 - Default agent state path is `~/.fleet/state/discord-<agent>`.
 - Only ask about `workspace` or `state_dir` if they want a custom path or a different disk layout.
 
-Share each invite URL with the user: "Open this link, select your server, click Authorize."
+**If `fleet init` fails:**
+- "No Discord servers found" → the bot hasn't been invited yet. Have user open the invite URL and authorize.
+- "Bot is in N servers" → use `--guild GUILD_ID` to specify the correct server.
+- "No text channels found" → create a text channel in the Discord server first.
+- Invalid token → have user re-copy from Discord Developer Portal.
 
-**Done when:** `cat fleet.yaml` shows agents and a non-empty `channels` section. All bots are in the server.
+**Done when:** `cat fleet.yaml` shows agents with the correct `server_id` and `channels` section pointing to the right server and channel. All bots are in the server.
+
+
+### Step 4b: Set up remote servers (skip if all local)
+
+**Why:** Remote agents run via SSH. Fleet needs passwordless SSH access to start, stop, and manage agents on remote servers. Agents can't type passwords, so key-based auth is required.
+
+**Walk through one server at a time:**
+
+1. **Check if the user already has SSH key access:**
+   ```bash
+   ssh user@host echo ok
+   ```
+   - If this prints `ok` → SSH is working, skip to step 4.
+   - If it asks for a password or fails → continue to step 2.
+
+2. **Check for an existing SSH key:**
+   ```bash
+   ls ~/.ssh/id_ed25519.pub 2>/dev/null || ls ~/.ssh/id_rsa.pub 2>/dev/null
+   ```
+   - If a key exists → skip to step 3.
+   - If no key → generate one:
+     ```bash
+     ssh-keygen -t ed25519 -C "fleet" -f ~/.ssh/id_ed25519 -N ""
+     ```
+
+3. **Copy the public key to the remote server:**
+   ```bash
+   ssh-copy-id -i ~/.ssh/id_ed25519.pub user@host
+   ```
+   This will ask for the server password one last time. After this, SSH key auth is set up.
+   If `ssh-copy-id` isn't available, tell the user to manually append the contents of `~/.ssh/id_ed25519.pub` to `~/.ssh/authorized_keys` on the remote server.
+
+4. **Recommend adding an SSH config alias** (optional but cleaner):
+   ```
+   Host singapore
+       HostName <ip-or-hostname>
+       User <username>
+       IdentityFile ~/.ssh/id_ed25519
+   ```
+   Then use the alias in fleet: `--server singapore:singapore:username`
+
+5. **Run `fleet setup-server` to install dependencies on the remote:**
+   ```bash
+   fleet setup-server <ssh-host>
+   ```
+   This installs bun, claude, npm, codex, and tmux on the remote machine. Use `--reuse-codex-auth` if you want to copy Codex credentials to the remote.
+
+6. **Apply patches to the remote server's Discord plugin:**
+   ```bash
+   fleet patch
+   ```
+   This patches both local and remote plugin files (PARTNER_BOT_IDS + mention fallback).
+
+**Done when:** `ssh user@host echo ok` works without a password, and `fleet setup-server` completes successfully.
 
 
 ### Step 5: Start the team

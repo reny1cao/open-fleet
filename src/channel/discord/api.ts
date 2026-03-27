@@ -104,8 +104,20 @@ export class DiscordApi implements ChannelAdapter {
     if (!res.ok) {
       throw new Error(`Failed to list servers: ${res.status} ${res.statusText}`)
     }
-    const guilds = (await res.json()) as Array<{ id: string; name: string; owner_id?: string }>
-    return guilds.map((g) => ({ id: g.id, name: g.name, ownerId: g.owner_id }))
+    // /users/@me/guilds returns partial guild objects without owner_id
+    const guilds = (await res.json()) as Array<{ id: string; name: string }>
+    return guilds.map((g) => ({ id: g.id, name: g.name }))
+  }
+
+  async getGuildOwnerId(token: string, guildId: string): Promise<string | undefined> {
+    try {
+      const res = await discordFetch(`/guilds/${guildId}`, token)
+      if (!res.ok) return undefined
+      const guild = (await res.json()) as { owner_id?: string }
+      return guild.owner_id
+    } catch {
+      return undefined
+    }
   }
 
   async listChannels(token: string, serverId: string): Promise<ChannelInfo[]> {
