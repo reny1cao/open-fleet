@@ -78,7 +78,7 @@ export function buildIdentityPrompt(
   lines.push("- Do NOT use markdown tables — Discord doesn't render them")
   lines.push("- Do NOT use HTML tags or image syntax")
   lines.push("- OK to use: **bold**, *italic*, `code`, ```code blocks```, > quotes, - lists, # headings")
-  lines.push("- @mention teammates with `<@BOT_ID>`")
+  lines.push("- @mention teammates using the mention syntax from your roster in CLAUDE.md")
   lines.push("- Max 2000 chars per message — split longer messages")
 
   return lines.join("\n")
@@ -170,13 +170,23 @@ export function buildRosterClaudeMd(
 
   // How to work
   lines.push("## How to work")
+  lines.push("- **All communication happens via Discord** — use the reply tool to send messages")
+  lines.push("- **@mention to reach someone** — without @mention they won't see your message. Use the mention syntax from the roster above")
+  lines.push("- **Ack immediately** — when you receive a task, react or reply right away so the sender knows you're on it")
+  lines.push("- **Report results via Discord** — your terminal output is invisible to others")
   if (isLead) {
-    lines.push("- Receive tasks from the user, delegate to your team")
+    lines.push("")
+    lines.push("**As a lead:**")
+    lines.push("- Break down tasks and delegate to your team members")
     lines.push("- Only @mention agents listed above — other teams have their own lead")
-    lines.push("- If a task belongs to another team, @mention their lead")
+    lines.push("- If a task belongs to another team, @mention their lead in #command")
+    lines.push("- Verify results before reporting back to the user")
   } else {
-    lines.push("- You receive tasks from your lead — complete them and report back")
-    lines.push("- Only @mention agents listed above")
+    lines.push("")
+    lines.push("**As a worker:**")
+    lines.push("- You receive tasks from your lead — complete them and reply with results")
+    lines.push("- If you need help, @mention a teammate or your lead")
+    lines.push("- When done, reply with: what you did, what files changed, and whether it works")
   }
 
   return lines.join("\n")
