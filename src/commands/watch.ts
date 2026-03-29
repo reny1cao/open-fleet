@@ -1,6 +1,7 @@
 import { findConfigDir, loadConfig, sessionName, resolveStateDir } from "../core/config"
 import { resolveRuntime } from "../runtime/resolve"
 import { readHeartbeat, readRemoteHeartbeat, formatAge, type HeartbeatInfo, type HeartbeatState } from "../core/heartbeat"
+import { extractRecentActivity, type ActivityEvent } from "../core/activity"
 import type { RuntimeAdapter } from "../runtime/types"
 
 interface AgentSnapshot {
@@ -11,6 +12,7 @@ interface AgentSnapshot {
   heartbeat: HeartbeatState
   ageSec: number | null
   lastLine: string
+  events: ActivityEvent[]
 }
 
 export async function watch(opts: { interval?: number } = {}): Promise<void> {
@@ -54,18 +56,17 @@ export async function watch(opts: { interval?: number } = {}): Promise<void> {
         }
       } catch { /* ignore */ }
 
-      // Last output line (only if running)
+      // Capture output and parse events (only if running)
+      let events: ActivityEvent[] = []
       if (state === "on") {
         try {
-          const output = await agent.runtime.captureOutput(agent.session, 20)
+          const output = await agent.runtime.captureOutput(agent.session, 50)
           if (output && output.trim()) {
-            const lines = output.split("\n").filter(l => l.trim() !== "")
-            for (let i = lines.length - 1; i >= 0; i--) {
-              const l = lines[i].trim()
-              if (l && !l.startsWith("─") && !l.startsWith("⏵") && l !== "❯" && l.length > 2) {
-                lastLine = l.substring(0, 80)
-                break
-              }
+            const lines = output.split("\n")
+            events = extractRecentActivity(agent.name, lines, 10)
+            // Set lastLine from latest event
+            if (events.length > 0) {
+              lastLine = events[events.length - 1].summary.substring(0, 80)
             }
           }
         } catch { /* ignore */ }
@@ -79,6 +80,7 @@ export async function watch(opts: { interval?: number } = {}): Promise<void> {
         heartbeat: hb.state,
         ageSec: hb.ageSec,
         lastLine,
+        events,
       }
     }))
 
@@ -119,16 +121,23 @@ function render(snapshots: AgentSnapshot[], intervalSec: number = 5): void {
     out += `${color}${tag}${RESET}  ${agent.name.padEnd(20)} ${DIM}${agent.role.padEnd(14)}${RESET}${server}${age}\n`
   }
 
-  // Activity feed
+  // Activity feed — merged and sorted by type importance
   out += `\n${DIM}${"─".repeat(78)}${RESET}\n`
   out += `${BOLD}Activity${RESET}\n`
 
-  const active = snapshots.filter(s => s.state === "on" && s.lastLine)
-  if (active.length === 0) {
+  // Collect all events from all agents, keeping last 10 total
+  const allEvents: ActivityEvent[] = []
+  for (const snap of snapshots) {
+    allEvents.push(...snap.events)
+  }
+  const recentEvents = allEvents.slice(-10)
+
+  if (recentEvents.length === 0) {
     out += `${DIM}  No recent activity${RESET}\n`
   } else {
-    for (const agent of active) {
-      out += `${CYAN}${agent.name.padEnd(18)}${RESET} ${agent.lastLine}\n`
+    for (const event of recentEvents) {
+      const icon = eventIcon(event.type)
+      out += `${CYAN}${event.agent.padEnd(18)}${RESET} ${icon} ${event.summary}\n`
     }
   }
 
@@ -148,6 +157,21 @@ function formatState(agent: AgentSnapshot): { tag: string; color: string } {
   return { tag: "[off]  ", color: RED }
 }
 
+function eventIcon(type: ActivityEvent["type"]): string {
+  switch (type) {
+    case "discord_in":  return "←"
+    case "discord_out": return "→"
+    case "bash":        return "$"
+    case "file_op":     return "📄"
+    case "git":         return "⎇"
+    case "test":        return "✓"
+    case "thinking":    return "…"
+    case "complete":    return "✓"
+    case "error":       return "✗"
+    case "other":       return "·"
+  }
+}
+
 /**
  * Extract a testable snapshot from agent data (for unit testing the render logic).
  */
@@ -159,8 +183,9 @@ export function buildSnapshot(
   heartbeat: HeartbeatState,
   ageSec: number | null,
   lastLine: string,
+  events: ActivityEvent[] = [],
 ): AgentSnapshot {
-  return { name, role, server, state, heartbeat, ageSec, lastLine }
+  return { name, role, server, state, heartbeat, ageSec, lastLine, events }
 }
 
 export { formatState, type AgentSnapshot }
