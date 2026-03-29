@@ -14,6 +14,7 @@ import { setupServer } from "./commands/setup-server"
 import { restart } from "./commands/restart"
 import { runAgent } from "./commands/run-agent"
 import { logs } from "./commands/logs"
+import { watch } from "./commands/watch"
 import type { AgentAdapterKind } from "./core/types"
 
 function usage(): void {
@@ -26,6 +27,7 @@ Usage:
   fleet-next stop <agent> [--force]
   fleet-next logs <agent> [--lines N] [--follow] [--json]
   fleet-next logs --all [--lines N] [--json]
+  fleet-next watch [--interval N]
   fleet-next status [--json]
   fleet-next doctor [--json]
   fleet-next patch [--json]
@@ -120,6 +122,11 @@ export async function main(argv: string[]): Promise<void> {
         })
         break
       }
+      case "watch":
+        await watch({
+          interval: parseInt(parseFlagValue(args, "--interval") ?? "5"),
+        })
+        break
       case "status":
         await status({ json: parseFlag(args, "--json") })
         break
