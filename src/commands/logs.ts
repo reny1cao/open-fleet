@@ -51,7 +51,11 @@ async function captureOne(
       lines = [`[session not running]`]
     } else {
       const output = await runtime.captureOutput(session, lineCount)
-      lines = output.split("\n")
+      if (!output || output.trim() === "") {
+        lines = [`[session running but no output captured]`]
+      } else {
+        lines = output.split("\n")
+      }
     }
   } catch (err) {
     lines = [`[error: ${err instanceof Error ? err.message : err}]`]
