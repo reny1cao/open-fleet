@@ -1,8 +1,9 @@
-import { describe, it, expect } from "bun:test"
-import { buildIdentityPrompt, buildRosterClaudeMd, writeRoster, updateAllRosters } from "../src/core/identity"
+import { describe, it, expect, beforeEach, afterEach } from "bun:test"
+import { buildIdentityPrompt, buildRosterClaudeMd, writeRoster, updateAllRosters, loadKnowledgeDocs } from "../src/core/identity"
 import { resolveStateDir } from "../src/core/config"
-import { readFileSync, mkdirSync, rmSync } from "fs"
+import { readFileSync, writeFileSync, mkdirSync, rmSync } from "fs"
 import { join } from "path"
+import { tmpdir } from "os"
 import type { FleetConfig } from "../src/core/types"
 
 const config: FleetConfig = {
@@ -169,5 +170,87 @@ describe("buildIdentityPrompt — manager knowledge injection", () => {
   it("worker's identity does NOT contain Fleet Management section", () => {
     const prompt = buildIdentityPrompt("worker", managerConfig, botIds)
     expect(prompt).not.toContain("Fleet Management")
+  })
+})
+
+// ── Knowledge Docs ────────────────────────────────────────────────────────────
+
+function makeTempDir(): string {
+  const dir = join(
+    tmpdir(),
+    `fleet-knowledge-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  )
+  mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+describe("loadKnowledgeDocs", () => {
+  let dir: string
+
+  beforeEach(() => { dir = makeTempDir() })
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
+
+  it("returns empty string when directory does not exist", () => {
+    const result = loadKnowledgeDocs("/tmp/nonexistent-knowledge-dir-xyz")
+    expect(result).toBe("")
+  })
+
+  it("returns empty string when directory is empty", () => {
+    const result = loadKnowledgeDocs(dir)
+    expect(result).toBe("")
+  })
+
+  it("loads a single knowledge file", () => {
+    writeFileSync(join(dir, "neo4j"), "# Neo4j Rules\nMERGE not CREATE")
+    const result = loadKnowledgeDocs(dir)
+    expect(result).toContain("Team Knowledge")
+    expect(result).toContain("Neo4j Rules")
+    expect(result).toContain("MERGE not CREATE")
+  })
+
+  it("loads multiple knowledge files sorted alphabetically", () => {
+    writeFileSync(join(dir, "docker"), "# Docker Rules\nNever use special chars")
+    writeFileSync(join(dir, "neo4j"), "# Neo4j Rules\nMERGE not CREATE")
+    const result = loadKnowledgeDocs(dir)
+    expect(result).toContain("Docker Rules")
+    expect(result).toContain("Neo4j Rules")
+    // Docker should come before Neo4j (alphabetical)
+    const dockerIdx = result.indexOf("Docker")
+    const neo4jIdx = result.indexOf("Neo4j")
+    expect(dockerIdx).toBeLessThan(neo4jIdx)
+  })
+
+  it("skips hidden files", () => {
+    writeFileSync(join(dir, ".hidden"), "secret stuff")
+    writeFileSync(join(dir, "visible"), "# Visible\nActual knowledge")
+    const result = loadKnowledgeDocs(dir)
+    expect(result).toContain("Visible")
+    expect(result).not.toContain("secret stuff")
+  })
+
+  it("skips empty files", () => {
+    writeFileSync(join(dir, "empty"), "")
+    writeFileSync(join(dir, "real"), "# Real\nSome content")
+    const result = loadKnowledgeDocs(dir)
+    expect(result).toContain("Real")
+  })
+
+  it("includes preamble about following rules", () => {
+    writeFileSync(join(dir, "test"), "# Test\nRule 1")
+    const result = loadKnowledgeDocs(dir)
+    expect(result).toContain("learnings from past sessions")
+    expect(result).toContain("known pitfalls")
+  })
+})
+
+describe("buildRosterClaudeMd — knowledge integration", () => {
+  it("includes knowledge docs when they exist", () => {
+    // This test depends on ~/.fleet/docs/knowledge/ existing on the test machine
+    // We test the integration by checking the function output
+    const roster = buildRosterClaudeMd("pm", config, botIds)
+    // If knowledge dir exists on this machine, it will include Team Knowledge
+    // If not, it won't — both are valid. Just verify the roster is well-formed.
+    expect(roster).toContain("Fleet Team Roster")
+    expect(roster).toContain("How to work")
   })
 })

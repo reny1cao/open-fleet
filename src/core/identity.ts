@@ -1,5 +1,6 @@
-import { mkdirSync, writeFileSync, readFileSync, existsSync } from "fs"
+import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from "fs"
 import { join } from "path"
+import { homedir } from "os"
 import type { FleetConfig } from "./types"
 
 function isManager(agentName: string, config: FleetConfig): boolean {
@@ -189,6 +190,12 @@ export function buildRosterClaudeMd(
     lines.push("- When done, reply with: what you did, what files changed, and whether it works")
   }
 
+  // Append team knowledge docs if available
+  const knowledge = loadKnowledgeDocs()
+  if (knowledge) {
+    lines.push(knowledge)
+  }
+
   return lines.join("\n")
 }
 
@@ -247,4 +254,51 @@ export function readRoleOverlay(roleName: string, fleetDir: string): string | nu
   const filePath = join(fleetDir, "identities", "roles", `${roleName}.md`)
   if (!existsSync(filePath)) return null
   return readFileSync(filePath, "utf8")
+}
+
+// ── Knowledge Docs ────────────────────────────────────────────────────────────
+
+const DEFAULT_KNOWLEDGE_DIR = join(homedir(), ".fleet", "docs", "knowledge")
+
+/**
+ * Load all knowledge docs from the knowledge directory.
+ * Each file is a topic (filename = topic name, content = rules/learnings).
+ * Returns formatted markdown section, or empty string if no docs found.
+ */
+export function loadKnowledgeDocs(knowledgeDir?: string): string {
+  const dir = knowledgeDir ?? DEFAULT_KNOWLEDGE_DIR
+  if (!existsSync(dir)) return ""
+
+  const files = readdirSync(dir).filter(f => {
+    // Skip hidden files and directories
+    if (f.startsWith(".")) return false
+    const path = join(dir, f)
+    try {
+      const stat = require("fs").statSync(path)
+      return stat.isFile()
+    } catch {
+      return false
+    }
+  }).sort()
+
+  if (files.length === 0) return ""
+
+  const sections: string[] = []
+  for (const file of files) {
+    const content = readFileSync(join(dir, file), "utf8").trim()
+    if (content) {
+      sections.push(content)
+    }
+  }
+
+  if (sections.length === 0) return ""
+
+  return [
+    "",
+    "## Team Knowledge",
+    "",
+    "These are learnings from past sessions. Follow these rules to avoid known pitfalls.",
+    "",
+    ...sections,
+  ].join("\n")
 }
