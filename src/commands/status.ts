@@ -36,7 +36,9 @@ export async function status(opts: { json?: boolean }): Promise<void> {
     const isRemote = def.server && def.server !== "local" && config.servers?.[def.server]
     let hb: HeartbeatInfo
     if (isRemote) {
-      hb = await readRemoteHeartbeat(stateDir, config.servers![def.server])
+      // Use raw ~ path so remote shell expands to remote user's home
+      const rawStateDir = def.stateDir ?? `~/.fleet/state/${config.fleet.name}-${name}`
+      hb = await readRemoteHeartbeat(rawStateDir, config.servers![def.server])
     } else {
       hb = readHeartbeat(stateDir)
     }

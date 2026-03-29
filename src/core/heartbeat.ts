@@ -72,15 +72,17 @@ export function writeHeartbeat(stateDir: string): void {
 
 /**
  * Read heartbeat from a remote agent via SSH.
- * Returns the same HeartbeatInfo as local readHeartbeat.
+ * stateDir should be the raw path with ~ (e.g., "~/.fleet/state/agent")
+ * so the remote shell expands ~ to the remote user's home directory.
  */
 export async function readRemoteHeartbeat(
-  stateDir: string,
+  remoteStateDir: string,
   serverConfig: ServerConfig
 ): Promise<HeartbeatInfo> {
   try {
     const { sshRun } = await import("../runtime/remote")
-    const path = join(stateDir, HEARTBEAT_FILE)
+    // Use the raw path — let the remote shell expand ~
+    const path = `${remoteStateDir}/${HEARTBEAT_FILE}`
     const output = await sshRun(serverConfig, `cat '${path}' 2>/dev/null || echo '{}'`)
     const data: HeartbeatData = JSON.parse(output.trim())
     if (!data.timestamp) {
