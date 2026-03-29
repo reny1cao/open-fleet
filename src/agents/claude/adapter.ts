@@ -2,6 +2,7 @@ import { writeBootIdentity, writeRoster } from "../../core/identity"
 import { getToken } from "../../core/config"
 import { DiscordApi } from "../../channel/discord/api"
 import { writeAccessConfig } from "../../channel/discord/access"
+import { heartbeatShellSnippet } from "../../core/heartbeat"
 import { sshRun, scp } from "../../runtime/remote"
 import type { AgentAdapter } from "../types"
 import type { StartAgentContext } from "../types"
@@ -123,9 +124,12 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       `--channels ${discord.pluginId()}`,
     ].join(" ")
 
+    // Heartbeat path: use the remote stateDir for remote agents
+    const hbStateDir = isRemote ? cmdStateDir : stateDir
     const wrapperLines = [
       "#!/bin/bash",
       ...(isRemote ? ['export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"'] : []),
+      ...heartbeatShellSnippet(hbStateDir),
       "MAX_RETRIES=5",
       "RETRY_COUNT=0",
       "MIN_UPTIME=30",

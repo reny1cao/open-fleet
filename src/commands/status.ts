@@ -1,5 +1,6 @@
-import { findConfigDir, loadConfig, sessionName } from "../core/config"
+import { findConfigDir, loadConfig, sessionName, resolveStateDir } from "../core/config"
 import { resolveRuntime } from "../runtime/resolve"
+import { readHeartbeat, formatAge, type HeartbeatState } from "../core/heartbeat"
 
 interface AgentStatus {
   name: string
@@ -7,6 +8,9 @@ interface AgentStatus {
   role: string
   state: "on" | "off" | "error"
   session: string
+  heartbeat: HeartbeatState
+  lastSeen: string | null
+  ageSec: number | null
 }
 
 export async function status(opts: { json?: boolean }): Promise<void> {
@@ -26,12 +30,20 @@ export async function status(opts: { json?: boolean }): Promise<void> {
     } catch {
       state = "error"
     }
+
+    // Read heartbeat
+    const stateDir = resolveStateDir(name, config)
+    const hb = readHeartbeat(stateDir)
+
     results.push({
       name,
       server: def.server ?? "",
       role: def.role,
       state,
       session,
+      heartbeat: hb.state,
+      lastSeen: hb.lastSeen,
+      ageSec: hb.ageSec,
     })
   }
 
@@ -42,14 +54,41 @@ export async function status(opts: { json?: boolean }): Promise<void> {
   }
 
   // 4. Formatted table output
-  const ON = "\x1b[32m[on]\x1b[0m"
-  const OFF = "\x1b[31m[off]\x1b[0m"
-  const ERR = "\x1b[33m[err]\x1b[0m"
+  const ON = "\x1b[32m"
+  const OFF = "\x1b[31m"
+  const YELLOW = "\x1b[33m"
+  const DIM = "\x1b[2m"
+  const RESET = "\x1b[0m"
 
   for (const agent of results) {
-    const tag = agent.state === "on" ? ON : agent.state === "error" ? ERR : OFF
+    // Determine display state combining tmux + heartbeat
+    let tag: string
+    let color: string
+    if (agent.state === "on") {
+      if (agent.heartbeat === "alive") {
+        tag = "[alive]"
+        color = ON
+      } else if (agent.heartbeat === "stale") {
+        tag = "[stale]"
+        color = YELLOW
+      } else if (agent.heartbeat === "dead") {
+        tag = "[hung?]"
+        color = YELLOW
+      } else {
+        // tmux running but no heartbeat file yet
+        tag = "[on]"
+        color = ON
+      }
+    } else if (agent.state === "error") {
+      tag = "[err]"
+      color = YELLOW
+    } else {
+      tag = "[off]"
+      color = OFF
+    }
+
     const server = agent.server && agent.server !== "local" ? ` (${agent.server})` : ""
-    const attachCmd = `tmux attach -t ${agent.session}`
-    console.log(`${tag}  ${agent.name.padEnd(20)} ${agent.role.padEnd(30)}${server}`)
+    const age = agent.state === "on" ? `  ${DIM}${formatAge(agent.ageSec)}${RESET}` : ""
+    console.log(`${color}${tag}${RESET}  ${agent.name.padEnd(20)} ${agent.role.padEnd(30)}${server}${age}`)
   }
 }
