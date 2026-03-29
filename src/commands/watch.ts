@@ -125,11 +125,12 @@ function render(snapshots: AgentSnapshot[], intervalSec: number = 5): void {
   out += `\n${DIM}${"─".repeat(78)}${RESET}\n`
   out += `${BOLD}Activity${RESET}\n`
 
-  // Collect all events from all agents, keeping last 10 total
+  // Collect all events, sort chronologically by sequence, keep last 10
   const allEvents: ActivityEvent[] = []
   for (const snap of snapshots) {
     allEvents.push(...snap.events)
   }
+  allEvents.sort((a, b) => a.seq - b.seq)
   const recentEvents = allEvents.slice(-10)
 
   if (recentEvents.length === 0) {

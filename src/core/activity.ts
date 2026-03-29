@@ -21,14 +21,22 @@ export interface ActivityEvent {
   summary: string       // Short human-readable description
   agent: string         // Agent name
   raw: string           // Original line (cleaned)
+  seq: number           // Global sequence for chronological ordering
 }
 
 // ANSI escape code stripper
 const ANSI_RE = /\x1b\[[0-9;]*[a-zA-Z]/g
 
+// Global sequence counter for chronological ordering across agents
+let _seqCounter = 0
+
+/** Reset sequence counter (for testing). */
+export function resetSequence(): void { _seqCounter = 0 }
+
 /**
  * Parse tmux output lines into meaningful activity events.
- * Filters noise and classifies each event.
+ * Filters noise and classifies each event. Events are tagged with
+ * a global sequence number for chronological interleaving.
  */
 export function parseActivity(agent: string, rawLines: string[]): ActivityEvent[] {
   const events: ActivityEvent[] = []
@@ -41,7 +49,10 @@ export function parseActivity(agent: string, rawLines: string[]): ActivityEvent[
     if (isNoise(line)) continue
 
     const event = classify(agent, line)
-    if (event) events.push(event)
+    if (event) {
+      event.seq = _seqCounter++
+      events.push(event)
+    }
   }
 
   return events
@@ -155,9 +166,14 @@ function classify(agent: string, line: string): ActivityEvent | null {
 
   // Error lines
   if (/^Error:|^error:/i.test(line)) {
-    return { type: "error", summary: line.substring(0, 60), agent, raw: line }
+    return { type: "error", summary: line.substring(0, 60), agent, raw: line, seq: 0 }
   }
 
-  // Skip everything else as noise
+  // Agent output text — meaningful lines that didn't match specific patterns
+  // Keep lines that look like agent prose (starts with letter/bullet, min length)
+  if (line.length > 10 && /^[A-Za-z←→✓⎇●✢✽✻⎿]/.test(line)) {
+    return { type: "other", summary: line.substring(0, 60), agent, raw: line, seq: 0 }
+  }
+
   return null
 }
