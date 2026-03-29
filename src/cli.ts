@@ -13,6 +13,7 @@ import { use } from "./commands/use"
 import { setupServer } from "./commands/setup-server"
 import { restart } from "./commands/restart"
 import { runAgent } from "./commands/run-agent"
+import { logs } from "./commands/logs"
 import type { AgentAdapterKind } from "./core/types"
 
 function usage(): void {
@@ -23,6 +24,8 @@ Usage:
   fleet-next start <agent> [--wait] [--role <r>]
   fleet-next restart <agent>
   fleet-next stop <agent> [--force]
+  fleet-next logs <agent> [--lines N] [--follow] [--json]
+  fleet-next logs --all [--lines N] [--json]
   fleet-next status [--json]
   fleet-next doctor [--json]
   fleet-next patch [--json]
@@ -102,6 +105,19 @@ export async function main(argv: string[]): Promise<void> {
         const agent = args[1]
         if (!agent || agent.startsWith("--")) throw new Error("Usage: fleet-next stop <agent>")
         await stop(agent, { force: parseFlag(args, "--force"), json: parseFlag(args, "--json") })
+        break
+      }
+      case "logs": {
+        const agent = parseFlag(args, "--all") ? undefined : args[1]
+        if (!agent && !parseFlag(args, "--all")) {
+          throw new Error("Usage: fleet logs <agent> [--lines N] [--follow] [--json]\n       fleet logs --all [--lines N] [--json]")
+        }
+        await logs(agent, {
+          lines: parseInt(parseFlagValue(args, "--lines") ?? "50"),
+          all: parseFlag(args, "--all"),
+          follow: parseFlag(args, "--follow") || parseFlag(args, "-f"),
+          json: parseFlag(args, "--json"),
+        })
         break
       }
       case "status":
