@@ -1,9 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach } from "bun:test"
-import { buildIdentityPrompt, buildRosterClaudeMd, writeRoster, updateAllRosters, loadKnowledgeDocs } from "../src/core/identity"
+import { describe, it, expect } from "bun:test"
+import { buildIdentityPrompt, buildRosterClaudeMd, writeRoster, updateAllRosters } from "../src/core/identity"
 import { resolveStateDir } from "../src/core/config"
-import { readFileSync, writeFileSync, mkdirSync, rmSync } from "fs"
+import { readFileSync, mkdirSync, rmSync } from "fs"
 import { join } from "path"
-import { tmpdir } from "os"
 import type { FleetConfig } from "../src/core/types"
 
 const config: FleetConfig = {
@@ -173,97 +172,3 @@ describe("buildIdentityPrompt — manager knowledge injection", () => {
   })
 })
 
-// ── Knowledge Docs ────────────────────────────────────────────────────────────
-
-function makeTempDir(): string {
-  const dir = join(
-    tmpdir(),
-    `fleet-knowledge-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
-  )
-  mkdirSync(dir, { recursive: true })
-  return dir
-}
-
-describe("loadKnowledgeDocs", () => {
-  let dir: string
-
-  beforeEach(() => { dir = makeTempDir() })
-  afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
-
-  it("returns empty string when directory does not exist", () => {
-    const result = loadKnowledgeDocs("/tmp/nonexistent-knowledge-dir-xyz")
-    expect(result).toBe("")
-  })
-
-  it("returns empty string when directory is empty", () => {
-    const result = loadKnowledgeDocs(dir)
-    expect(result).toBe("")
-  })
-
-  it("loads a single knowledge file", () => {
-    writeFileSync(join(dir, "neo4j"), "# Neo4j Rules\nMERGE not CREATE")
-    const result = loadKnowledgeDocs(dir)
-    expect(result).toContain("Team Knowledge")
-    expect(result).toContain("Neo4j Rules")
-    expect(result).toContain("MERGE not CREATE")
-  })
-
-  it("loads multiple knowledge files sorted alphabetically", () => {
-    writeFileSync(join(dir, "docker"), "# Docker Rules\nNever use special chars")
-    writeFileSync(join(dir, "neo4j"), "# Neo4j Rules\nMERGE not CREATE")
-    const result = loadKnowledgeDocs(dir)
-    expect(result).toContain("Docker Rules")
-    expect(result).toContain("Neo4j Rules")
-    // Docker should come before Neo4j (alphabetical)
-    const dockerIdx = result.indexOf("Docker")
-    const neo4jIdx = result.indexOf("Neo4j")
-    expect(dockerIdx).toBeLessThan(neo4jIdx)
-  })
-
-  it("skips hidden files", () => {
-    writeFileSync(join(dir, ".hidden"), "secret stuff")
-    writeFileSync(join(dir, "visible"), "# Visible\nActual knowledge")
-    const result = loadKnowledgeDocs(dir)
-    expect(result).toContain("Visible")
-    expect(result).not.toContain("secret stuff")
-  })
-
-  it("skips empty files", () => {
-    writeFileSync(join(dir, "empty"), "")
-    writeFileSync(join(dir, "real"), "# Real\nSome content")
-    const result = loadKnowledgeDocs(dir)
-    expect(result).toContain("Real")
-  })
-
-  it("includes preamble about following rules", () => {
-    writeFileSync(join(dir, "test"), "# Test\nRule 1")
-    const result = loadKnowledgeDocs(dir)
-    expect(result).toContain("learnings from past sessions")
-    expect(result).toContain("known pitfalls")
-  })
-})
-
-describe("loadKnowledgeDocs — size limits", () => {
-  let dir: string
-  beforeEach(() => { dir = makeTempDir() })
-  afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
-
-  it("skips files larger than 10KB", () => {
-    writeFileSync(join(dir, "big"), "x".repeat(11_000))
-    writeFileSync(join(dir, "small"), "# Small\nOK")
-    const result = loadKnowledgeDocs(dir)
-    expect(result).toContain("Small")
-    expect(result).toContain("skipped big")
-    expect(result).not.toContain("x".repeat(100))
-  })
-
-  it("stops when total exceeds 50KB", () => {
-    // Create files that together exceed 50KB
-    for (let i = 0; i < 7; i++) {
-      writeFileSync(join(dir, `file-${i}`), `# File ${i}\n` + "y".repeat(9000))
-    }
-    const result = loadKnowledgeDocs(dir)
-    // Should include some but not all
-    expect(result).toContain("remaining files skipped")
-  })
-})

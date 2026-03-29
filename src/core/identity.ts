@@ -1,6 +1,5 @@
-import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, statSync } from "fs"
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from "fs"
 import { join } from "path"
-import { homedir } from "os"
 import type { FleetConfig } from "./types"
 
 function isManager(agentName: string, config: FleetConfig): boolean {
@@ -190,12 +189,6 @@ export function buildRosterClaudeMd(
     lines.push("- When done, reply with: what you did, what files changed, and whether it works")
   }
 
-  // Append team knowledge docs if available
-  const knowledge = loadKnowledgeDocs()
-  if (knowledge) {
-    lines.push(knowledge)
-  }
-
   return lines.join("\n")
 }
 
@@ -256,61 +249,3 @@ export function readRoleOverlay(roleName: string, fleetDir: string): string | nu
   return readFileSync(filePath, "utf8")
 }
 
-// ── Knowledge Docs ────────────────────────────────────────────────────────────
-
-const DEFAULT_KNOWLEDGE_DIR = join(homedir(), ".fleet", "docs", "knowledge")
-
-/**
- * Load all knowledge docs from the knowledge directory.
- * Each file is a topic (filename = topic name, content = rules/learnings).
- * Returns formatted markdown section, or empty string if no docs found.
- */
-export function loadKnowledgeDocs(knowledgeDir?: string): string {
-  const dir = knowledgeDir ?? DEFAULT_KNOWLEDGE_DIR
-  if (!existsSync(dir)) return ""
-
-  const MAX_FILE_SIZE = 10_240  // 10KB per file
-  const MAX_TOTAL_SIZE = 51_200 // 50KB total
-
-  const files = readdirSync(dir).filter(f => {
-    if (f.startsWith(".")) return false
-    try {
-      return statSync(join(dir, f)).isFile()
-    } catch {
-      return false
-    }
-  }).sort()
-
-  if (files.length === 0) return ""
-
-  const sections: string[] = []
-  let totalSize = 0
-  for (const file of files) {
-    const path = join(dir, file)
-    const size = statSync(path).size
-    if (size > MAX_FILE_SIZE) {
-      sections.push(`<!-- skipped ${file}: ${size} bytes exceeds ${MAX_FILE_SIZE} limit -->`)
-      continue
-    }
-    if (totalSize + size > MAX_TOTAL_SIZE) {
-      sections.push(`<!-- remaining files skipped: total would exceed ${MAX_TOTAL_SIZE} bytes -->`)
-      break
-    }
-    const content = readFileSync(path, "utf8").trim()
-    if (content) {
-      sections.push(content)
-      totalSize += size
-    }
-  }
-
-  if (sections.length === 0) return ""
-
-  return [
-    "",
-    "## Team Knowledge",
-    "",
-    "These are learnings from past sessions. Follow these rules to avoid known pitfalls.",
-    "",
-    ...sections,
-  ].join("\n")
-}
