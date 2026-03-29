@@ -44,7 +44,9 @@ You ──→ Lead (understands your intent, delegates, tests)
 fleet start <agent>              # Start an agent
 fleet stop <agent>               # Stop an agent
 fleet apply                      # Start all agents
-fleet status                     # Who's online
+fleet status                     # Who's online (with heartbeat health)
+fleet logs <agent>               # Tail an agent's output
+fleet logs --all                 # Unified stream from all agents
 fleet inject <agent> <role>      # Change an agent's role
 fleet add-agent                  # Add a new agent to the fleet
 fleet set-adapter <agent> codex  # Switch an existing agent to Codex or Claude
