@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from "fs"
+import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, statSync } from "fs"
 import { join } from "path"
 import { homedir } from "os"
 import type { FleetConfig } from "./types"
@@ -269,13 +269,13 @@ export function loadKnowledgeDocs(knowledgeDir?: string): string {
   const dir = knowledgeDir ?? DEFAULT_KNOWLEDGE_DIR
   if (!existsSync(dir)) return ""
 
+  const MAX_FILE_SIZE = 10_240  // 10KB per file
+  const MAX_TOTAL_SIZE = 51_200 // 50KB total
+
   const files = readdirSync(dir).filter(f => {
-    // Skip hidden files and directories
     if (f.startsWith(".")) return false
-    const path = join(dir, f)
     try {
-      const stat = require("fs").statSync(path)
-      return stat.isFile()
+      return statSync(join(dir, f)).isFile()
     } catch {
       return false
     }
@@ -284,10 +284,22 @@ export function loadKnowledgeDocs(knowledgeDir?: string): string {
   if (files.length === 0) return ""
 
   const sections: string[] = []
+  let totalSize = 0
   for (const file of files) {
-    const content = readFileSync(join(dir, file), "utf8").trim()
+    const path = join(dir, file)
+    const size = statSync(path).size
+    if (size > MAX_FILE_SIZE) {
+      sections.push(`<!-- skipped ${file}: ${size} bytes exceeds ${MAX_FILE_SIZE} limit -->`)
+      continue
+    }
+    if (totalSize + size > MAX_TOTAL_SIZE) {
+      sections.push(`<!-- remaining files skipped: total would exceed ${MAX_TOTAL_SIZE} bytes -->`)
+      break
+    }
+    const content = readFileSync(path, "utf8").trim()
     if (content) {
       sections.push(content)
+      totalSize += size
     }
   }
 

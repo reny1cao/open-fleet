@@ -243,14 +243,27 @@ describe("loadKnowledgeDocs", () => {
   })
 })
 
-describe("buildRosterClaudeMd — knowledge integration", () => {
-  it("includes knowledge docs when they exist", () => {
-    // This test depends on ~/.fleet/docs/knowledge/ existing on the test machine
-    // We test the integration by checking the function output
-    const roster = buildRosterClaudeMd("pm", config, botIds)
-    // If knowledge dir exists on this machine, it will include Team Knowledge
-    // If not, it won't — both are valid. Just verify the roster is well-formed.
-    expect(roster).toContain("Fleet Team Roster")
-    expect(roster).toContain("How to work")
+describe("loadKnowledgeDocs — size limits", () => {
+  let dir: string
+  beforeEach(() => { dir = makeTempDir() })
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
+
+  it("skips files larger than 10KB", () => {
+    writeFileSync(join(dir, "big"), "x".repeat(11_000))
+    writeFileSync(join(dir, "small"), "# Small\nOK")
+    const result = loadKnowledgeDocs(dir)
+    expect(result).toContain("Small")
+    expect(result).toContain("skipped big")
+    expect(result).not.toContain("x".repeat(100))
+  })
+
+  it("stops when total exceeds 50KB", () => {
+    // Create files that together exceed 50KB
+    for (let i = 0; i < 7; i++) {
+      writeFileSync(join(dir, `file-${i}`), `# File ${i}\n` + "y".repeat(9000))
+    }
+    const result = loadKnowledgeDocs(dir)
+    // Should include some but not all
+    expect(result).toContain("remaining files skipped")
   })
 })
