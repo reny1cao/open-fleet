@@ -28,12 +28,12 @@ export async function watch(opts: { interval?: number } = {}): Promise<void> {
     rawStateDir: (def as any).stateDir ?? `~/.fleet/state/${config.fleet.name}-${name}`,
   }))
 
+  const intervalSec = opts.interval ?? 5
+
   // Main loop
   while (true) {
-    const snapshots: AgentSnapshot[] = []
-
-    // Collect status + last output line for each agent
-    await Promise.all(agents.map(async (agent) => {
+    // Fix #2: Promise.all returns results in input order — no push race
+    const snapshots = await Promise.all(agents.map(async (agent): Promise<AgentSnapshot> => {
       let state: "on" | "off" | "error" = "off"
       let lastLine = ""
       let hb: HeartbeatInfo = { state: "unknown", lastSeen: null, ageSec: null }
@@ -60,7 +60,6 @@ export async function watch(opts: { interval?: number } = {}): Promise<void> {
           const output = await agent.runtime.captureOutput(agent.session, 20)
           if (output && output.trim()) {
             const lines = output.split("\n").filter(l => l.trim() !== "")
-            // Find the last meaningful line (skip prompts and separators)
             for (let i = lines.length - 1; i >= 0; i--) {
               const l = lines[i].trim()
               if (l && !l.startsWith("─") && !l.startsWith("⏵") && l !== "❯" && l.length > 2) {
@@ -72,7 +71,7 @@ export async function watch(opts: { interval?: number } = {}): Promise<void> {
         } catch { /* ignore */ }
       }
 
-      snapshots.push({
+      return {
         name: agent.name,
         role: (agent.def as any).role ?? "",
         server: (agent.def as any).server ?? "local",
@@ -80,11 +79,11 @@ export async function watch(opts: { interval?: number } = {}): Promise<void> {
         heartbeat: hb.state,
         ageSec: hb.ageSec,
         lastLine,
-      })
+      }
     }))
 
     // Render
-    render(snapshots)
+    render(snapshots, intervalSec)
 
     // Wait
     await Bun.sleep(intervalMs)
@@ -102,7 +101,7 @@ const YELLOW = "\x1b[33m"
 const CYAN = "\x1b[36m"
 const GRAY = "\x1b[90m"
 
-function render(snapshots: AgentSnapshot[]): void {
+function render(snapshots: AgentSnapshot[], intervalSec: number = 5): void {
   const now = new Date().toLocaleTimeString()
   const onCount = snapshots.filter(s => s.state === "on").length
   const totalCount = snapshots.length
@@ -133,15 +132,16 @@ function render(snapshots: AgentSnapshot[]): void {
     }
   }
 
-  out += `\n${DIM}Ctrl+C to quit · refreshing every 5s${RESET}`
+  out += `\n${DIM}Ctrl+C to quit · refreshing every ${intervalSec}s${RESET}`
   process.stdout.write(out)
 }
 
 function formatState(agent: AgentSnapshot): { tag: string; color: string } {
+  // All tags padded to 7 chars for consistent column alignment
   if (agent.state === "on") {
     if (agent.heartbeat === "alive") return { tag: "[alive]", color: GREEN }
     if (agent.heartbeat === "stale") return { tag: "[stale]", color: YELLOW }
-    if (agent.heartbeat === "dead") return { tag: "[hung?]", color: YELLOW }
+    if (agent.heartbeat === "dead")  return { tag: "[hung?]", color: YELLOW }
     return { tag: "[on]   ", color: GREEN }
   }
   if (agent.state === "error") return { tag: "[err]  ", color: YELLOW }
