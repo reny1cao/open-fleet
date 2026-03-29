@@ -1,5 +1,6 @@
 import { findConfigDir, loadConfig, sessionName } from "../core/config"
 import { resolveRuntime } from "../runtime/resolve"
+import type { RuntimeAdapter } from "../runtime/types"
 
 interface LogEntry {
   agent: string
@@ -35,37 +36,40 @@ export async function logs(
   }
 }
 
+async function captureOne(
+  name: string,
+  config: any,
+  lineCount: number,
+): Promise<LogEntry> {
+  const session = sessionName(config.fleet.name, name)
+  const runtime = resolveRuntime(name, config)
+
+  let lines: string[] = []
+  try {
+    const running = await runtime.isRunning(session)
+    if (!running) {
+      lines = [`[session not running]`]
+    } else {
+      const output = await runtime.captureOutput(session, lineCount)
+      lines = output.split("\n")
+    }
+  } catch (err) {
+    lines = [`[error: ${err instanceof Error ? err.message : err}]`]
+  }
+
+  return { agent: name, lines, timestamp: new Date().toISOString() }
+}
+
 async function captureLogs(
   agentNames: string[],
   config: any,
   lineCount: number,
   json?: boolean,
 ): Promise<void> {
-  const results: LogEntry[] = []
-
-  for (const name of agentNames) {
-    const session = sessionName(config.fleet.name, name)
-    const runtime = resolveRuntime(name, config)
-
-    let lines: string[] = []
-    try {
-      const running = await runtime.isRunning(session)
-      if (!running) {
-        lines = [`[session not running]`]
-      } else {
-        const output = await runtime.captureOutput(session, lineCount)
-        lines = output.split("\n")
-      }
-    } catch (err) {
-      lines = [`[error: ${err instanceof Error ? err.message : err}]`]
-    }
-
-    results.push({
-      agent: name,
-      lines,
-      timestamp: new Date().toISOString(),
-    })
-  }
+  // Parallel capture for all agents (fix #2: avoid sequential SSH round-trips)
+  const results = await Promise.all(
+    agentNames.map(name => captureOne(name, config, lineCount))
+  )
 
   if (json) {
     console.log(JSON.stringify(results, null, 2))
@@ -94,13 +98,20 @@ async function followLogs(
   lineCount: number,
   json?: boolean,
 ): Promise<void> {
-  // Track previously seen content to only show new lines
   const seen = new Map<string, string[]>()
+
+  // Pre-resolve runtimes (fix #3: don't recreate every poll iteration)
+  const runtimes = new Map<string, { runtime: RuntimeAdapter; session: string }>()
+  for (const name of agentNames) {
+    runtimes.set(name, {
+      runtime: resolveRuntime(name, config),
+      session: sessionName(config.fleet.name, name),
+    })
+  }
 
   // Initial capture
   for (const name of agentNames) {
-    const session = sessionName(config.fleet.name, name)
-    const runtime = resolveRuntime(name, config)
+    const { runtime, session } = runtimes.get(name)!
     try {
       const running = await runtime.isRunning(session)
       if (running) {
@@ -108,7 +119,6 @@ async function followLogs(
         const lines = output.split("\n")
         seen.set(name, lines)
 
-        // Print initial output
         if (json) {
           console.log(JSON.stringify({ agent: name, lines, timestamp: new Date().toISOString() }))
         } else {
@@ -124,13 +134,12 @@ async function followLogs(
   }
 
   // Poll loop
-  const pollInterval = 1000 // 1 second
+  const pollInterval = 1000
   while (true) {
     await Bun.sleep(pollInterval)
 
     for (const name of agentNames) {
-      const session = sessionName(config.fleet.name, name)
-      const runtime = resolveRuntime(name, config)
+      const { runtime, session } = runtimes.get(name)!
 
       try {
         const running = await runtime.isRunning(session)
@@ -140,7 +149,6 @@ async function followLogs(
         const currentLines = output.split("\n")
         const previousLines = seen.get(name) ?? []
 
-        // Find new lines by comparing against previous capture
         const newLines = diffLines(previousLines, currentLines)
         if (newLines.length > 0) {
           seen.set(name, currentLines)
@@ -162,34 +170,43 @@ async function followLogs(
 
 /**
  * Find new lines by comparing previous and current captures.
- * Looks for the longest suffix of `prev` that appears in `current`,
+ * Matches the longest contiguous suffix of `prev` in `current`,
  * then returns everything after that overlap.
+ *
+ * Fix: uses suffix matching instead of single last-line anchor
+ * to handle repeated lines correctly.
  */
 export function diffLines(prev: string[], current: string[]): string[] {
   if (prev.length === 0) return current
 
-  // Filter out empty trailing lines for comparison
   const prevClean = prev.filter(l => l.trim() !== "")
   const currClean = current.filter(l => l.trim() !== "")
 
   if (prevClean.length === 0) return currClean
   if (currClean.length === 0) return []
 
-  // Find the longest matching overlap
-  const lastPrev = prevClean[prevClean.length - 1]
-  let overlapEnd = -1
-  for (let i = currClean.length - 1; i >= 0; i--) {
-    if (currClean[i] === lastPrev) {
-      overlapEnd = i
-      break
+  // Find the longest suffix of prevClean that appears contiguously in currClean
+  // Try matching suffixes of decreasing length
+  for (let suffixLen = Math.min(prevClean.length, currClean.length); suffixLen > 0; suffixLen--) {
+    const suffix = prevClean.slice(prevClean.length - suffixLen)
+
+    // Search for this suffix in currClean
+    for (let start = 0; start <= currClean.length - suffixLen; start++) {
+      let match = true
+      for (let j = 0; j < suffixLen; j++) {
+        if (currClean[start + j] !== suffix[j]) {
+          match = false
+          break
+        }
+      }
+      if (match) {
+        // Found the suffix at position `start` in currClean
+        // Everything after start + suffixLen is new
+        return currClean.slice(start + suffixLen)
+      }
     }
   }
 
-  if (overlapEnd === -1) {
-    // No overlap found — all lines are new
-    return currClean
-  }
-
-  // Return lines after the overlap point
-  return currClean.slice(overlapEnd + 1)
+  // No overlap found — all lines are new
+  return currClean
 }

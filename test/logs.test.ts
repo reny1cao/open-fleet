@@ -62,4 +62,28 @@ describe("diffLines", () => {
     const result = diffLines([], [])
     expect(result).toEqual([])
   })
+
+  it("handles repeated lines correctly (Knuth review case)", () => {
+    // The last line "OK" appears multiple times — suffix match must not miss "Done!"
+    const prev = ["Starting", "OK", "Processing", "OK"]
+    const current = ["OK", "Processing", "OK", "Done!", "OK"]
+    const result = diffLines(prev, current)
+    // Suffix ["Processing", "OK"] matches at index 1-2, so new = ["Done!", "OK"]
+    expect(result).toEqual(["Done!", "OK"])
+  })
+
+  it("handles all-identical repeated lines", () => {
+    const prev = ["OK", "OK", "OK"]
+    const current = ["OK", "OK", "OK", "New!"]
+    const result = diffLines(prev, current)
+    expect(result).toEqual(["New!"])
+  })
+
+  it("handles suffix longer than single line", () => {
+    const prev = ["a", "b", "c", "d"]
+    const current = ["b", "c", "d", "e", "f"]
+    const result = diffLines(prev, current)
+    // Suffix ["b", "c", "d"] matches, new = ["e", "f"]
+    expect(result).toEqual(["e", "f"])
+  })
 })
