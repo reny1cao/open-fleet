@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs"
 import { join } from "path"
+import type { ServerConfig } from "./types"
 
 const HEARTBEAT_FILE = "heartbeat.json"
 
@@ -31,6 +32,12 @@ export function readHeartbeat(stateDir: string): HeartbeatInfo {
     const data: HeartbeatData = JSON.parse(readFileSync(path, "utf8"))
     const lastSeen = data.timestamp
     const ageMs = Date.now() - new Date(lastSeen).getTime()
+
+    // Guard against invalid timestamps (NaN)
+    if (isNaN(ageMs)) {
+      return { state: "unknown", lastSeen, ageSec: null }
+    }
+
     const ageSec = Math.round(ageMs / 1000)
 
     let state: HeartbeatState
@@ -55,7 +62,43 @@ export function writeHeartbeat(stateDir: string): void {
     timestamp: new Date().toISOString(),
     pid: process.pid,
   }
-  writeFileSync(join(stateDir, HEARTBEAT_FILE), JSON.stringify(data) + "\n")
+  // Atomic write: write to temp file then rename to avoid partial reads
+  const target = join(stateDir, HEARTBEAT_FILE)
+  const tmp = target + ".tmp"
+  writeFileSync(tmp, JSON.stringify(data) + "\n")
+  const { renameSync } = require("fs")
+  renameSync(tmp, target)
+}
+
+/**
+ * Read heartbeat from a remote agent via SSH.
+ * Returns the same HeartbeatInfo as local readHeartbeat.
+ */
+export async function readRemoteHeartbeat(
+  stateDir: string,
+  serverConfig: ServerConfig
+): Promise<HeartbeatInfo> {
+  try {
+    const { sshRun } = await import("../runtime/remote")
+    const path = join(stateDir, HEARTBEAT_FILE)
+    const output = await sshRun(serverConfig, `cat '${path}' 2>/dev/null || echo '{}'`)
+    const data: HeartbeatData = JSON.parse(output.trim())
+    if (!data.timestamp) {
+      return { state: "unknown", lastSeen: null, ageSec: null }
+    }
+    const ageMs = Date.now() - new Date(data.timestamp).getTime()
+    if (isNaN(ageMs)) {
+      return { state: "unknown", lastSeen: data.timestamp, ageSec: null }
+    }
+    const ageSec = Math.round(ageMs / 1000)
+    let state: HeartbeatState
+    if (ageMs < ALIVE_THRESHOLD) state = "alive"
+    else if (ageMs < STALE_THRESHOLD) state = "stale"
+    else state = "dead"
+    return { state, lastSeen: data.timestamp, ageSec }
+  } catch {
+    return { state: "unknown", lastSeen: null, ageSec: null }
+  }
 }
 
 /**

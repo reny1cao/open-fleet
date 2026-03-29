@@ -81,8 +81,10 @@ describe("heartbeat", () => {
         JSON.stringify({ timestamp: "not-a-date" })
       )
       const hb = readHeartbeat(dir)
-      // NaN date → age will be NaN → should handle gracefully
-      expect(["unknown", "dead"]).toContain(hb.state)
+      // NaN date → returns unknown deterministically
+      expect(hb.state).toBe("unknown")
+      expect(hb.lastSeen).toBe("not-a-date")
+      expect(hb.ageSec).toBeNull()
     })
   })
 

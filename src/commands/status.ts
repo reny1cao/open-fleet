@@ -1,6 +1,6 @@
 import { findConfigDir, loadConfig, sessionName, resolveStateDir } from "../core/config"
 import { resolveRuntime } from "../runtime/resolve"
-import { readHeartbeat, formatAge, type HeartbeatState } from "../core/heartbeat"
+import { readHeartbeat, readRemoteHeartbeat, formatAge, type HeartbeatState, type HeartbeatInfo } from "../core/heartbeat"
 
 interface AgentStatus {
   name: string
@@ -31,9 +31,15 @@ export async function status(opts: { json?: boolean }): Promise<void> {
       state = "error"
     }
 
-    // Read heartbeat
+    // Read heartbeat (local or remote)
     const stateDir = resolveStateDir(name, config)
-    const hb = readHeartbeat(stateDir)
+    const isRemote = def.server && def.server !== "local" && config.servers?.[def.server]
+    let hb: HeartbeatInfo
+    if (isRemote) {
+      hb = await readRemoteHeartbeat(stateDir, config.servers![def.server])
+    } else {
+      hb = readHeartbeat(stateDir)
+    }
 
     results.push({
       name,
