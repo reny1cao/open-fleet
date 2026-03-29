@@ -1,0 +1,59 @@
+--- a/server.ts
++++ b/server.ts
+@@ -170,20 +170,36 @@
+-// In static mode, access is snapshotted at boot and never re-read or written.
+-// Pairing requires runtime mutation, so it's downgraded to allowlist with a
+-// startup warning — handing out codes that never get approved would be worse.
+-const BOOT_ACCESS: Access | null = STATIC
+-  ? (() => {
+-      const a = readAccessFile()
+-      if (a.dmPolicy === 'pairing') {
+-        process.stderr.write(
+-          'discord channel: static mode — dmPolicy "pairing" downgraded to "allowlist"\n',
+-        )
+-        a.dmPolicy = 'allowlist'
+-      }
+-      a.pending = {}
+-      return a
+-    })()
+-  : null
+-
+-function loadAccess(): Access {
+-  return BOOT_ACCESS ?? readAccessFile()
+-}
++// In static mode, access is re-read from disk periodically (every 30s) so
++// external updates (e.g., fleet adding a channel) are picked up without restart.
++// Pairing is still downgraded to allowlist (pairing requires runtime mutation).
++// saveAccess() remains a no-op — only external tools write access.json.
++const STATIC_RELOAD_MS = 30_000
++let _staticCache: Access | null = null
++let _staticCacheTime = 0
++
++function loadStaticAccess(): Access {
++  const now = Date.now()
++  if (_staticCache && now - _staticCacheTime < STATIC_RELOAD_MS) {
++    return _staticCache
++  }
++  const a = readAccessFile()
++  if (a.dmPolicy === 'pairing') {
++    a.dmPolicy = 'allowlist'
++  }
++  a.pending = {}
++  _staticCache = a
++  _staticCacheTime = now
++  return a
++}
++
++// Initial load (logs the downgrade warning once at boot)
++if (STATIC) {
++  const a = readAccessFile()
++  if (a.dmPolicy === 'pairing') {
++    process.stderr.write(
++      'discord channel: static mode — dmPolicy "pairing" downgraded to "allowlist"\n',
++    )
++  }
++}
++
++function loadAccess(): Access {
++  return STATIC ? loadStaticAccess() : readAccessFile()
++}
