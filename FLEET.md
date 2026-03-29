@@ -30,6 +30,19 @@ Agents write a heartbeat every 30s to `~/.fleet/state/<agent>/heartbeat.json`. `
 [off]    — tmux session not found
 ```
 
+## Team knowledge
+
+Files in `~/.fleet/docs/knowledge/` are automatically loaded into every agent's CLAUDE.md on boot. Add team learnings, server references, or project-specific rules — all agents inherit them without restart.
+
+```
+~/.fleet/docs/knowledge/
+  neo4j-rules.md      # Database patterns
+  docker-rules.md     # Container gotchas
+  server-reference.md # IP addresses, credentials
+```
+
+To add knowledge: create a file, write the rules. Next agent turn picks it up.
+
 ## Exit codes
 0=success, 1=usage error, 2=config error, 3=runtime error, 5=conflict
 

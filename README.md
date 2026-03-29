@@ -66,6 +66,19 @@ Defaults:
 
 Override `workspace` or `state_dir` per agent only when you need a custom layout.
 
+## Team Knowledge
+
+Drop files in `~/.fleet/docs/knowledge/` to share learnings across the fleet. Every agent inherits them automatically on boot — no restart needed.
+
+```bash
+# Add a new rule
+echo "Always use MERGE not CREATE for Neo4j relationships" > ~/.fleet/docs/knowledge/neo4j-rules.md
+
+# Next agent boot picks it up automatically
+```
+
+Filename = topic, content = rules. Agents see all knowledge docs in their context every turn.
+
 ## Contribute
 
 Open Fleet currently supports Claude Code and Codex on Discord. The goal remains: **support every agent, every platform.**
