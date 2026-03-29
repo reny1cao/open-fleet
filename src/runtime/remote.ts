@@ -71,7 +71,27 @@ export class TmuxRemote implements RuntimeAdapter {
   }
 
   async stop(session: string): Promise<void> {
-    await sshRun(this.server, `tmux kill-session -t '${session}'`)
+    // Kill the entire process tree inside the session, not just the shell.
+    // tmux kill-session sends SIGHUP but child processes (e.g., MCP plugin
+    // servers) can survive. Find the pane PID and kill its process group.
+    try {
+      const { stdout } = await sshRun(
+        this.server,
+        `tmux display-message -t '${session}' -p '#{pane_pid}'`,
+        { throwOnError: false }
+      )
+      const panePid = stdout.trim()
+      if (panePid && /^\d+$/.test(panePid)) {
+        await sshRun(
+          this.server,
+          `kill -- -${panePid} 2>/dev/null; pkill -TERM -P ${panePid} 2>/dev/null; sleep 0.5; pkill -KILL -P ${panePid} 2>/dev/null`,
+          { throwOnError: false }
+        )
+      }
+    } catch {
+      // Best-effort — fall through to kill-session
+    }
+    await sshRun(this.server, `tmux kill-session -t '${session}'`, { throwOnError: false })
   }
 
   async isRunning(session: string): Promise<boolean> {

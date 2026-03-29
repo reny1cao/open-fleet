@@ -41,7 +41,29 @@ export class TmuxLocal implements RuntimeAdapter {
   }
 
   async stop(session: string): Promise<void> {
-    await run(["tmux", "kill-session", "-t", session])
+    // Kill the entire process tree inside the session, not just the shell.
+    // tmux kill-session sends SIGHUP but child processes (e.g., MCP plugin
+    // servers) can survive if they ignore SIGHUP. We find the session's
+    // pane PID and kill its entire process group.
+    try {
+      const { stdout } = await run(
+        ["tmux", "display-message", "-t", session, "-p", "#{pane_pid}"],
+        { throwOnError: false }
+      )
+      const panePid = stdout.trim()
+      if (panePid && /^\d+$/.test(panePid)) {
+        // Kill the process group (negative PID = process group)
+        await run(["kill", "--", `-${panePid}`], { throwOnError: false })
+        // Also kill any remaining children by walking /proc
+        await run(
+          ["bash", "-c", `pkill -TERM -P ${panePid} 2>/dev/null; sleep 0.5; pkill -KILL -P ${panePid} 2>/dev/null`],
+          { throwOnError: false }
+        )
+      }
+    } catch {
+      // Best-effort — fall through to kill-session
+    }
+    await run(["tmux", "kill-session", "-t", session], { throwOnError: false })
   }
 
   async isRunning(session: string): Promise<boolean> {
