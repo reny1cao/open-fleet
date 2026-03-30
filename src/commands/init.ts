@@ -396,7 +396,7 @@ export async function init(opts: {
   console.log("")
   console.log("Next steps:")
   console.log("  1. Open the invite URLs above and add each bot to your server")
-  console.log("  2. Run: fleet-next start <agent>")
+  console.log("  2. Run: fleet start <agent>")
   console.log("  3. DM or @mention the bot in Discord to verify it responds")
 }
 

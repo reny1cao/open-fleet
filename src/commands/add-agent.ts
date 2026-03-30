@@ -163,6 +163,6 @@ export async function addAgent(opts: {
   console.log("")
   console.log("Next steps:")
   console.log(`  1. Open the invite URL above and add ${botInfo.name} to your server`)
-  console.log(`  2. Run: fleet-next start ${name}`)
+  console.log(`  2. Run: fleet start ${name}`)
   console.log("  3. @mention the bot in Discord to verify it responds")
 }

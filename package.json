@@ -2,10 +2,10 @@
   "name": "open-fleet",
   "version": "0.1.0",
   "type": "module",
-  "bin": { "fleet-next": "src/index.ts" },
+  "bin": { "fleet": "src/index.ts" },
   "scripts": {
     "dev": "bun run src/index.ts",
-    "build": "bun build --compile --outfile fleet-next src/index.ts && bun build --target bun --outfile fleet-remote.mjs src/index.ts",
+    "build:remote": "bun build --target bun --outfile fleet-remote.mjs src/index.ts",
     "test": "bun test"
   },
   "dependencies": {

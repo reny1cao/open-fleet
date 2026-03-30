@@ -16,37 +16,57 @@ import { runAgent } from "./commands/run-agent"
 import { logs } from "./commands/logs"
 import { watch } from "./commands/watch"
 import { sync } from "./commands/sync"
+import { bootCheck } from "./commands/boot-check"
+import { validate } from "./commands/validate"
 import type { AgentAdapterKind } from "./core/types"
 
+async function getVersion(): Promise<string> {
+  const pkg = "0.1.0"
+  try {
+    const result = Bun.spawnSync(["git", "rev-parse", "--short", "HEAD"], {
+      cwd: import.meta.dir,
+      stdout: "pipe",
+      stderr: "pipe",
+    })
+    const sha = new TextDecoder().decode(result.stdout).trim()
+    if (sha) return `fleet ${pkg} (${sha})`
+  } catch {}
+  return `fleet ${pkg}`
+}
+
 function usage(): void {
-  console.log(`fleet-next — Agent fleet CLI (TypeScript)
+  console.log(`fleet — Agent fleet CLI
 
 Usage:
-  fleet-next init --token T1 [--token T2 …] --name NAME [--agent name:server:role[:adapter] …] [--channel label:id[:workspace] …] [--guild ID] [--create-channel NAME] [--force]
-  fleet-next start <agent> [--wait] [--role <r>]
-  fleet-next restart <agent>
-  fleet-next stop <agent> [--force]
-  fleet-next logs <agent> [--lines N] [--follow] [--json]
-  fleet-next logs --all [--lines N] [--json]
-  fleet-next watch [--interval N]
-  fleet-next status [--json]
-  fleet-next doctor [--json]
-  fleet-next patch [--json]
-  fleet-next inject <agent> <role>
-  fleet-next apply [--json]
-  fleet-next add-agent --token T --name N --role R [--server S] [--adapter claude|codex]
-  fleet-next move <agent> <server>
-  fleet-next set-adapter <agent> <claude|codex>
-  fleet-next use <fleet-name|path>
-  fleet-next setup-server <ssh-host> [--reuse-codex-auth|--no-reuse-codex-auth]
-  fleet-next sync [agent]
-  fleet-next run-agent <agent>
-  fleet-next help
+  fleet init --token T1 [--token T2 …] --name NAME [--agent name:server:role[:adapter] …] [--channel label:id[:workspace] …] [--guild ID] [--create-channel NAME] [--force]
+  fleet start <agent> [--wait] [--role <r>]
+  fleet restart <agent>
+  fleet stop <agent> [--force]
+  fleet logs <agent> [--lines N] [--follow] [--json]
+  fleet logs --all [--lines N] [--json]
+  fleet watch [--interval N]
+  fleet status [--json]
+  fleet doctor [--json]
+  fleet patch [--json]
+  fleet inject <agent> <role>
+  fleet apply [--json]
+  fleet add-agent --token T --name N --role R [--server S] [--adapter claude|codex]
+  fleet move <agent> <server>
+  fleet set-adapter <agent> <claude|codex>
+  fleet use <fleet-name|path>
+  fleet setup-server <ssh-host> [--reuse-codex-auth|--no-reuse-codex-auth]
+  fleet sync [agent] [--json]
+  fleet boot-check <agent>
+  fleet validate [--json]
+  fleet run-agent <agent>
+  fleet help
+  fleet --version
 
 Flags:
-  --json    Machine-readable output
-  --wait    Block until agent is ready
-  --force   Override safety checks`)
+  --json      Machine-readable output
+  --wait      Block until agent is ready
+  --force     Override safety checks
+  --version   Print version and git SHA`)
 }
 
 function parseFlag(args: string[], flag: string): boolean {
@@ -91,7 +111,7 @@ export async function main(argv: string[]): Promise<void> {
       }
       case "start": {
         const agent = args[1]
-        if (!agent || agent.startsWith("--")) throw new Error("Usage: fleet-next start <agent>")
+        if (!agent || agent.startsWith("--")) throw new Error("Usage: fleet start <agent>")
         await start(agent, {
           wait: parseFlag(args, "--wait"),
           role: parseFlagValue(args, "--role"),
@@ -101,13 +121,13 @@ export async function main(argv: string[]): Promise<void> {
       }
       case "restart": {
         const agent = args[1]
-        if (!agent || agent.startsWith("--")) throw new Error("Usage: fleet-next restart <agent>")
+        if (!agent || agent.startsWith("--")) throw new Error("Usage: fleet restart <agent>")
         await restart(agent, { json: parseFlag(args, "--json") })
         break
       }
       case "stop": {
         const agent = args[1]
-        if (!agent || agent.startsWith("--")) throw new Error("Usage: fleet-next stop <agent>")
+        if (!agent || agent.startsWith("--")) throw new Error("Usage: fleet stop <agent>")
         await stop(agent, { force: parseFlag(args, "--force"), json: parseFlag(args, "--json") })
         break
       }
@@ -141,8 +161,8 @@ export async function main(argv: string[]): Promise<void> {
       case "inject": {
         const agent = args[1]
         const role = args[2]
-        if (!agent || agent.startsWith("--")) throw new Error("Usage: fleet-next inject <agent> <role>")
-        if (!role || role.startsWith("--")) throw new Error("Usage: fleet-next inject <agent> <role>")
+        if (!agent || agent.startsWith("--")) throw new Error("Usage: fleet inject <agent> <role>")
+        if (!role || role.startsWith("--")) throw new Error("Usage: fleet inject <agent> <role>")
         await inject(agent, role, { json: parseFlag(args, "--json") })
         break
       }
@@ -156,7 +176,7 @@ export async function main(argv: string[]): Promise<void> {
         const server = parseFlagValue(args, "--server")
         const adapterValue = parseFlagValue(args, "--adapter")
         if (!token || !name || !role) {
-          throw new Error("Usage: fleet-next add-agent --token T --name N --role R [--server S] [--adapter claude|codex]")
+          throw new Error("Usage: fleet add-agent --token T --name N --role R [--server S] [--adapter claude|codex]")
         }
         if (adapterValue && adapterValue !== "claude" && adapterValue !== "codex") {
           throw new Error(`Invalid --adapter "${adapterValue}". Expected "claude" or "codex"`)
@@ -169,7 +189,7 @@ export async function main(argv: string[]): Promise<void> {
         const agent = args[1]
         const server = args[2]
         if (!agent || agent.startsWith("--") || !server || server.startsWith("--")) {
-          throw new Error("Usage: fleet-next move <agent> <server>")
+          throw new Error("Usage: fleet move <agent> <server>")
         }
         await move(agent, server, { json: parseFlag(args, "--json") })
         break
@@ -178,7 +198,7 @@ export async function main(argv: string[]): Promise<void> {
         const agent = args[1]
         const adapter = args[2]
         if (!agent || agent.startsWith("--") || !adapter || adapter.startsWith("--")) {
-          throw new Error("Usage: fleet-next set-adapter <agent> <claude|codex>")
+          throw new Error("Usage: fleet set-adapter <agent> <claude|codex>")
         }
         if (adapter !== "claude" && adapter !== "codex") {
           throw new Error(`Invalid adapter "${adapter}". Expected "claude" or "codex"`)
@@ -189,7 +209,7 @@ export async function main(argv: string[]): Promise<void> {
       case "use": {
         const target = args[1]
         if (!target || target.startsWith("--")) {
-          throw new Error("Usage: fleet-next use <fleet-name-or-path>")
+          throw new Error("Usage: fleet use <fleet-name-or-path>")
         }
         await use(target, { json: parseFlag(args, "--json") })
         break
@@ -197,7 +217,7 @@ export async function main(argv: string[]): Promise<void> {
       case "setup-server": {
         const host = args[1]
         if (!host || host.startsWith("--")) {
-          throw new Error("Usage: fleet-next setup-server <ssh-host> [--reuse-codex-auth|--no-reuse-codex-auth]")
+          throw new Error("Usage: fleet setup-server <ssh-host> [--reuse-codex-auth|--no-reuse-codex-auth]")
         }
         const reuseCodexAuth = parseFlag(args, "--reuse-codex-auth")
           ? true
@@ -212,14 +232,30 @@ export async function main(argv: string[]): Promise<void> {
         await sync(agent, { json: parseFlag(args, "--json") })
         break
       }
+      case "boot-check": {
+        const agent = args[1]
+        if (!agent || agent.startsWith("--")) {
+          throw new Error("Usage: fleet boot-check <agent>")
+        }
+        await bootCheck(agent, { json: parseFlag(args, "--json") })
+        break
+      }
+      case "validate":
+        await validate({ json: parseFlag(args, "--json") })
+        break
       case "run-agent": {
         const agent = args[1]
         if (!agent || agent.startsWith("--")) {
-          throw new Error("Usage: fleet-next run-agent <agent>")
+          throw new Error("Usage: fleet run-agent <agent>")
         }
         await runAgent(agent)
         break
       }
+      case "version":
+      case "--version":
+      case "-v":
+        console.log(await getVersion())
+        break
       case "help":
       case "--help":
       case undefined:

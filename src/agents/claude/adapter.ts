@@ -126,6 +126,14 @@ export class ClaudeAgentAdapter implements AgentAdapter {
 
     // Heartbeat path: use the remote stateDir for remote agents
     const hbStateDir = isRemote ? cmdStateDir : stateDir
+
+    // Resolve fleet CLI path for boot-check (local only — remote agents
+    // get their config files SCP'd before the wrapper is launched)
+    const fleetCliDir = configDir
+    const bootCheckCmd = isRemote
+      ? null // remote agents don't run boot-check in the wrapper
+      : `cd '${fleetCliDir}' && bun run src/cli.ts boot-check ${agentName} 2>&1 | tail -20`
+
     const wrapperLines = [
       "#!/bin/bash",
       ...(isRemote ? ['export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"'] : []),
@@ -135,6 +143,17 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       "MIN_UPTIME=30",
       "",
       "while true; do",
+      // Boot-check: regenerate config, verify plugin, verify identity, log boot
+      ...(bootCheckCmd
+        ? [
+            `  echo "[fleet] ${agentName}: running boot-check..."`,
+            `  ${bootCheckCmd}`,
+            `  BOOT_EXIT=$?`,
+            `  if [ $BOOT_EXIT -ne 0 ]; then`,
+            `    echo "[fleet] ${agentName}: boot-check failed (exit $BOOT_EXIT) — launching anyway"`,
+            `  fi`,
+          ]
+        : [`  echo "[fleet] ${agentName}: skipping boot-check (remote agent)"`]),
       "  START_TIME=$(date +%s)",
       `  ${claudeCmd}`,
       "  UPTIME=$(($(date +%s) - START_TIME))",

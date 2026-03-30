@@ -24,12 +24,19 @@ function resolveFleetBinaryPath(): string {
     return currentExecutable
   }
 
+  // Try source runner (fleet) in repo root
+  const repoRunner = join(import.meta.dir, "..", "..", "..", "fleet")
+  if (existsSync(repoRunner)) {
+    return repoRunner
+  }
+
+  // Legacy: compiled binary
   const repoBinary = join(import.meta.dir, "..", "..", "..", "fleet-next")
   if (existsSync(repoBinary)) {
     return repoBinary
   }
 
-  throw new Error("fleet-next binary not found. Run `bun run build` or reinstall Open Fleet before starting remote Codex agents.")
+  throw new Error("fleet runner not found in repo root. Ensure open-fleet/fleet exists.")
 }
 
 function resolveCurrentExecutablePath(): string {
@@ -55,7 +62,7 @@ function resolveFleetRemoteBundlePath(): string {
     return repoBundle
   }
 
-  throw new Error("fleet-remote.mjs not found. Run `bun run build` or reinstall Open Fleet before starting remote Codex agents.")
+  throw new Error("fleet-remote.mjs not found. Run `bun run build:remote` to generate it.")
 }
 
 export class CodexAgentAdapter implements AgentAdapter {
