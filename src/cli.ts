@@ -15,6 +15,7 @@ import { restart } from "./commands/restart"
 import { runAgent } from "./commands/run-agent"
 import { logs } from "./commands/logs"
 import { watch } from "./commands/watch"
+import { sync } from "./commands/sync"
 import type { AgentAdapterKind } from "./core/types"
 
 function usage(): void {
@@ -38,6 +39,7 @@ Usage:
   fleet-next set-adapter <agent> <claude|codex>
   fleet-next use <fleet-name|path>
   fleet-next setup-server <ssh-host> [--reuse-codex-auth|--no-reuse-codex-auth]
+  fleet-next sync [agent]
   fleet-next run-agent <agent>
   fleet-next help
 
@@ -203,6 +205,11 @@ export async function main(argv: string[]): Promise<void> {
             ? false
             : undefined
         await setupServer(host, { json: parseFlag(args, "--json"), reuseCodexAuth })
+        break
+      }
+      case "sync": {
+        const agent = args[1] && !args[1].startsWith("--") ? args[1] : undefined
+        await sync(agent, { json: parseFlag(args, "--json") })
         break
       }
       case "run-agent": {
