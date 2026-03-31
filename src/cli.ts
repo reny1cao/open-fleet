@@ -19,6 +19,7 @@ import { sync } from "./commands/sync"
 import { bootCheck } from "./commands/boot-check"
 import { validate } from "./commands/validate"
 import { clear } from "./commands/clear"
+import { watchdog } from "./commands/watchdog"
 import type { AgentAdapterKind } from "./core/types"
 
 async function getVersion(): Promise<string> {
@@ -47,6 +48,7 @@ Usage:
   fleet logs <agent> [--lines N] [--follow] [--json]
   fleet logs --all [--lines N] [--json]
   fleet watch [--interval N]
+  fleet watchdog [--interval N] [--dry-run] [--verbose] [--no-alert]
   fleet status [--json]
   fleet doctor [--json]
   fleet patch [--json]
@@ -157,6 +159,14 @@ export async function main(argv: string[]): Promise<void> {
       case "watch":
         await watch({
           interval: parseInt(parseFlagValue(args, "--interval") ?? "5"),
+        })
+        break
+      case "watchdog":
+        await watchdog({
+          interval: parseInt(parseFlagValue(args, "--interval") ?? "15"),
+          dryRun: parseFlag(args, "--dry-run"),
+          verbose: parseFlag(args, "--verbose"),
+          noAlert: parseFlag(args, "--no-alert"),
         })
         break
       case "status":

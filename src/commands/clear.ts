@@ -37,14 +37,15 @@ export async function clear(
       continue
     }
 
-    // Send /clear to Claude Code — resets context without restarting
-    // Plugin stays alive, patches survive
-    await runtime.sendKeys(session, "/clear")
+    // Send /compact to Claude Code — compresses context without restarting
+    // Unlike /clear which exits the process, /compact works in-place:
+    // plugin stays alive, patches survive, session continues
+    await runtime.sendKeys(session, "/compact")
 
     if (opts?.json) {
-      console.log(JSON.stringify({ agent: name, status: "cleared" }))
+      console.log(JSON.stringify({ agent: name, status: "compacted" }))
     } else {
-      console.log(`${name}: context cleared`)
+      console.log(`${name}: context compacted`)
     }
   }
 }
