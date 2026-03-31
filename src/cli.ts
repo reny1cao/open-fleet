@@ -18,6 +18,7 @@ import { watch } from "./commands/watch"
 import { sync } from "./commands/sync"
 import { bootCheck } from "./commands/boot-check"
 import { validate } from "./commands/validate"
+import { clear } from "./commands/clear"
 import type { AgentAdapterKind } from "./core/types"
 
 async function getVersion(): Promise<string> {
@@ -40,6 +41,7 @@ function usage(): void {
 Usage:
   fleet init --token T1 [--token T2 …] --name NAME [--agent name:server:role[:adapter] …] [--channel label:id[:workspace] …] [--guild ID] [--create-channel NAME] [--force]
   fleet start <agent> [--wait] [--role <r>]
+  fleet clear <agent> | fleet clear --all
   fleet restart <agent>
   fleet stop <agent> [--force]
   fleet logs <agent> [--lines N] [--follow] [--json]
@@ -123,6 +125,14 @@ export async function main(argv: string[]): Promise<void> {
         const agent = args[1]
         if (!agent || agent.startsWith("--")) throw new Error("Usage: fleet restart <agent>")
         await restart(agent, { json: parseFlag(args, "--json") })
+        break
+      }
+      case "clear": {
+        const agent = parseFlag(args, "--all") ? undefined : args[1]
+        if (!agent && !parseFlag(args, "--all")) {
+          throw new Error("Usage: fleet clear <agent> or fleet clear --all")
+        }
+        await clear(agent, { all: parseFlag(args, "--all"), json: parseFlag(args, "--json") })
         break
       }
       case "stop": {

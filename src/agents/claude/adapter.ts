@@ -243,6 +243,12 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       await runtime.waitFor(session, /Listening for channel messages/, 60_000)
     }
 
+    // Auto-patch after start: plugin may have been reinstalled fresh
+    try {
+      const { patch: runPatch } = await import("../../commands/patch")
+      await runPatch({ json: true })
+    } catch {}
+
     if (opts.json) {
       console.log(JSON.stringify({ agent: agentName, session, status: "started" }))
     } else {
