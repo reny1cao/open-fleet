@@ -218,22 +218,29 @@ async function taskList(args: string[], opts: { json?: boolean }): Promise<void>
 
   for (const t of tasks) {
     const assignedTo = t.assignee ? ` → ${t.assignee}` : ""
-    const ws = t.workspace ? ` [${t.workspace}]` : ""
+    const proj = t.project ? ` (${t.project})` : ""
     const blocked = t.status === "blocked" && t.blockedReason ? ` — BLOCKED: ${t.blockedReason}` : ""
-    console.log(`  ${t.id}  [${formatPriority(t.priority)}]  ${formatStatus(t.status)}${assignedTo}${ws}  ${truncate(t.title, 60)}${blocked}`)
+    console.log(`  ${t.id}  [${formatPriority(t.priority)}]  ${formatStatus(t.status)}${assignedTo}${proj}  ${truncate(t.title, 60)}${blocked}`)
   }
   console.log(`\n${tasks.length} task(s)`)
 }
 
-async function taskBoard(_args: string[], opts: { json?: boolean }): Promise<void> {
+async function taskBoard(args: string[], opts: { json?: boolean }): Promise<void> {
+  let project: string | undefined
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--project" && args[i + 1]) { project = args[++i]; continue }
+    if (args[i] === "--json") continue
+  }
+
   let active
   if (useHttpApi()) {
-    // HTTP board endpoint returns tasks grouped, but we need flat active list for display
-    const allTasks = await httpListTasks()
+    const allTasks = await httpListTasks({ project })
     active = allTasks.filter((t: any) => t.status !== "done" && t.status !== "cancelled")
   } else {
     const store = loadTaskStore()
-    active = activeTasks(store)
+    let tasks = activeTasks(store)
+    if (project) tasks = tasks.filter(t => t.project === project)
+    active = tasks
   }
 
   if (opts.json) {
