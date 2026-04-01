@@ -1,10 +1,15 @@
 export type TaskStatus = "open" | "in_progress" | "done" | "blocked" | "cancelled"
 export type TaskPriority = "low" | "normal" | "high" | "urgent"
 
+export type TaskNoteType = "comment" | "status_change" | "assignment" | "priority_change"
+
 export interface TaskNote {
   timestamp: string
   author: string
+  type: TaskNoteType
   text: string
+  oldValue?: string
+  newValue?: string
 }
 
 export interface TaskResult {
@@ -23,7 +28,6 @@ export interface Task {
 
   createdBy: string
   assignee?: string
-  fleet: string
   project?: string
   workspace?: string
 

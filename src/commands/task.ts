@@ -205,7 +205,6 @@ async function taskBoard(_args: string[], opts: { json?: boolean }): Promise<voi
     open: [],
     in_progress: [],
     blocked: [],
-    review: [],
   }
   for (const t of active) {
     if (byStatus[t.status]) byStatus[t.status].push(t)

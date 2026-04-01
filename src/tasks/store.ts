@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from "
 import { join, dirname } from "path"
 import { homedir } from "os"
 import { findConfigDir, loadConfig } from "../core/config"
-import type { Task, TaskStore, TaskStatus, TaskPriority, TaskNote, TaskResult } from "./types"
+import type { Task, TaskStore, TaskStatus, TaskPriority, TaskNote, TaskNoteType, TaskResult } from "./types"
 import { isValidTransition } from "./types"
 
 function tasksDir(): string {
@@ -64,13 +64,22 @@ export function createTask(
   }
 ): Task {
   const now = new Date().toISOString()
+  // Dependency cycle detection
+  if (opts.dependsOn?.length) {
+    const newId = `task-${String(store.nextId).padStart(3, "0")}`
+    for (const depId of opts.dependsOn) {
+      if (hasCycle(store, depId, newId)) {
+        throw new Error(`Circular dependency detected: ${newId} → ${depId} → ... → ${newId}`)
+      }
+    }
+  }
+
   const task: Task = {
     id: nextTaskId(store),
     title: opts.title,
     description: opts.description,
     createdBy: opts.createdBy ?? process.env.FLEET_SELF ?? "human",
     assignee: opts.assignee,
-    fleet: store.fleet,
     project: opts.project,
     workspace: opts.workspace,
     status: "open",
@@ -108,7 +117,7 @@ export function updateTask(
     }
     const oldStatus = task.status
     task.status = opts.status
-    task.notes.push({ timestamp: now, author, text: `Status: ${oldStatus} → ${opts.status}` })
+    task.notes.push({ timestamp: now, author, type: "status_change", text: `Status: ${oldStatus} → ${opts.status}`, oldValue: oldStatus, newValue: opts.status })
 
     if (opts.status === "in_progress" && !task.startedAt) {
       task.startedAt = now
@@ -125,7 +134,7 @@ export function updateTask(
   }
 
   if (opts.note) {
-    task.notes.push({ timestamp: now, author, text: opts.note })
+    task.notes.push({ timestamp: now, author, type: "comment", text: opts.note })
   }
 
   if (opts.result) {
@@ -174,4 +183,17 @@ const PRIORITY_ORDER: Record<TaskPriority, number> = {
 
 export function sortByPriority(tasks: Task[]): Task[] {
   return [...tasks].sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority])
+}
+
+/** DFS cycle detection: returns true if adding a dependency from sourceId → depId would create a cycle */
+function hasCycle(store: TaskStore, depId: string, sourceId: string, visited = new Set<string>()): boolean {
+  if (depId === sourceId) return true
+  if (visited.has(depId)) return false
+  visited.add(depId)
+  const dep = store.tasks.find((t) => t.id === depId)
+  if (!dep?.dependsOn) return false
+  for (const nextDep of dep.dependsOn) {
+    if (hasCycle(store, nextDep, sourceId, visited)) return true
+  }
+  return false
 }
