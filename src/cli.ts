@@ -55,6 +55,7 @@ Usage:
   fleet task list [--assignee <agent>] [--status <status>] [--mine]
   fleet task board
   fleet task show <task-id>
+  fleet task recap [--since 2h|today|24h]
   fleet status [--json]
   fleet doctor [--json]
   fleet patch [--json]
