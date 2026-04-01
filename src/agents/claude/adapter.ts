@@ -200,17 +200,14 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     const wrapperScript = isRemote
       ? `/tmp/fleet-wrapper-${session}.sh`
       : join(stateDir, "wrapper.sh")
-    writeFileSync(
-      isRemote ? `/tmp/fleet-wrapper-${session}-local.sh` : wrapperScript,
-      wrapperLines.join("\n") + "\n",
-      "utf8"
-    )
+    const localWrapperPath = isRemote ? `/tmp/fleet-wrapper-${session}-local.sh` : wrapperScript
+    writeFileSync(localWrapperPath, wrapperLines.join("\n") + "\n", { encoding: "utf8", mode: 0o700 })
 
     if (isRemote) {
       const serverConfig = config.servers![agentDef.server]
       const remoteWrapper = `/tmp/fleet-wrapper-${session}.sh`
       await scp(serverConfig, `/tmp/fleet-wrapper-${session}-local.sh`, remoteWrapper)
-      await sshRun(serverConfig, `chmod +x '${remoteWrapper}'`)
+      await sshRun(serverConfig, `chmod 700 '${remoteWrapper}'`)
       try { (await import("fs")).unlinkSync(`/tmp/fleet-wrapper-${session}-local.sh`) } catch {}
     }
 
