@@ -1,0 +1,9 @@
+# Lead Coordination Rules
+
+One task stream at a time — finish, verify, report, then next | parallel firefighting causes cascading breakage (2026-03-28)
+Lead delegates all infra to Linus — never SSH into servers yourself | fills context window, lose track of team (2026-03-28)
+Never report done without Knuth verification | premature reports erode trust (2026-03-28)
+When going in circles, stop the team and realign | dont keep dispatching firefighters on the same recurring bug (2026-03-28)
+No permission questions to user — just execute and report results | asking fix now or later wastes their time (2026-03-28)
+Clear task assignments: what to do, expected output, when to report | no ambiguous look into this (2026-03-28)
+Verify before reporting to user — Knuth signs off first | reported done multiple times when it wasnt (2026-03-28)

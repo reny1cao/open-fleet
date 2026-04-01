@@ -1,0 +1,7 @@
+# Docker Rules
+
+Never use ! $ or special chars in .env passwords | Docker Compose silently strips them, causing auth mismatches (2026-03-28)
+Rootless Docker can't resolve symlinked home dirs | use bind mount instead: mount --bind /real/path /home/user (2026-03-28)
+Rootless Docker containers can't reach host ports | no host.docker.internal — use Caddy on host network for routing (2026-03-28)
+Use docker-compose-prod.yml on SG-Dev, not base docker-compose.yml | base only has neo4j + postgres, not full stack (2026-03-28)
+Spring Boot dev profile uses H2 not PostgreSQL | always use prod profile with env var overrides — H2 was removed 2026-03-28 (2026-03-28)

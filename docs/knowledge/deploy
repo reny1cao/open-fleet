@@ -1,0 +1,11 @@
+# Deploy Rules
+
+Flow: code on SG-Lab → verify on SG-Lab → push to Gitee → Linus deploys to SG-Dev → Knuth verifies (2026-03-28)
+Never push untested code to Gitee | SG-Lab is the first testing ground (2026-03-28)
+develop is the source of truth branch | deploy/v2-code is stale, don't use it (2026-03-28)
+Knuth must verify every deploy before reporting done | premature "done" reports erode trust (2026-03-28)
+Linus is deploy gatekeeper | coders push code, Linus handles builds and deploys (2026-03-28)
+Backend first, frontend second on SG-Dev | frontend may reference new API endpoints that don't exist yet (2026-03-28)
+Login endpoint accepts form-encoded POST only, not JSON | Spring Security formLogin bug — JSON returns fake "Account locked" error (2026-03-28)
+SG-Lab login via domain (sysbuilder-dev.caorenyi.com) works, direct IP (5.223.66.111) login hangs | use domain name (2026-03-28)
+Knowledge files live on SG-Lab at ~/.fleet/docs/knowledge/ | never commit servers file to Gitee (contains passwords) (2026-03-28)

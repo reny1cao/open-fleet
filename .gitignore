@@ -25,3 +25,4 @@ fleet-remote.mjs
 dist/
 *.bun-build
 .*.bun-build
+watchdog/

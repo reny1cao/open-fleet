@@ -1,0 +1,7 @@
+# Frontend Rules
+
+Build from develop branch only | other branches are stale (2026-03-28)
+Remove unused imports before pushing | tsc -b fails on unused imports, blocks SG-Dev builds (2026-03-28)
+Copy built dist to nginx volume after build | nginx serves static files, not the dev server (2026-03-28)
+Vue source (reference): gitee:suzhou-yunzao-intelligent/aps-project branch ai_dev | project card in itemCard.vue (2026-03-28)
+Python source (reference): gitee:sanecat/baming | original backend, 100% Neo4j (2026-03-28)

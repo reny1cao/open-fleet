@@ -1,0 +1,11 @@
+# Neo4j Rules
+
+MERGE not CREATE for all relationship mutations | CREATE makes duplicates when storyIds overlap across projects (2026-03-28)
+All multi-hop traversals MUST use DISTINCT | duplicate relationships cause Cartesian products — 120K records from 84 stories (2026-03-28)
+Scope all queries by projectId on BOTH sides of MATCH | prevents cross-project contamination (2026-03-28)
+Import scripts MUST filter relationships by projectId | unfiltered imports create cross-project CONTAINS_* links (2026-03-28)
+moveStoryToEpic: DELETE old relationship, MERGE new one, LIMIT 1 | prevents multi-project side effects (2026-03-28)
+V2 Neo4j is on port 17474/17687, V1 dev is on 7474/7687 | don't mix them up (2026-03-28)
+Code generation (story/epic/activity codes) MUST be scoped by projectId | global findMaxCode() scans all projects, causes code collisions (2026-03-28)
+Glossary (Term/TermModule) is now in PostgreSQL, not Neo4j | migrated 2026-03-28, old Neo4j term files still exist but are unused (2026-03-28)
+story-map/load queries Neo4j for activities/epics/stories, PostgreSQL for sprints | two DBs, two transaction managers, no atomic guarantee (2026-03-28)
