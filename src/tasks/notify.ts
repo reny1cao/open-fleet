@@ -1,4 +1,4 @@
-import { findConfigDir, loadConfig, getToken } from "../core/config"
+import { findConfigDir, loadConfig, getToken, loadEnv } from "../core/config"
 import { DiscordApi } from "../channel/discord/api"
 import { homedir } from "os"
 import type { FleetConfig } from "../core/types"
@@ -84,12 +84,22 @@ async function resolveContext(task: Task, assigneeOverride?: string): Promise<No
     const channelId = resolveChannelId(config, task.workspace, assigneeOverride ?? task.assignee)
     if (!channelId) return null
 
-    // Use lead's token to send notifications
-    const leadName = config.structure?.lead
-      ?? Object.entries(config.agents).find(([, def]) => def.role === "lead")?.[0]
-    if (!leadName) return null
+    // Resolve notification bot token:
+    // 1. Dedicated Fleet Bot token (config.discord.notificationBotToken env var)
+    // 2. Fallback: lead agent's token
+    let token: string | undefined
 
-    const token = getToken(leadName, config, configDir)
+    const notifTokenEnv = config.discord.notificationBotToken
+    if (notifTokenEnv) {
+      token = process.env[notifTokenEnv] ?? loadEnv(configDir)[notifTokenEnv]
+    }
+
+    if (!token) {
+      const leadName = config.structure?.lead
+        ?? Object.entries(config.agents).find(([, def]) => def.role === "lead")?.[0]
+      if (!leadName) return null
+      token = getToken(leadName, config, configDir)
+    }
 
     // Resolve bot IDs for @mentions
     const discord = new DiscordApi()

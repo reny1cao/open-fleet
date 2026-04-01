@@ -144,6 +144,7 @@ export function loadConfig(dir?: string): FleetConfig {
     channels,
     serverId: discordRaw.server_id as string | undefined,
     userId: discordRaw.user_id as string | undefined,
+    notificationBotToken: (discordRaw.notification_bot_token ?? discordRaw.notificationBotToken) as string | undefined,
   }
 
   // ── defaults ──────────────────────────────────────────────────────────────
@@ -241,6 +242,7 @@ export function saveConfig(config: FleetConfig, dir: string): void {
     channels: channelsOut,
     ...(config.discord.serverId !== undefined ? { server_id: config.discord.serverId } : {}),
     ...(config.discord.userId !== undefined ? { user_id: config.discord.userId } : {}),
+    ...(config.discord.notificationBotToken !== undefined ? { notification_bot_token: config.discord.notificationBotToken } : {}),
   }
 
   const defaults: Record<string, string> = {

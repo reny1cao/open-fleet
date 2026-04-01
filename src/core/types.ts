@@ -12,6 +12,7 @@ export interface FleetConfig {
     channels: Record<string, ChannelDef>
     serverId?: string
     userId?: string
+    notificationBotToken?: string // env var name for a dedicated Fleet Bot token
   }
   servers?: Record<string, ServerConfig>
   defaults: { workspace: string; runtime?: string; agentAdapter?: AgentAdapterKind }
