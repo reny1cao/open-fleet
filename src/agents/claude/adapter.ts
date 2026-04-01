@@ -107,6 +107,12 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       if (existsSync(rosterPath)) {
         await scp(serverConfig, rosterPath, `${remoteStateDirAbs}/.claude/CLAUDE.md`)
       }
+
+      // Copy tasks-context.md for remote agents (boot-check doesn't run remotely)
+      const tasksContextPath = join(stateDir, "tasks-context.md")
+      if (existsSync(tasksContextPath)) {
+        await scp(serverConfig, tasksContextPath, `${remoteStateDirAbs}/tasks-context.md`)
+      }
     }
 
     const isRemote = agentDef.server !== "local"
@@ -116,10 +122,17 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     const cmdWorkspace = isRemote ? rawWorkspace.replace(/^~/, "$HOME") : expandHome(rawWorkspace)
 
     const quote = isRemote ? '"' : "'"
+    // Ensure tasks-context.md exists (empty is fine — boot-check overwrites with real content)
+    const tasksContextLocal = join(stateDir, "tasks-context.md")
+    if (!existsSync(tasksContextLocal)) {
+      writeFileSync(tasksContextLocal, "", "utf8")
+    }
+
     const claudeCmd = [
       "claude",
       "--dangerously-skip-permissions",
       `--append-system-prompt-file ${quote}${cmdStateDir}/identity.md${quote}`,
+      `--append-system-prompt-file ${quote}${cmdStateDir}/tasks-context.md${quote}`,
       `--add-dir ${quote}${cmdWorkspace}${quote}`,
       `--channels ${discord.pluginId()}`,
     ].join(" ")
