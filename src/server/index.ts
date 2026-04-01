@@ -1,7 +1,9 @@
 import { loadTaskStore, saveTaskStore, createTask, updateTask, getTask, listTasks, activeTasks, sortByPriority } from "../tasks/store"
 import type { TaskStatus, TaskPriority, TaskResult } from "../tasks/types"
+import { notifyTaskAssigned, notifyTaskDone, notifyTaskBlocked, notifyTaskReassigned } from "../tasks/notify"
 
 const PORT = parseInt(process.env.FLEET_API_PORT ?? "4680")
+const HOST = process.env.FLEET_API_HOST ?? "127.0.0.1" // localhost only by default — set to 0.0.0.0 for remote access
 const API_TOKEN = process.env.FLEET_API_TOKEN ?? ""
 
 function unauthorized(): Response {
@@ -36,6 +38,7 @@ async function parseBody(req: Request): Promise<Record<string, unknown>> {
 
 const server = Bun.serve({
   port: PORT,
+  hostname: HOST,
   async fetch(req) {
     if (!checkAuth(req)) return unauthorized()
 
@@ -93,6 +96,10 @@ const server = Bun.serve({
         project: body.project as string | undefined,
       })
       saveTaskStore(store)
+
+      // Fire-and-forget notification
+      if (task.assignee) notifyTaskAssigned(task).catch(() => {})
+
       return json(task, 201)
     }
 
@@ -101,17 +108,28 @@ const server = Bun.serve({
     if (method === "PATCH" && taskUpdateMatch) {
       const body = await parseBody(req)
       const store = loadTaskStore()
+      const oldAssignee = getTask(store, taskUpdateMatch[1])?.assignee
+      const newStatus = body.status as TaskStatus | undefined
+      const newAssignee = body.assignee as string | undefined
 
       try {
         const task = updateTask(store, taskUpdateMatch[1], {
-          status: body.status as TaskStatus | undefined,
-          assignee: body.assignee as string | undefined,
+          status: newStatus,
+          assignee: newAssignee,
           note: body.note as string | undefined,
           result: body.result as TaskResult | undefined,
           blockedReason: body.blockedReason as string | undefined,
           author: body.author as string | undefined,
         })
         saveTaskStore(store)
+
+        // Fire-and-forget notifications
+        if (newStatus === "done") notifyTaskDone(task).catch(() => {})
+        else if (newStatus === "blocked") notifyTaskBlocked(task).catch(() => {})
+        if (newAssignee !== undefined && newAssignee !== oldAssignee) {
+          notifyTaskReassigned(task, oldAssignee, newAssignee).catch(() => {})
+        }
+
         return json(task)
       } catch (err) {
         return badRequest(err instanceof Error ? err.message : String(err))
@@ -125,4 +143,4 @@ const server = Bun.serve({
   },
 })
 
-console.log(`[fleet-server] Listening on http://localhost:${server.port}`)
+console.log(`[fleet-server] Listening on http://${server.hostname}:${server.port}`)
