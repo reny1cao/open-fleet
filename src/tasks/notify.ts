@@ -15,24 +15,22 @@ interface NotifyContext {
 
 /**
  * Resolve the Discord channel for a task notification.
- * Priority: workspace match → "command" channel → first channel.
+ * Priority: workspace match → assignee's primary work channel → fleet default workspace channel.
+ * #command is NEVER used for task notifications.
  */
-function resolveChannelId(config: FleetConfig, taskWorkspace?: string): string | null {
+function resolveChannelId(config: FleetConfig, taskWorkspace?: string, assignee?: string): string | null {
   const channels = config.discord.channels
+  const home = homedir()
+  const normalize = (p: string) => {
+    let resolved = p
+    if (resolved.startsWith("~/")) resolved = home + resolved.slice(1)
+    else if (resolved === "~") resolved = home
+    return resolved.replace(/\/+$/, "")
+  }
 
   // 1. Match task workspace to a channel's workspace
   if (taskWorkspace) {
-    // Normalize: expand ~ to homedir, strip trailing slashes
-    const home = homedir()
-    const normalize = (p: string) => {
-      let resolved = p
-      if (resolved.startsWith("~/")) resolved = home + resolved.slice(1)
-      else if (resolved === "~") resolved = home
-      return resolved.replace(/\/+$/, "")
-    }
     const taskWs = normalize(taskWorkspace)
-
-    // Try exact match first, then prefix match (most specific wins)
     let bestMatch: { label: string; id: string; wsLen: number } | null = null
     for (const [label, ch] of Object.entries(channels)) {
       if (!ch.workspace) continue
@@ -46,17 +44,44 @@ function resolveChannelId(config: FleetConfig, taskWorkspace?: string): string |
     if (bestMatch) return bestMatch.id
   }
 
-  // 2. Fallback: command channel, then first channel
-  const fallback = channels["command"] ?? Object.values(channels)[0]
-  return fallback?.id ?? null
+  // 2. Assignee's primary work channel (first non-command channel in their scope)
+  if (assignee) {
+    const agentDef = config.agents[assignee]
+    if (agentDef?.channels) {
+      for (const chLabel of agentDef.channels) {
+        if (chLabel === "command") continue
+        const ch = channels[chLabel]
+        if (ch) return ch.id
+      }
+    }
+  }
+
+  // 3. Fleet default workspace → channel match
+  const defaultWs = config.defaults.workspace
+  if (defaultWs) {
+    const defWs = normalize(defaultWs)
+    for (const [label, ch] of Object.entries(channels)) {
+      if (label === "command") continue
+      if (!ch.workspace) continue
+      if (normalize(ch.workspace) === defWs) return ch.id
+    }
+  }
+
+  // 4. First non-command channel (last resort)
+  for (const [label, ch] of Object.entries(channels)) {
+    if (label === "command") continue
+    return ch.id
+  }
+
+  return null
 }
 
-async function resolveContext(task: Task): Promise<NotifyContext | null> {
+async function resolveContext(task: Task, assigneeOverride?: string): Promise<NotifyContext | null> {
   try {
     const configDir = findConfigDir()
     const config = loadConfig(configDir)
 
-    const channelId = resolveChannelId(config, task.workspace)
+    const channelId = resolveChannelId(config, task.workspace, assigneeOverride ?? task.assignee)
     if (!channelId) return null
 
     // Use lead's token to send notifications
