@@ -1,5 +1,6 @@
 import { loadTaskStore, saveTaskStore, createTask, updateTask, getTask, listTasks, activeTasks, sortByPriority } from "../tasks/store"
 import type { TaskStatus, TaskPriority, TaskResult } from "../tasks/types"
+import { notifyTaskAssigned, notifyTaskDone, notifyTaskBlocked, notifyTaskReassigned } from "../tasks/notify"
 
 function formatPriority(p: string): string {
   switch (p) {
@@ -42,7 +43,7 @@ export async function task(args: string[], opts: { json?: boolean }): Promise<vo
       throw new Error(
         "Usage: fleet task <create|update|list|board|show>\n" +
         "  fleet task create <title> [--assign <agent>] [--priority <p>] [--workspace <ws>] [--desc <d>]\n" +
-        "  fleet task update <task-id> --status <status> [--note <text>] [--result <json>]\n" +
+        "  fleet task update <task-id> --status <status> [--assign <agent>] [--note <text>] [--result <json>]\n" +
         "  fleet task list [--assignee <agent>] [--status <status>] [--mine]\n" +
         "  fleet task board\n" +
         "  fleet task show <task-id>"
@@ -101,6 +102,11 @@ async function taskCreate(args: string[], opts: { json?: boolean }): Promise<voi
     parts.push(`[${formatPriority(created.priority)}]`)
     console.log(parts.join(" — "))
   }
+
+  // Fire-and-forget notification — don't block the CLI on Discord
+  if (created.assignee) {
+    notifyTaskAssigned(created).catch(() => {})
+  }
 }
 
 async function taskUpdate(args: string[], opts: { json?: boolean }): Promise<void> {
@@ -108,20 +114,22 @@ async function taskUpdate(args: string[], opts: { json?: boolean }): Promise<voi
   if (!taskId || taskId.startsWith("--")) throw new Error("Usage: fleet task update <task-id> --status <status>")
 
   let status: TaskStatus | undefined
+  let assign: string | undefined
   let note: string | undefined
   let resultJson: string | undefined
   let blockedReason: string | undefined
 
   for (let i = 1; i < args.length; i++) {
     if (args[i] === "--status" && args[i + 1]) { status = args[++i] as TaskStatus; continue }
+    if (args[i] === "--assign" && args[i + 1]) { assign = args[++i]; continue }
     if (args[i] === "--note" && args[i + 1]) { note = args[++i]; continue }
     if (args[i] === "--result" && args[i + 1]) { resultJson = args[++i]; continue }
     if (args[i] === "--reason" && args[i + 1]) { blockedReason = args[++i]; continue }
     if (args[i] === "--json") continue
   }
 
-  if (!status && !note && !resultJson) {
-    throw new Error("Usage: fleet task update <task-id> --status <status> [--note <text>] [--result <json>]")
+  if (!status && !note && !resultJson && assign === undefined) {
+    throw new Error("Usage: fleet task update <task-id> --status <status> [--assign <agent>] [--note <text>] [--result <json>]")
   }
 
   let result: TaskResult | undefined
@@ -134,15 +142,27 @@ async function taskUpdate(args: string[], opts: { json?: boolean }): Promise<voi
   }
 
   const store = loadTaskStore()
-  const updated = updateTask(store, taskId, { status, note, result, blockedReason })
+  const oldAssignee = getTask(store, taskId)?.assignee
+  const updated = updateTask(store, taskId, { status, assignee: assign, note, result, blockedReason })
   saveTaskStore(store)
 
   if (opts.json) {
     console.log(JSON.stringify(updated))
   } else {
     const parts = [`${updated.id}: ${formatStatus(updated.status)}`]
+    if (assign !== undefined && assign !== oldAssignee) parts.push(`reassigned to ${assign || "unassigned"}`)
     if (note) parts.push(`note: "${truncate(note, 60)}"`)
     console.log(parts.join(" — "))
+  }
+
+  // Fire-and-forget notifications — don't block CLI on Discord
+  if (status === "done") {
+    notifyTaskDone(updated).catch(() => {})
+  } else if (status === "blocked") {
+    notifyTaskBlocked(updated).catch(() => {})
+  }
+  if (assign !== undefined && assign !== oldAssignee) {
+    notifyTaskReassigned(updated, oldAssignee, assign).catch(() => {})
   }
 }
 

@@ -99,6 +99,7 @@ export function updateTask(
   taskId: string,
   opts: {
     status?: TaskStatus
+    assignee?: string
     note?: string
     result?: TaskResult
     blockedReason?: string
@@ -110,6 +111,12 @@ export function updateTask(
 
   const now = new Date().toISOString()
   const author = opts.author ?? process.env.FLEET_SELF ?? "human"
+
+  if (opts.assignee !== undefined && opts.assignee !== task.assignee) {
+    const oldAssignee = task.assignee
+    task.assignee = opts.assignee || undefined
+    task.notes.push({ timestamp: now, author, type: "assignment", text: `Reassigned: ${oldAssignee ?? "unassigned"} → ${opts.assignee || "unassigned"}`, oldValue: oldAssignee, newValue: opts.assignee || undefined })
+  }
 
   if (opts.status && opts.status !== task.status) {
     if (!isValidTransition(task.status, opts.status)) {
