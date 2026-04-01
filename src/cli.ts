@@ -21,6 +21,7 @@ import { validate } from "./commands/validate"
 import { clear } from "./commands/clear"
 import { watchdog } from "./commands/watchdog"
 import { task } from "./commands/task"
+import { server } from "./commands/server"
 import type { AgentAdapterKind } from "./core/types"
 
 async function getVersion(): Promise<string> {
@@ -56,6 +57,9 @@ Usage:
   fleet task board
   fleet task show <task-id>
   fleet task recap [--since 2h|today|24h]
+  fleet server start [--port 4680]
+  fleet server stop
+  fleet server status
   fleet status [--json]
   fleet doctor [--json]
   fleet patch [--json]
@@ -180,6 +184,15 @@ export async function main(argv: string[]): Promise<void> {
       case "task":
         await task(args.slice(1), { json: parseFlag(args, "--json") })
         break
+      case "server": {
+        const sub = args[1]
+        if (!sub) throw new Error("Usage: fleet server <start|stop|status>")
+        await server(sub, {
+          port: parseInt(parseFlagValue(args, "--port") ?? "4680"),
+          json: parseFlag(args, "--json"),
+        })
+        break
+      }
       case "status":
         await status({ json: parseFlag(args, "--json") })
         break
