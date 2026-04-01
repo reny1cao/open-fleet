@@ -3,8 +3,18 @@ import type { TaskStatus, TaskPriority, TaskResult } from "../tasks/types"
 import { notifyTaskAssigned, notifyTaskDone, notifyTaskBlocked, notifyTaskReassigned } from "../tasks/notify"
 
 const PORT = parseInt(process.env.FLEET_API_PORT ?? "4680")
-const HOST = process.env.FLEET_API_HOST ?? "127.0.0.1" // localhost only by default — set to 0.0.0.0 for remote access
-const API_TOKEN = process.env.FLEET_API_TOKEN ?? ""
+const HOST = process.env.FLEET_API_HOST ?? "127.0.0.1" // localhost only by default — set to Tailscale IP for remote access
+const API_TOKEN = process.env.FLEET_API_TOKEN
+
+if (!API_TOKEN) {
+  console.error("[fleet-server] FATAL: FLEET_API_TOKEN is required. Set it in your environment or .env file.")
+  process.exit(1)
+}
+
+const VALID_PRIORITIES = new Set(["low", "normal", "high", "urgent"])
+const MAX_TITLE = 500
+const MAX_DESCRIPTION = 5000
+const MAX_NOTE = 2000
 
 function unauthorized(): Response {
   return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } })
@@ -23,7 +33,6 @@ function json(data: unknown, status = 200): Response {
 }
 
 function checkAuth(req: Request): boolean {
-  if (!API_TOKEN) return true // no token configured = no auth required
   const header = req.headers.get("Authorization")
   return header === `Bearer ${API_TOKEN}`
 }
@@ -82,16 +91,29 @@ const server = Bun.serve({
       const body = await parseBody(req)
       const title = body.title as string | undefined
       if (!title) return badRequest("title is required")
+      if (title.length > MAX_TITLE) return badRequest(`title exceeds ${MAX_TITLE} characters`)
+      const description = body.description as string | undefined
+      if (description && description.length > MAX_DESCRIPTION) return badRequest(`description exceeds ${MAX_DESCRIPTION} characters`)
+      const priority = (body.priority as string) ?? "normal"
+      if (!VALID_PRIORITIES.has(priority)) return badRequest(`invalid priority: "${priority}". Must be: low, normal, high, urgent`)
 
+      // Validate dependsOn IDs exist
       const store = loadTaskStore()
+      const dependsOn = body.dependsOn as string[] | undefined
+      if (dependsOn) {
+        for (const depId of dependsOn) {
+          if (!getTask(store, depId)) return badRequest(`dependency not found: ${depId}`)
+        }
+      }
+
       const task = createTask(store, {
         title,
         assignee: body.assignee as string | undefined,
-        priority: (body.priority as TaskPriority) ?? "normal",
-        description: body.description as string | undefined,
+        priority: priority as TaskPriority,
+        description,
         workspace: body.workspace as string | undefined,
         parentId: body.parentId as string | undefined,
-        dependsOn: body.dependsOn as string[] | undefined,
+        dependsOn,
         createdBy: body.createdBy as string | undefined,
         project: body.project as string | undefined,
       })
@@ -107,16 +129,21 @@ const server = Bun.serve({
     const taskUpdateMatch = path.match(/^\/tasks\/(task-\d+)$/)
     if (method === "PATCH" && taskUpdateMatch) {
       const body = await parseBody(req)
+      const note = body.note as string | undefined
+      if (note && note.length > MAX_NOTE) return badRequest(`note exceeds ${MAX_NOTE} characters`)
+      const newStatus = body.status as TaskStatus | undefined
+      const validStatuses = new Set(["open", "in_progress", "done", "blocked", "cancelled"])
+      if (newStatus && !validStatuses.has(newStatus)) return badRequest(`invalid status: "${newStatus}"`)
+
       const store = loadTaskStore()
       const oldAssignee = getTask(store, taskUpdateMatch[1])?.assignee
-      const newStatus = body.status as TaskStatus | undefined
       const newAssignee = body.assignee as string | undefined
 
       try {
         const task = updateTask(store, taskUpdateMatch[1], {
           status: newStatus,
           assignee: newAssignee,
-          note: body.note as string | undefined,
+          note,
           result: body.result as TaskResult | undefined,
           blockedReason: body.blockedReason as string | undefined,
           author: body.author as string | undefined,
