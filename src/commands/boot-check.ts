@@ -365,10 +365,8 @@ export async function bootCheck(
     }
   }
 
-  // Only validate the starting agent's own token (critical) + any uncached agents
-  const needsValidation = entries.filter(([name]) =>
-    name === agentName || !cachedBotIds[name]
-  )
+  // Only validate uncached agents — zero network calls when cache is warm
+  const needsValidation = entries.filter(([name]) => !cachedBotIds[name])
 
   if (needsValidation.length > 0) {
     const tokenResults = await Promise.allSettled(
