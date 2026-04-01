@@ -1,5 +1,6 @@
 import { findConfigDir, loadConfig, getToken } from "../core/config"
 import { DiscordApi } from "../channel/discord/api"
+import { homedir } from "os"
 import type { FleetConfig } from "../core/types"
 import type { Task } from "./types"
 
@@ -21,8 +22,14 @@ function resolveChannelId(config: FleetConfig, taskWorkspace?: string): string |
 
   // 1. Match task workspace to a channel's workspace
   if (taskWorkspace) {
-    // Normalize trailing slashes for comparison
-    const normalize = (p: string) => p.replace(/\/+$/, "")
+    // Normalize: expand ~ to homedir, strip trailing slashes
+    const home = homedir()
+    const normalize = (p: string) => {
+      let resolved = p
+      if (resolved.startsWith("~/")) resolved = home + resolved.slice(1)
+      else if (resolved === "~") resolved = home
+      return resolved.replace(/\/+$/, "")
+    }
     const taskWs = normalize(taskWorkspace)
 
     // Try exact match first, then prefix match (most specific wins)
