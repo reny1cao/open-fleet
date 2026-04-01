@@ -76,24 +76,36 @@ function resolveChannelId(config: FleetConfig, taskWorkspace?: string, assignee?
   return null
 }
 
-async function resolveContext(task: Task, assigneeOverride?: string): Promise<NotifyContext | null> {
+async function resolveContext(task: Task, opts?: { assigneeOverride?: string; sender?: string }): Promise<NotifyContext | null> {
   try {
     const configDir = findConfigDir()
     const config = loadConfig(configDir)
 
-    const channelId = resolveChannelId(config, task.workspace, assigneeOverride ?? task.assignee)
+    const channelId = resolveChannelId(config, task.workspace, opts?.assigneeOverride ?? task.assignee)
     if (!channelId) return null
 
-    // Resolve notification bot token:
-    // 1. Dedicated Fleet Bot token (config.discord.notificationBotToken env var)
-    // 2. Fallback: lead agent's token
+    // Resolve sender's bot token (notification appears as their message):
+    // 1. Sender agent's own token (if sender is a known agent)
+    // 2. Dedicated Fleet Bot token (config.discord.notificationBotToken env var)
+    // 3. Fallback: lead agent's token
     let token: string | undefined
 
-    const notifTokenEnv = config.discord.notificationBotToken
-    if (notifTokenEnv) {
-      token = process.env[notifTokenEnv] ?? loadEnv(configDir)[notifTokenEnv]
+    // Try sender's own token first
+    if (opts?.sender && config.agents[opts.sender]) {
+      try {
+        token = getToken(opts.sender, config, configDir)
+      } catch {}
     }
 
+    // Try dedicated notification bot token
+    if (!token) {
+      const notifTokenEnv = config.discord.notificationBotToken
+      if (notifTokenEnv) {
+        token = process.env[notifTokenEnv] ?? loadEnv(configDir)[notifTokenEnv]
+      }
+    }
+
+    // Fall back to lead's token
     if (!token) {
       const leadName = config.structure?.lead
         ?? Object.entries(config.agents).find(([, def]) => def.role === "lead")?.[0]
@@ -139,9 +151,9 @@ function formatPriority(p: string): string {
   }
 }
 
-export async function notifyTaskAssigned(task: Task): Promise<void> {
+export async function notifyTaskAssigned(task: Task, sender?: string): Promise<void> {
   if (!task.assignee) return
-  const ctx = await resolveContext(task)
+  const ctx = await resolveContext(task, { sender: sender ?? task.createdBy })
   if (!ctx) return
 
   const msg = `${mention(ctx, task.assignee)} You've been assigned: **${task.title}** [${formatPriority(task.priority)}]\nTask ID: \`${task.id}\` — run \`fleet task show ${task.id}\` for details.`
@@ -153,8 +165,8 @@ export async function notifyTaskAssigned(task: Task): Promise<void> {
   }
 }
 
-export async function notifyTaskDone(task: Task): Promise<void> {
-  const ctx = await resolveContext(task)
+export async function notifyTaskDone(task: Task, sender?: string): Promise<void> {
+  const ctx = await resolveContext(task, { sender: sender ?? task.assignee })
   if (!ctx) return
 
   const creator = task.createdBy
@@ -169,8 +181,8 @@ export async function notifyTaskDone(task: Task): Promise<void> {
   }
 }
 
-export async function notifyTaskBlocked(task: Task): Promise<void> {
-  const ctx = await resolveContext(task)
+export async function notifyTaskBlocked(task: Task, sender?: string): Promise<void> {
+  const ctx = await resolveContext(task, { sender: sender ?? task.assignee })
   if (!ctx) return
 
   const leadName = ctx.config.structure?.lead
@@ -187,9 +199,9 @@ export async function notifyTaskBlocked(task: Task): Promise<void> {
   }
 }
 
-export async function notifyTaskReassigned(task: Task, oldAssignee: string | undefined, newAssignee: string | undefined): Promise<void> {
+export async function notifyTaskReassigned(task: Task, oldAssignee: string | undefined, newAssignee: string | undefined, sender?: string): Promise<void> {
   if (!oldAssignee && !newAssignee) return
-  const ctx = await resolveContext(task)
+  const ctx = await resolveContext(task, { sender })
   if (!ctx) return
 
   const parts: string[] = []

@@ -108,8 +108,9 @@ async function taskCreate(args: string[], opts: { json?: boolean }): Promise<voi
   }
 
   // Notifications: local mode only — server handles them in HTTP mode
+  const self = process.env.FLEET_SELF
   if (!useHttpApi() && created.assignee) {
-    notifyTaskAssigned(created).catch(() => {})
+    notifyTaskAssigned(created, self).catch(() => {})
   }
 }
 
@@ -168,13 +169,14 @@ async function taskUpdate(args: string[], opts: { json?: boolean }): Promise<voi
 
   // Notifications: local mode only — server handles them in HTTP mode
   if (!useHttpApi()) {
+    const self = process.env.FLEET_SELF
     if (status === "done") {
-      notifyTaskDone(updated).catch(() => {})
+      notifyTaskDone(updated, self).catch(() => {})
     } else if (status === "blocked") {
-      notifyTaskBlocked(updated).catch(() => {})
+      notifyTaskBlocked(updated, self).catch(() => {})
     }
     if (assign !== undefined && assign !== oldAssignee) {
-      notifyTaskReassigned(updated, oldAssignee, assign).catch(() => {})
+      notifyTaskReassigned(updated, oldAssignee, assign, self).catch(() => {})
     }
   }
 }
