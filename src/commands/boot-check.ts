@@ -342,33 +342,61 @@ export async function bootCheck(
 
   const stateDir = resolveStateDir(agentName, config)
 
-  // Validate bot tokens and collect IDs
+  // Validate bot tokens — use cache for fast restarts, only validate uncached
   const discord = new DiscordApi()
   const botIds: Record<string, string> = {}
   const botDisplayNames: Record<string, string> = {}
 
+  const botIdsCachePath = join(configDir, "bot-ids-cache.json")
+  let cachedBotIds: Record<string, { id: string; displayName: string }> = {}
+  try {
+    if (existsSync(botIdsCachePath)) {
+      cachedBotIds = JSON.parse(readFileSync(botIdsCachePath, "utf8"))
+    }
+  } catch {}
+
   const entries = Object.entries(config.agents)
-  const tokenResults = await Promise.allSettled(
-    entries.map(async ([name]) => {
-      const agentToken = getToken(name, config, configDir)
-      const info = await discord.validateToken(agentToken)
-      return { name, id: info.id, displayName: info.name }
-    })
+
+  // Use cached IDs where available
+  for (const [name, cached] of Object.entries(cachedBotIds)) {
+    if (config.agents[name]) {
+      botIds[name] = cached.id
+      botDisplayNames[name] = cached.displayName
+    }
+  }
+
+  // Only validate the starting agent's own token (critical) + any uncached agents
+  const needsValidation = entries.filter(([name]) =>
+    name === agentName || !cachedBotIds[name]
   )
 
-  for (let i = 0; i < entries.length; i++) {
-    const [name] = entries[i]
-    const result = tokenResults[i]
-    if (result.status === "fulfilled") {
-      botIds[name] = result.value.id
-      botDisplayNames[name] = result.value.displayName
-    } else {
-      botIds[name] = "UNKNOWN"
-      botDisplayNames[name] = name
-      if (name === agentName) {
-        throw new Error(`Boot-check failed: own token validation failed — ${result.reason instanceof Error ? result.reason.message : result.reason}`)
+  if (needsValidation.length > 0) {
+    const tokenResults = await Promise.allSettled(
+      needsValidation.map(async ([name]) => {
+        const agentToken = getToken(name, config, configDir)
+        const info = await discord.validateToken(agentToken)
+        return { name, id: info.id, displayName: info.name }
+      })
+    )
+
+    for (let i = 0; i < needsValidation.length; i++) {
+      const [name] = needsValidation[i]
+      const result = tokenResults[i]
+      if (result.status === "fulfilled") {
+        botIds[name] = result.value.id
+        botDisplayNames[name] = result.value.displayName
+        cachedBotIds[name] = { id: result.value.id, displayName: result.value.displayName }
+      } else {
+        botIds[name] = "UNKNOWN"
+        botDisplayNames[name] = name
+        if (name === agentName) {
+          throw new Error(`Boot-check failed: own token validation failed — ${result.reason instanceof Error ? result.reason.message : result.reason}`)
+        }
       }
     }
+
+    // Update cache
+    try { writeFileSync(botIdsCachePath, JSON.stringify(cachedBotIds, null, 2)) } catch {}
   }
 
   // Step 1: Regenerate access.json from fleet.yaml
