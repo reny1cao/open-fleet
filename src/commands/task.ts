@@ -107,8 +107,8 @@ async function taskCreate(args: string[], opts: { json?: boolean }): Promise<voi
     console.log(parts.join(" — "))
   }
 
-  // Notifications: server handles them for HTTP mode; local mode fires here
-  if (!useHttpApi() && created.assignee) {
+  // Fire-and-forget notification
+  if (created.assignee) {
     notifyTaskAssigned(created).catch(() => {})
   }
 }
@@ -166,16 +166,14 @@ async function taskUpdate(args: string[], opts: { json?: boolean }): Promise<voi
     console.log(parts.join(" — "))
   }
 
-  // Notifications: server handles them for HTTP mode; local mode fires here
-  if (!useHttpApi()) {
-    if (status === "done") {
-      notifyTaskDone(updated).catch(() => {})
-    } else if (status === "blocked") {
-      notifyTaskBlocked(updated).catch(() => {})
-    }
-    if (assign !== undefined && assign !== oldAssignee) {
-      notifyTaskReassigned(updated, oldAssignee, assign).catch(() => {})
-    }
+  // Fire-and-forget notifications
+  if (status === "done") {
+    notifyTaskDone(updated).catch(() => {})
+  } else if (status === "blocked") {
+    notifyTaskBlocked(updated).catch(() => {})
+  }
+  if (assign !== undefined && assign !== oldAssignee) {
+    notifyTaskReassigned(updated, oldAssignee, assign).catch(() => {})
   }
 }
 
