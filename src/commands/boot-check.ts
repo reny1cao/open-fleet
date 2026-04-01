@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from "fs"
+import { existsSync, readFileSync, statSync, writeFileSync } from "fs"
 import { join } from "path"
 import { homedir } from "os"
 import { findConfigDir, loadConfig, getToken, resolveStateDir } from "../core/config"
@@ -159,6 +159,169 @@ function logBootCommand(
   return { step: "boot-log", status: "pass", message: `Boot command logged to ${logPath}` }
 }
 
+// ── Task context re-injection ───────────────────────────────────────────────
+
+const MAX_TASK_CONTEXT_CHARS = 2000
+
+interface TaskEntry {
+  id: string
+  title: string
+  status: string
+  priority: string
+  assignee?: string
+  workspace?: string
+  blockedReason?: string
+  description?: string
+}
+
+function priorityWeight(p: string): number {
+  switch (p) {
+    case "urgent": return 0
+    case "high": return 1
+    case "normal": return 2
+    case "low": return 3
+    default: return 4
+  }
+}
+
+function injectTaskContext(
+  agentName: string,
+  agentRole: string,
+  stateDir: string,
+  fleetName: string,
+  log: (...args: unknown[]) => void,
+): BootCheckResult {
+  const tasksPath = join(homedir(), ".fleet", "tasks", `${fleetName}.json`)
+
+  if (!existsSync(tasksPath)) {
+    return { step: "tasks", status: "pass", message: "No task store found — skipping" }
+  }
+
+  let store: { tasks: TaskEntry[] }
+  try {
+    store = JSON.parse(readFileSync(tasksPath, "utf8"))
+  } catch (e) {
+    return {
+      step: "tasks",
+      status: "warn",
+      message: `Task store corrupt — skipping (${e instanceof Error ? e.message : e})`,
+    }
+  }
+
+  if (!store.tasks || store.tasks.length === 0) {
+    return { step: "tasks", status: "pass", message: "Task store empty — skipping" }
+  }
+
+  const isLead = agentRole === "lead"
+  const activeTasks = store.tasks.filter(
+    (t) => t.status !== "done" && t.status !== "cancelled"
+  )
+
+  let relevantTasks: TaskEntry[]
+  let header: string
+
+  if (isLead) {
+    // Lead gets the full board
+    relevantTasks = activeTasks.sort((a, b) => priorityWeight(a.priority) - priorityWeight(b.priority))
+    header = "## Fleet Task Board"
+  } else {
+    // Worker gets only their assigned tasks
+    relevantTasks = activeTasks
+      .filter((t) => t.assignee === agentName)
+      .sort((a, b) => priorityWeight(a.priority) - priorityWeight(b.priority))
+    header = "## Your Current Tasks"
+  }
+
+  if (relevantTasks.length === 0) {
+    const contextPath = join(stateDir, "tasks-context.md")
+    try { writeFileSync(contextPath, "", "utf8") } catch {}
+    return { step: "tasks", status: "pass", message: "No active tasks for this agent" }
+  }
+
+  // Build context content with size cap
+  const lines: string[] = [header, ""]
+  let charCount = header.length + 1
+
+  if (isLead) {
+    // Group by status for lead board view
+    const groups: Record<string, TaskEntry[]> = {}
+    for (const t of relevantTasks) {
+      const key = t.status
+      if (!groups[key]) groups[key] = []
+      groups[key].push(t)
+    }
+
+    const statusOrder = ["in_progress", "blocked", "open"]
+    for (const status of statusOrder) {
+      const tasks = groups[status]
+      if (!tasks || tasks.length === 0) continue
+
+      const label = status === "in_progress" ? "In Progress" : status === "blocked" ? "Blocked" : "Open"
+      const groupHeader = `**${label} (${tasks.length}):**`
+      if (charCount + groupHeader.length + 1 > MAX_TASK_CONTEXT_CHARS) {
+        const remaining = relevantTasks.length - lines.filter((l) => l.startsWith("- [")).length
+        lines.push(`*[+${remaining} more — run \`fleet task board\`]*`)
+        break
+      }
+      lines.push(groupHeader)
+      charCount += groupHeader.length + 1
+
+      for (const t of tasks) {
+        const assigneeStr = t.assignee ? ` — ${t.assignee}` : " — unassigned"
+        const blockedStr = t.status === "blocked" && t.blockedReason ? ` — BLOCKED: ${t.blockedReason}` : ""
+        const line = `- [${t.id}] ${t.title}${assigneeStr} (${t.priority.toUpperCase()})${blockedStr}`
+        if (charCount + line.length + 1 > MAX_TASK_CONTEXT_CHARS) {
+          const remaining = relevantTasks.length - lines.filter((l) => l.startsWith("- [")).length
+          lines.push(`*[+${remaining} more — run \`fleet task board\`]*`)
+          break
+        }
+        lines.push(line)
+        charCount += line.length + 1
+      }
+      lines.push("")
+      charCount += 1
+    }
+
+    lines.push("Run `fleet task board` for live state. `fleet task create/assign/update` to manage.")
+  } else {
+    // Worker view: their tasks with details
+    for (const t of relevantTasks) {
+      const workspaceStr = t.workspace ? ` | Workspace: ${t.workspace}` : ""
+      const blockedStr = t.status === "blocked" && t.blockedReason ? `\n  Blocked: ${t.blockedReason}` : ""
+      const descStr = t.description ? `\n  ${t.description.slice(0, 100)}${t.description.length > 100 ? "..." : ""}` : ""
+      const line = `- **[${t.id}]** ${t.priority.toUpperCase()} — ${t.title}\n  Status: ${t.status}${workspaceStr}${blockedStr}${descStr}`
+      if (charCount + line.length + 1 > MAX_TASK_CONTEXT_CHARS) {
+        const remaining = relevantTasks.length - lines.filter((l) => l.startsWith("- **[")).length
+        lines.push(`*[+${remaining} more — run \`fleet task list --assignee ${agentName}\`]*`)
+        break
+      }
+      lines.push(line)
+      charCount += line.length + 1
+    }
+
+    lines.push("")
+    lines.push("Run `fleet task show <id>` for details. `fleet task update <id> --status done --note \"...\"` when complete.")
+  }
+
+  const content = lines.join("\n")
+  const contextPath = join(stateDir, "tasks-context.md")
+  try {
+    writeFileSync(contextPath, content + "\n", "utf8")
+  } catch (e) {
+    return {
+      step: "tasks",
+      status: "warn",
+      message: `Failed to write tasks-context.md — ${e instanceof Error ? e.message : e}`,
+    }
+  }
+
+  return {
+    step: "tasks",
+    status: "pass",
+    message: `Injected ${relevantTasks.length} task(s) into tasks-context.md (${content.length} chars, ${isLead ? "full board" : "personal"})`,
+  }
+}
+
 // ── Main export ─────────────────────────────────────────────────────────────
 
 export async function bootCheck(
@@ -209,19 +372,19 @@ export async function bootCheck(
   }
 
   // Step 1: Regenerate access.json from fleet.yaml
-  log("  [1/4] Regenerating access.json...")
+  log("  [1/5] Regenerating access.json...")
   const accessResult = await checkAndRegenerateAccess(agentName, config, stateDir, botIds, log)
   results.push(accessResult)
   log(`        ${accessResult.status}: ${accessResult.message}`)
 
   // Step 2: Verify plugin integrity
-  log("  [2/4] Checking plugin integrity...")
+  log("  [2/5] Checking plugin integrity...")
   const pluginResult = checkPluginIntegrity(log)
   results.push(pluginResult)
   log(`        ${pluginResult.status}: ${pluginResult.message}`)
 
   // Step 3: Verify identity.md
-  log("  [3/4] Checking identity...")
+  log("  [3/5] Checking identity...")
   // Regenerate identity + roster to ensure they're current
   writeBootIdentity(agentName, config, botIds, stateDir, botDisplayNames)
   writeRoster(agentName, config, botIds, stateDir, botDisplayNames)
@@ -229,8 +392,14 @@ export async function bootCheck(
   results.push(identityResult)
   log(`        ${identityResult.status}: ${identityResult.message}`)
 
-  // Step 4: Log boot command + env snapshot
-  log("  [4/4] Logging boot command...")
+  // Step 4: Inject task context (failure-tolerant — never blocks boot)
+  log("  [4/5] Injecting task context...")
+  const taskResult = injectTaskContext(agentName, agentDef.role, stateDir, config.fleet.name, log)
+  results.push(taskResult)
+  log(`        ${taskResult.status}: ${taskResult.message}`)
+
+  // Step 5: Log boot command + env snapshot
+  log("  [5/5] Logging boot command...")
   const token = getToken(agentName, config, configDir)
   const bootLogResult = logBootCommand(agentName, stateDir, {
     DISCORD_BOT_TOKEN: token,
