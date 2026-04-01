@@ -2,7 +2,7 @@ import { findConfigDir, loadConfig, saveConfig, loadEnv, resolveStateDir } from 
 import { writeBootIdentity, writeRoster, updateAllRosters } from "../core/identity"
 import { DiscordApi } from "../channel/discord/api"
 import { writeAccessConfig } from "../channel/discord/access"
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from "fs"
+import { appendFileSync, existsSync, readFileSync, writeFileSync, unlinkSync } from "fs"
 import { join } from "path"
 import type { AgentDef, AgentAdapterKind } from "../core/types"
 import { patch } from "./patch"
@@ -126,6 +126,10 @@ export async function addAgent(opts: {
   }
   writeFileSync(botIdsPath, JSON.stringify(existingBotIds, null, 2) + "\n", "utf8")
   log("  Updated bot-ids.json")
+
+  // Invalidate bot ID cache — new agent means cached IDs are incomplete
+  const botIdsCachePath = join(configDir, "bot-ids-cache.json")
+  try { if (existsSync(botIdsCachePath)) unlinkSync(botIdsCachePath) } catch {}
 
   const needsClaudePatch = Object.values(config.agents).some((agent) => (agent.agentAdapter ?? "claude") === "claude")
   if (needsClaudePatch) {
