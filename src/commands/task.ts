@@ -1,6 +1,7 @@
 import { loadTaskStore, saveTaskStore, createTask, updateTask, getTask, listTasks, activeTasks, sortByPriority } from "../tasks/store"
 import type { TaskStatus, TaskPriority, TaskResult } from "../tasks/types"
 import { notifyTaskAssigned, notifyTaskDone, notifyTaskBlocked, notifyTaskReassigned } from "../tasks/notify"
+import { useHttpApi, httpCreateTask, httpUpdateTask, httpListTasks, httpGetTask, httpGetBoard } from "../tasks/client"
 
 function formatPriority(p: string): string {
   switch (p) {
@@ -83,19 +84,19 @@ async function taskCreate(args: string[], opts: { json?: boolean }): Promise<voi
 
   if (!title) throw new Error("Usage: fleet task create <title> [--assign <agent>]")
 
-  const store = loadTaskStore()
-
-  // Dependency cycle detection
-  if (dependsOn && dependsOn.length > 0) {
-    for (const depId of dependsOn) {
-      if (!getTask(store, depId)) {
-        throw new Error(`Dependency not found: ${depId}`)
+  let created
+  if (useHttpApi()) {
+    created = await httpCreateTask({ title, assignee: assign, priority, workspace, description, parentId, dependsOn, project })
+  } else {
+    const store = loadTaskStore()
+    if (dependsOn && dependsOn.length > 0) {
+      for (const depId of dependsOn) {
+        if (!getTask(store, depId)) throw new Error(`Dependency not found: ${depId}`)
       }
     }
+    created = createTask(store, { title, assignee: assign, priority, workspace, description, parentId, dependsOn, project })
+    saveTaskStore(store)
   }
-
-  const created = createTask(store, { title, assignee: assign, priority, workspace, description, parentId, dependsOn, project })
-  saveTaskStore(store)
 
   if (opts.json) {
     console.log(JSON.stringify(created))
@@ -106,8 +107,8 @@ async function taskCreate(args: string[], opts: { json?: boolean }): Promise<voi
     console.log(parts.join(" — "))
   }
 
-  // Fire-and-forget notification — don't block the CLI on Discord
-  if (created.assignee) {
+  // Notifications: server handles them for HTTP mode; local mode fires here
+  if (!useHttpApi() && created.assignee) {
     notifyTaskAssigned(created).catch(() => {})
   }
 }
@@ -144,10 +145,17 @@ async function taskUpdate(args: string[], opts: { json?: boolean }): Promise<voi
     }
   }
 
-  const store = loadTaskStore()
-  const oldAssignee = getTask(store, taskId)?.assignee
-  const updated = updateTask(store, taskId, { status, assignee: assign, note, result, blockedReason })
-  saveTaskStore(store)
+  let updated
+  let oldAssignee: string | undefined
+  if (useHttpApi()) {
+    updated = await httpUpdateTask(taskId, { status, assignee: assign, note, result, blockedReason })
+    oldAssignee = undefined // server handles notifications
+  } else {
+    const store = loadTaskStore()
+    oldAssignee = getTask(store, taskId)?.assignee
+    updated = updateTask(store, taskId, { status, assignee: assign, note, result, blockedReason })
+    saveTaskStore(store)
+  }
 
   if (opts.json) {
     console.log(JSON.stringify(updated))
@@ -158,14 +166,16 @@ async function taskUpdate(args: string[], opts: { json?: boolean }): Promise<voi
     console.log(parts.join(" — "))
   }
 
-  // Fire-and-forget notifications — don't block CLI on Discord
-  if (status === "done") {
-    notifyTaskDone(updated).catch(() => {})
-  } else if (status === "blocked") {
-    notifyTaskBlocked(updated).catch(() => {})
-  }
-  if (assign !== undefined && assign !== oldAssignee) {
-    notifyTaskReassigned(updated, oldAssignee, assign).catch(() => {})
+  // Notifications: server handles them for HTTP mode; local mode fires here
+  if (!useHttpApi()) {
+    if (status === "done") {
+      notifyTaskDone(updated).catch(() => {})
+    } else if (status === "blocked") {
+      notifyTaskBlocked(updated).catch(() => {})
+    }
+    if (assign !== undefined && assign !== oldAssignee) {
+      notifyTaskReassigned(updated, oldAssignee, assign).catch(() => {})
+    }
   }
 }
 
@@ -188,8 +198,13 @@ async function taskList(args: string[], opts: { json?: boolean }): Promise<void>
     if (!assignee) throw new Error("--mine requires FLEET_SELF env var (set when running as a fleet agent)")
   }
 
-  const store = loadTaskStore()
-  const tasks = sortByPriority(listTasks(store, { assignee, status, project }))
+  let tasks
+  if (useHttpApi()) {
+    tasks = await httpListTasks({ assignee, status, project })
+  } else {
+    const store = loadTaskStore()
+    tasks = sortByPriority(listTasks(store, { assignee, status, project }))
+  }
 
   if (opts.json) {
     console.log(JSON.stringify(tasks))
@@ -211,8 +226,15 @@ async function taskList(args: string[], opts: { json?: boolean }): Promise<void>
 }
 
 async function taskBoard(_args: string[], opts: { json?: boolean }): Promise<void> {
-  const store = loadTaskStore()
-  const active = activeTasks(store)
+  let active
+  if (useHttpApi()) {
+    // HTTP board endpoint returns tasks grouped, but we need flat active list for display
+    const allTasks = await httpListTasks()
+    active = allTasks.filter((t: any) => t.status !== "done" && t.status !== "cancelled")
+  } else {
+    const store = loadTaskStore()
+    active = activeTasks(store)
+  }
 
   if (opts.json) {
     const board: Record<string, typeof active> = {}
@@ -251,17 +273,27 @@ async function taskBoard(_args: string[], opts: { json?: boolean }): Promise<voi
     }
   }
 
-  const done = store.tasks.filter((t) => t.status === "done").length
-  const cancelled = store.tasks.filter((t) => t.status === "cancelled").length
-  console.log(`\n${totalShown} active | ${done} done | ${cancelled} cancelled`)
+  if (!useHttpApi()) {
+    const store = loadTaskStore()
+    const done = store.tasks.filter((t) => t.status === "done").length
+    const cancelled = store.tasks.filter((t) => t.status === "cancelled").length
+    console.log(`\n${totalShown} active | ${done} done | ${cancelled} cancelled`)
+  } else {
+    console.log(`\n${totalShown} active`)
+  }
 }
 
 async function taskShow(args: string[], opts: { json?: boolean }): Promise<void> {
   const taskId = args[0]
   if (!taskId || taskId.startsWith("--")) throw new Error("Usage: fleet task show <task-id>")
 
-  const store = loadTaskStore()
-  const t = getTask(store, taskId)
+  let t
+  if (useHttpApi()) {
+    t = await httpGetTask(taskId)
+  } else {
+    const store = loadTaskStore()
+    t = getTask(store, taskId)
+  }
   if (!t) throw new Error(`Task not found: ${taskId}`)
 
   if (opts.json) {
