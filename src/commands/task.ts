@@ -39,14 +39,17 @@ export async function task(args: string[], opts: { json?: boolean }): Promise<vo
       return taskBoard(args.slice(1), opts)
     case "show":
       return taskShow(args.slice(1), opts)
+    case "recap":
+      return taskRecap(args.slice(1), opts)
     default:
       throw new Error(
-        "Usage: fleet task <create|update|list|board|show>\n" +
+        "Usage: fleet task <create|update|list|board|show|recap>\n" +
         "  fleet task create <title> [--assign <agent>] [--priority <p>] [--workspace <ws>] [--desc <d>]\n" +
         "  fleet task update <task-id> --status <status> [--assign <agent>] [--note <text>] [--result <json>]\n" +
         "  fleet task list [--assignee <agent>] [--status <status>] [--mine]\n" +
         "  fleet task board\n" +
-        "  fleet task show <task-id>"
+        "  fleet task show <task-id>\n" +
+        "  fleet task recap [--since 2h|4h|today|24h]"
       )
   }
 }
@@ -294,4 +297,124 @@ async function taskShow(args: string[], opts: { json?: boolean }): Promise<void>
       console.log(`    [${n.timestamp}] ${n.author}: ${n.text}`)
     }
   }
+}
+
+function parseSince(since: string): Date {
+  const now = new Date()
+  if (since === "today") {
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  }
+  const match = since.match(/^(\d+)(h|m|d)$/)
+  if (match) {
+    const [, amount, unit] = match
+    const ms = unit === "h" ? parseInt(amount) * 3600000
+      : unit === "m" ? parseInt(amount) * 60000
+      : parseInt(amount) * 86400000
+    return new Date(now.getTime() - ms)
+  }
+  // Try ISO date
+  const parsed = new Date(since)
+  if (!isNaN(parsed.getTime())) return parsed
+  throw new Error(`Invalid --since value: "${since}". Use: 2h, 4h, today, 24h, or ISO date`)
+}
+
+async function taskRecap(args: string[], opts: { json?: boolean }): Promise<void> {
+  let since = "today"
+
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--since" && args[i + 1]) { since = args[++i]; continue }
+    if (args[i] === "--json") continue
+  }
+
+  const cutoff = parseSince(since)
+  const store = loadTaskStore()
+
+  // Collect all events since cutoff from task notes
+  const events: { timestamp: string; taskId: string; title: string; agent: string; type: string; text: string }[] = []
+
+  for (const task of store.tasks) {
+    for (const note of task.notes) {
+      if (new Date(note.timestamp) >= cutoff) {
+        events.push({
+          timestamp: note.timestamp,
+          taskId: task.id,
+          title: task.title,
+          agent: note.author,
+          type: note.type,
+          text: note.text,
+        })
+      }
+    }
+    // Also capture tasks created in the window
+    if (new Date(task.createdAt) >= cutoff) {
+      events.push({
+        timestamp: task.createdAt,
+        taskId: task.id,
+        title: task.title,
+        agent: task.createdBy,
+        type: "created",
+        text: `Created: "${task.title}"${task.assignee ? ` → ${task.assignee}` : ""}`,
+      })
+    }
+  }
+
+  events.sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+
+  if (opts.json) {
+    console.log(JSON.stringify({ since: cutoff.toISOString(), events }))
+    return
+  }
+
+  // Summary counts — handle both typed notes and legacy untyped notes (text-based fallback)
+  const isStatusDone = (e: typeof events[0]) => e.text.includes("→ done")
+  const isStatusBlocked = (e: typeof events[0]) => e.text.includes("→ blocked")
+  const isStatusChange = (e: typeof events[0]) => e.type === "status_change" || e.text.startsWith("Status:")
+  const completed = events.filter(e => isStatusChange(e) && isStatusDone(e))
+  const created = events.filter(e => e.type === "created")
+  const blocked = events.filter(e => isStatusChange(e) && isStatusBlocked(e))
+  const assignments = events.filter(e => e.type === "assignment" || e.text.startsWith("Reassigned:"))
+
+  console.log(`\nRecap since ${cutoff.toISOString().slice(0, 16)}:`)
+  console.log(`  ${created.length} created | ${completed.length} completed | ${blocked.length} blocked | ${assignments.length} reassigned`)
+
+  // Completed tasks
+  if (completed.length > 0) {
+    console.log(`\nCompleted:`)
+    for (const e of completed) {
+      const task = store.tasks.find(t => t.id === e.taskId)
+      const result = task?.result?.summary ?? ""
+      const resultLine = result ? ` — ${truncate(result, 60)}` : ""
+      console.log(`  ${e.taskId}  ${e.agent}  ${truncate(e.title, 40)}${resultLine}`)
+    }
+  }
+
+  // Blocked tasks
+  if (blocked.length > 0) {
+    console.log(`\nBlocked:`)
+    for (const e of blocked) {
+      const task = store.tasks.find(t => t.id === e.taskId)
+      const reason = task?.blockedReason ?? ""
+      console.log(`  ${e.taskId}  ${e.agent}  ${truncate(e.title, 40)} — ${reason}`)
+    }
+  }
+
+  // Currently in progress
+  const inProgress = store.tasks.filter(t => t.status === "in_progress")
+  if (inProgress.length > 0) {
+    console.log(`\nStill in progress:`)
+    for (const t of sortByPriority(inProgress)) {
+      console.log(`  ${t.id}  [${formatPriority(t.priority)}]  ${t.assignee ?? "unassigned"}  ${truncate(t.title, 40)}`)
+    }
+  }
+
+  // Timeline
+  if (events.length > 0) {
+    console.log(`\nTimeline:`)
+    for (const e of events) {
+      const time = e.timestamp.slice(11, 16)
+      console.log(`  ${time}  ${e.taskId}  ${e.agent}: ${truncate(e.text, 60)}`)
+    }
+  }
+
+  console.log("")
 }
