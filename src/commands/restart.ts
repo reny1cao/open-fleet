@@ -20,7 +20,11 @@ export async function restart(
   const adapterKind = getAgentAdapterKind(agentName, config)
 
   if (!(await runtime.isRunning(session))) {
-    throw new Error(`Agent "${agentName}" is not running`)
+    // Agent already stopped — start fresh instead of erroring
+    if (!opts?.json) console.log(`Agent "${agentName}" is not running — starting fresh`)
+    await start(agentName, { wait: false, json: opts?.json })
+    if (!opts?.json) console.log(`Started ${agentName}`)
+    return
   }
 
   if (adapterKind === "codex") {
