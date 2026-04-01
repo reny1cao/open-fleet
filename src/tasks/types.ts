@@ -1,0 +1,65 @@
+export type TaskStatus = "open" | "in_progress" | "done" | "blocked" | "cancelled"
+export type TaskPriority = "low" | "normal" | "high" | "urgent"
+
+export interface TaskNote {
+  timestamp: string
+  author: string
+  text: string
+}
+
+export interface TaskResult {
+  summary?: string
+  commits?: string[]
+  filesChanged?: string[]
+  prUrl?: string
+  testsPassed?: boolean
+  [key: string]: unknown
+}
+
+export interface Task {
+  id: string
+  title: string
+  description?: string
+
+  createdBy: string
+  assignee?: string
+  fleet: string
+  project?: string
+  workspace?: string
+
+  status: TaskStatus
+  priority: TaskPriority
+  blockedReason?: string
+
+  parentId?: string
+  dependsOn?: string[]
+
+  result?: TaskResult
+
+  createdAt: string
+  updatedAt: string
+  startedAt?: string
+  completedAt?: string
+
+  notes: TaskNote[]
+}
+
+export interface TaskStore {
+  version: 1
+  fleet: string
+  nextId: number
+  tasks: Task[]
+}
+
+// Valid status transitions
+const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
+  open: ["in_progress", "cancelled", "blocked"],
+  in_progress: ["done", "blocked", "cancelled"],
+  blocked: ["open", "in_progress", "cancelled"],
+  done: ["open"],
+  cancelled: [],
+}
+
+export function isValidTransition(from: TaskStatus, to: TaskStatus): boolean {
+  return VALID_TRANSITIONS[from]?.includes(to) ?? false
+}
