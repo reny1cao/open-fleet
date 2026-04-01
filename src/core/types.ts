@@ -6,7 +6,7 @@ export interface ChannelDef {
 }
 
 export interface FleetConfig {
-  fleet: { name: string; mission?: string }
+  fleet: { name: string; mission?: string; apiHost?: string; apiPort?: number }
   structure?: OrgStructure
   discord: {
     channels: Record<string, ChannelDef>
