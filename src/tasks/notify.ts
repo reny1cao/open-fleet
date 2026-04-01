@@ -1,25 +1,56 @@
 import { findConfigDir, loadConfig, getToken } from "../core/config"
 import { DiscordApi } from "../channel/discord/api"
+import type { FleetConfig } from "../core/types"
 import type { Task } from "./types"
 
 interface NotifyContext {
   configDir: string
+  config: FleetConfig
   token: string
   channelId: string
   discord: DiscordApi
   botIds: Record<string, string>
 }
 
-async function resolveContext(): Promise<NotifyContext | null> {
+/**
+ * Resolve the Discord channel for a task notification.
+ * Priority: workspace match → "command" channel → first channel.
+ */
+function resolveChannelId(config: FleetConfig, taskWorkspace?: string): string | null {
+  const channels = config.discord.channels
+
+  // 1. Match task workspace to a channel's workspace
+  if (taskWorkspace) {
+    // Normalize trailing slashes for comparison
+    const normalize = (p: string) => p.replace(/\/+$/, "")
+    const taskWs = normalize(taskWorkspace)
+
+    // Try exact match first, then prefix match (most specific wins)
+    let bestMatch: { label: string; id: string; wsLen: number } | null = null
+    for (const [label, ch] of Object.entries(channels)) {
+      if (!ch.workspace) continue
+      const chWs = normalize(ch.workspace)
+      if (taskWs === chWs || taskWs.startsWith(chWs + "/")) {
+        if (!bestMatch || chWs.length > bestMatch.wsLen) {
+          bestMatch = { label, id: ch.id, wsLen: chWs.length }
+        }
+      }
+    }
+    if (bestMatch) return bestMatch.id
+  }
+
+  // 2. Fallback: command channel, then first channel
+  const fallback = channels["command"] ?? Object.values(channels)[0]
+  return fallback?.id ?? null
+}
+
+async function resolveContext(task: Task): Promise<NotifyContext | null> {
   try {
     const configDir = findConfigDir()
     const config = loadConfig(configDir)
 
-    // Find command channel (or first available)
-    const channel = config.discord.channels["dev"]
-      ?? config.discord.channels["command"]
-      ?? Object.values(config.discord.channels)[0]
-    if (!channel) return null
+    const channelId = resolveChannelId(config, task.workspace)
+    if (!channelId) return null
 
     // Use lead's token to send notifications
     const leadName = config.structure?.lead
@@ -47,7 +78,7 @@ async function resolveContext(): Promise<NotifyContext | null> {
       }
     }
 
-    return { configDir, token, channelId: channel.id, discord, botIds }
+    return { configDir, config, token, channelId, discord, botIds }
   } catch {
     return null
   }
@@ -60,7 +91,7 @@ function mention(ctx: NotifyContext, agentName: string): string {
 
 function formatPriority(p: string): string {
   switch (p) {
-    case "urgent": return "🔴 URGENT"
+    case "urgent": return "URGENT"
     case "high": return "HIGH"
     default: return p.toUpperCase()
   }
@@ -68,7 +99,7 @@ function formatPriority(p: string): string {
 
 export async function notifyTaskAssigned(task: Task): Promise<void> {
   if (!task.assignee) return
-  const ctx = await resolveContext()
+  const ctx = await resolveContext(task)
   if (!ctx) return
 
   const msg = `${mention(ctx, task.assignee)} You've been assigned: **${task.title}** [${formatPriority(task.priority)}]\nTask ID: \`${task.id}\` — run \`fleet task show ${task.id}\` for details.`
@@ -81,7 +112,7 @@ export async function notifyTaskAssigned(task: Task): Promise<void> {
 }
 
 export async function notifyTaskDone(task: Task): Promise<void> {
-  const ctx = await resolveContext()
+  const ctx = await resolveContext(task)
   if (!ctx) return
 
   const creator = task.createdBy
@@ -97,14 +128,11 @@ export async function notifyTaskDone(task: Task): Promise<void> {
 }
 
 export async function notifyTaskBlocked(task: Task): Promise<void> {
-  const ctx = await resolveContext()
+  const ctx = await resolveContext(task)
   if (!ctx) return
 
-  // Notify the lead
-  const configDir = findConfigDir()
-  const config = loadConfig(configDir)
-  const leadName = config.structure?.lead
-    ?? Object.entries(config.agents).find(([, def]) => def.role === "lead")?.[0]
+  const leadName = ctx.config.structure?.lead
+    ?? Object.entries(ctx.config.agents).find(([, def]) => def.role === "lead")?.[0]
   if (!leadName) return
 
   const reason = task.blockedReason ?? "no reason given"
@@ -119,7 +147,7 @@ export async function notifyTaskBlocked(task: Task): Promise<void> {
 
 export async function notifyTaskReassigned(task: Task, oldAssignee: string | undefined, newAssignee: string | undefined): Promise<void> {
   if (!oldAssignee && !newAssignee) return
-  const ctx = await resolveContext()
+  const ctx = await resolveContext(task)
   if (!ctx) return
 
   const parts: string[] = []
