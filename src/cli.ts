@@ -20,6 +20,7 @@ import { bootCheck } from "./commands/boot-check"
 import { validate } from "./commands/validate"
 import { clear } from "./commands/clear"
 import { watchdog } from "./commands/watchdog"
+import { task } from "./commands/task"
 import type { AgentAdapterKind } from "./core/types"
 
 async function getVersion(): Promise<string> {
@@ -49,6 +50,11 @@ Usage:
   fleet logs --all [--lines N] [--json]
   fleet watch [--interval N]
   fleet watchdog [--interval N] [--dry-run] [--verbose] [--no-alert]
+  fleet task create <title> [--assign <agent>] [--priority <p>]
+  fleet task update <task-id> --status <status> [--note <text>]
+  fleet task list [--assignee <agent>] [--status <status>] [--mine]
+  fleet task board
+  fleet task show <task-id>
   fleet status [--json]
   fleet doctor [--json]
   fleet patch [--json]
@@ -169,6 +175,9 @@ export async function main(argv: string[]): Promise<void> {
           verbose: parseFlag(args, "--verbose"),
           noAlert: parseFlag(args, "--no-alert"),
         })
+        break
+      case "task":
+        await task(args.slice(1), { json: parseFlag(args, "--json") })
         break
       case "status":
         await status({ json: parseFlag(args, "--json") })
