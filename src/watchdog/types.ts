@@ -33,6 +33,7 @@ export interface AgentWatchState {
   consecutiveFailures: number
   lastRestart: string | null
   restartCooldownUntil: string | null
+  compactCooldownUntil: string | null
   lastOutputHash: string | null
   outputStaleCount: number
 }
