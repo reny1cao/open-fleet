@@ -3,7 +3,7 @@ import type { FleetConfig } from "../core/types"
 import type { WatchdogConfig, HealthCheckResult } from "./types"
 import { loadState, saveState, getAgentState, getServerState } from "./state"
 import { logEvent, createEvent } from "./log"
-import { checkSession, checkOutputStuck, checkPlugin, checkDiskSpace } from "./checks"
+import { checkSession, checkHeartbeat, checkOutputStuck, checkPlugin, checkDiskSpace, checkLocalDiskSpace } from "./checks"
 import { restartAgent, sendExitToAgent, sendCompact } from "./remediation"
 import { alertDiscord } from "./alert"
 
@@ -29,6 +29,7 @@ export async function runDaemon(config: WatchdogConfig): Promise<void> {
   process.on("SIGTERM", shutdown)
 
   while (true) {
+    try {
     const now = Date.now()
 
     // Detect Mac wake from sleep (tick took way longer than expected)
@@ -54,7 +55,7 @@ export async function runDaemon(config: WatchdogConfig): Promise<void> {
       agents.filter(([, def]) => def.server !== "local").map(([, def]) => def.server)
     )
 
-    // ── Session checks (every tick) ──────────────────────────────────────
+    // ── Session + heartbeat checks (every tick) ─────────────────────────
     for (const [name, def] of agents) {
       const result = await checkSession(name, fleetConfig)
 
@@ -74,7 +75,16 @@ export async function runDaemon(config: WatchdogConfig): Promise<void> {
           }
         }
       } else {
-        getAgentState(state, name).consecutiveFailures = 0
+        const agentState = getAgentState(state, name)
+        agentState.consecutiveFailures = 0
+        agentState.lastHealthy = new Date().toISOString()
+      }
+
+      // Heartbeat freshness check
+      const hbResult = await checkHeartbeat(name, fleetConfig)
+      if (hbResult.status === "critical") {
+        console.log(`[watchdog] ${name}: heartbeat dead (${hbResult.details.ageSec ?? "unknown"}s old)`)
+        logEvent(createEvent("agent_dead", "warn", { agent: name, server: def.server, details: hbResult.details }))
       }
     }
 
@@ -100,7 +110,7 @@ export async function runDaemon(config: WatchdogConfig): Promise<void> {
         } else {
           console.log(`[watchdog] ${name}: plugin error — ${errorType}`)
           logEvent(createEvent("plugin_crash", "warn", { agent: name, server: def.server, details: pluginResult.details }))
-          await sendExitToAgent(name, "plugin crash", state, config)
+          await sendExitToAgent(name, "plugin crash", state, config, fleetConfig)
         }
       }
     }
@@ -127,17 +137,33 @@ export async function runDaemon(config: WatchdogConfig): Promise<void> {
         // Try /compact first, then /exit if that doesn't help
         const agentState = getAgentState(state, name)
         if (agentState.outputStaleCount <= config.thresholds.stuckScans + 1) {
-          await sendCompact(name, "stuck — trying compact", state, config)
+          await sendCompact(name, "stuck — trying compact", state, config, fleetConfig)
         } else {
-          await sendExitToAgent(name, "stuck — compact didn't help", state, config)
+          await sendExitToAgent(name, "stuck — compact didn't help", state, config, fleetConfig)
         }
       }
     }
     if (shouldScanLocal) lastOutputScan = now
     if (shouldScanRemote) lastRemoteOutputScan = now
 
-    // ── Disk space check ─────────────────────────────────────────────────
+    // ── Disk space check (local + remote) ────────────────────────────────
     if (now - lastDiskCheck > config.intervals.diskCheck * 1000) {
+      // Local disk
+      const localDisk = await checkLocalDiskSpace()
+      const localPct = localDisk.details.pct as number | undefined
+      if (localPct !== undefined) {
+        if (localPct >= 95) {
+          await alertDiscord("critical", "local", "disk_critical",
+            `Local disk usage at ${localPct}%. Agents may fail.`,
+            state, config)
+        } else if (localPct >= 90) {
+          await alertDiscord("warn", "local", "disk_warning",
+            `Local disk usage at ${localPct}%. Consider cleanup.`,
+            state, config)
+        }
+      }
+
+      // Remote servers
       for (const serverName of servers) {
         const diskResult = await checkDiskSpace(serverName, fleetConfig)
         const serverState = getServerState(state, serverName)
@@ -198,6 +224,12 @@ export async function runDaemon(config: WatchdogConfig): Promise<void> {
         return as && as.consecutiveFailures === 0
       }).length
       console.log(`[watchdog] tick — ${online}/${agents.length} healthy`)
+    }
+
+    } catch (err) {
+      console.error(`[watchdog] Unhandled error in daemon loop: ${err instanceof Error ? err.message : err}`)
+      logEvent(createEvent("watchdog_stop", "critical", { details: { error: err instanceof Error ? err.message : String(err) } }))
+      saveState(state)
     }
 
     await Bun.sleep(config.intervals.localHeartbeat * 1000)

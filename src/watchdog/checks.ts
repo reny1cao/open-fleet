@@ -81,14 +81,14 @@ export async function checkOutputStuck(
 
   const currentHash = hashOutput(output)
 
-  if (currentHash === agentState.lastOutputHash && isThinking) {
+  if (currentHash === agentState.lastOutputHash) {
     agentState.outputStaleCount++
   } else {
     agentState.outputStaleCount = 0
   }
   agentState.lastOutputHash = currentHash
 
-  const stuck = agentState.outputStaleCount >= 3 && isThinking
+  const stuck = agentState.outputStaleCount >= 3
   return {
     agent: agentName,
     check: "output_stuck",
@@ -122,6 +122,27 @@ export async function checkPlugin(
     return { agent: agentName, check: "plugin", status: "critical", details: { error: "plugin_crash" } }
   }
   return { agent: agentName, check: "plugin", status: "healthy", details: {} }
+}
+
+// Check disk space on the local machine
+export async function checkLocalDiskSpace(): Promise<HealthCheckResult> {
+  try {
+    const result = Bun.spawnSync(["df", "-P", "/"], { stdout: "pipe", stderr: "pipe" })
+    const stdout = new TextDecoder().decode(result.stdout)
+    const lines = stdout.trim().split("\n")
+    if (lines.length < 2) {
+      return { agent: "local", check: "disk", status: "degraded", details: { error: "parse failed", raw: stdout } }
+    }
+    const fields = lines[1].split(/\s+/)
+    const pct = parseInt(fields[4]?.replace("%", "") ?? "")
+    if (isNaN(pct)) {
+      return { agent: "local", check: "disk", status: "degraded", details: { error: "parse failed", raw: stdout } }
+    }
+    const status = pct >= 95 ? "critical" : pct >= 90 ? "degraded" : "healthy"
+    return { agent: "local", check: "disk", status, details: { pct } }
+  } catch (err) {
+    return { agent: "local", check: "disk", status: "degraded", details: { error: "df failed" } }
+  }
 }
 
 // Check disk space on a remote server

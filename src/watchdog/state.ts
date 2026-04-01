@@ -12,6 +12,7 @@ function defaultAgentState(): AgentWatchState {
     consecutiveFailures: 0,
     lastRestart: null,
     restartCooldownUntil: null,
+    compactCooldownUntil: null,
     lastOutputHash: null,
     outputStaleCount: 0,
   }
@@ -30,7 +31,9 @@ export function loadState(): WatchdogState {
   if (existsSync(STATE_FILE)) {
     try {
       return JSON.parse(readFileSync(STATE_FILE, "utf8"))
-    } catch {}
+    } catch (err) {
+      console.warn(`[watchdog] Corrupt state file ${STATE_FILE}, starting fresh: ${err instanceof Error ? err.message : err}`)
+    }
   }
   return {
     startedAt: new Date().toISOString(),
@@ -71,6 +74,17 @@ export function setCooldown(state: WatchdogState, agent: string, seconds: number
   const agentState = getAgentState(state, agent)
   agentState.restartCooldownUntil = new Date(Date.now() + seconds * 1000).toISOString()
   agentState.lastRestart = new Date().toISOString()
+}
+
+export function isOnCompactCooldown(state: WatchdogState, agent: string): boolean {
+  const agentState = state.agents[agent]
+  if (!agentState?.compactCooldownUntil) return false
+  return new Date(agentState.compactCooldownUntil) > new Date()
+}
+
+export function setCompactCooldown(state: WatchdogState, agent: string, seconds: number): void {
+  const agentState = getAgentState(state, agent)
+  agentState.compactCooldownUntil = new Date(Date.now() + seconds * 1000).toISOString()
 }
 
 export function canAlert(state: WatchdogState, agent: string, eventType: string, dedupSeconds: number): boolean {

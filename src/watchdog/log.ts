@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, existsSync, statSync, renameSync } from "fs"
+import { appendFileSync, mkdirSync, existsSync, statSync, renameSync, unlinkSync } from "fs"
 import { join } from "path"
 import { homedir } from "os"
 import type { WatchdogEvent } from "./types"
@@ -18,7 +18,7 @@ export function logEvent(event: WatchdogEvent): void {
         const backup = LOG_FILE + ".1"
         try { renameSync(backup, backup + ".old") } catch {}
         renameSync(LOG_FILE, backup)
-        try { const { unlinkSync } = require("fs"); unlinkSync(backup + ".old") } catch {}
+        try { unlinkSync(backup + ".old") } catch {}
       }
     } catch {}
   }

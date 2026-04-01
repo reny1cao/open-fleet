@@ -1,9 +1,10 @@
-import { findConfigDir, loadConfig, sessionName } from "../core/config"
+import { sessionName } from "../core/config"
 import { resolveRuntime } from "../runtime/resolve"
 import { start } from "../commands/start"
+import type { FleetConfig } from "../core/types"
 import type { WatchdogState, WatchdogConfig } from "./types"
 import { logEvent, createEvent } from "./log"
-import { isOnCooldown, setCooldown, getAgentState } from "./state"
+import { isOnCooldown, setCooldown, isOnCompactCooldown, setCompactCooldown, getAgentState } from "./state"
 
 export async function restartAgent(
   agentName: string,
@@ -48,14 +49,18 @@ export async function sendCompact(
   reason: string,
   state: WatchdogState,
   config: WatchdogConfig,
+  fleetConfig: FleetConfig,
 ): Promise<boolean> {
   if (config.dryRun) {
     console.log(`[watchdog] DRY RUN: would compact ${agentName} (${reason})`)
     return false
   }
 
-  const configDir = findConfigDir()
-  const fleetConfig = loadConfig(configDir)
+  if (isOnCompactCooldown(state, agentName)) {
+    console.log(`[watchdog] ${agentName}: on compact cooldown, skipping`)
+    return false
+  }
+
   const session = sessionName(fleetConfig.fleet.name, agentName)
   const runtime = resolveRuntime(agentName, fleetConfig)
 
@@ -63,6 +68,7 @@ export async function sendCompact(
 
   try {
     await runtime.sendKeys(session, "/compact")
+    setCompactCooldown(state, agentName, config.thresholds.compactCooldown)
     console.log(`[watchdog] ${agentName}: compacted (${reason})`)
     return true
   } catch (err) {
@@ -76,6 +82,7 @@ export async function sendExitToAgent(
   reason: string,
   state: WatchdogState,
   config: WatchdogConfig,
+  fleetConfig: FleetConfig,
 ): Promise<boolean> {
   if (config.dryRun) {
     console.log(`[watchdog] DRY RUN: would send /exit to ${agentName} (${reason})`)
@@ -87,8 +94,6 @@ export async function sendExitToAgent(
     return false
   }
 
-  const configDir = findConfigDir()
-  const fleetConfig = loadConfig(configDir)
   const session = sessionName(fleetConfig.fleet.name, agentName)
   const runtime = resolveRuntime(agentName, fleetConfig)
 
