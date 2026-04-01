@@ -246,8 +246,19 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     // Auto-patch after start: plugin may have been reinstalled fresh
     try {
       const { patch: runPatch } = await import("../../commands/patch")
-      await runPatch({ json: true })
-    } catch {}
+      // Suppress stdout when caller expects JSON to avoid corrupting output
+      const origLog = console.log
+      if (opts.json) console.log = () => {}
+      try {
+        await runPatch({ json: true })
+      } finally {
+        if (opts.json) console.log = origLog
+      }
+    } catch (e) {
+      if (!opts.json) {
+        console.warn(`  Warning: auto-patch failed — ${e instanceof Error ? e.message : e}`)
+      }
+    }
 
     if (opts.json) {
       console.log(JSON.stringify({ agent: agentName, session, status: "started" }))

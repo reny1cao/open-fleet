@@ -42,7 +42,7 @@ function usage(): void {
 Usage:
   fleet init --token T1 [--token T2 …] --name NAME [--agent name:server:role[:adapter] …] [--channel label:id[:workspace] …] [--guild ID] [--create-channel NAME] [--force]
   fleet start <agent> [--wait] [--role <r>]
-  fleet clear <agent> | fleet clear --all
+  fleet compact <agent> | fleet compact --all
   fleet restart <agent>
   fleet stop <agent> [--force]
   fleet logs <agent> [--lines N] [--follow] [--json]
@@ -129,10 +129,11 @@ export async function main(argv: string[]): Promise<void> {
         await restart(agent, { json: parseFlag(args, "--json") })
         break
       }
+      case "compact":
       case "clear": {
         const agent = parseFlag(args, "--all") ? undefined : args[1]
         if (!agent && !parseFlag(args, "--all")) {
-          throw new Error("Usage: fleet clear <agent> or fleet clear --all")
+          throw new Error("Usage: fleet compact <agent> or fleet compact --all")
         }
         await clear(agent, { all: parseFlag(args, "--all"), json: parseFlag(args, "--json") })
         break

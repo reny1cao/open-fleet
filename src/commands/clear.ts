@@ -15,7 +15,10 @@ export async function clear(
       : []
 
   if (agents.length === 0) {
-    throw new Error("Usage: fleet clear <agent> or fleet clear --all")
+    if (opts?.all) {
+      throw new Error("No agents configured in fleet.yaml")
+    }
+    throw new Error("Usage: fleet compact <agent> or fleet compact --all")
   }
 
   for (const name of agents) {
