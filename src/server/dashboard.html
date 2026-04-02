@@ -436,6 +436,83 @@
   }
 
   .error-banner.show { display: block; }
+
+  /* Mobile toggle button for sidebar */
+  .sidebar-toggle {
+    display: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .sidebar-toggle:hover { color: var(--text); background: var(--surface-hover); }
+
+  /* Mobile responsive */
+  @media (max-width: 768px) {
+    .header { padding: 10px 12px; }
+    .header h1 { font-size: 15px; }
+    .stats { display: none; }
+
+    .tabs { padding: 8px 12px 0; }
+    .tab { padding: 6px 10px; font-size: 12px; }
+
+    .main {
+      flex-direction: column;
+      height: auto;
+      min-height: calc(100vh - 97px);
+    }
+
+    .board {
+      flex-direction: column;
+      overflow-x: visible;
+      gap: 0;
+    }
+
+    .column {
+      min-width: 100%;
+      max-width: 100%;
+    }
+
+    .column-body {
+      padding: 6px 12px;
+    }
+
+    .card { width: 100%; }
+
+    .sidebar {
+      width: 100%;
+      border-left: none;
+      border-top: 1px solid var(--border);
+      display: none;
+    }
+
+    .sidebar.mobile-open { display: block; }
+
+    .sidebar-toggle { display: block; }
+
+    .modal {
+      width: 95vw;
+      margin: 0 auto;
+      padding: 16px;
+      border-radius: 8px;
+    }
+
+    .modal-overlay { padding-top: 20px; }
+
+    .modal h2 { font-size: 15px; }
+    .modal-field { flex-direction: column; gap: 2px; }
+    .modal-label { min-width: auto; }
+  }
+
+  /* Collapsed columns on mobile — hide empty ones */
+  @media (max-width: 768px) {
+    .column.empty-column .column-body { display: none; }
+    .column.empty-column .column-header { opacity: 0.5; padding: 8px 16px; }
+  }
 </style>
 </head>
 <body>
@@ -445,6 +522,7 @@
   <div class="header-right">
     <div class="stats" id="stats"></div>
     <div><span class="refresh-dot"></span> Live</div>
+    <button class="sidebar-toggle" onclick="toggleSidebar()">Agents</button>
   </div>
 </div>
 
@@ -540,7 +618,7 @@ function renderBoard(tasks) {
       `).join('');
 
     return `
-      <div class="column col-${status}">
+      <div class="column col-${status}${items.length === 0 ? ' empty-column' : ''}">
         <div class="column-header">
           ${COLUMN_LABELS[status]}
           <span class="badge">${items.length}</span>
@@ -707,6 +785,10 @@ async function refresh() {
     document.getElementById('error-banner').textContent = `Connection error: ${err.message}. Retrying...`;
     document.getElementById('error-banner').classList.add('show');
   }
+}
+
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('mobile-open');
 }
 
 // Close modal on overlay click or Escape
