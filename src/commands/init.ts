@@ -199,11 +199,11 @@ export async function init(opts: {
       role: spec.role,
       tokenEnv: envVar,
       server: spec.server,
-      identity: `identities/${spec.name}.md`,
+      identity: `identities/${spec.name.replace(/\s+/g, "-")}.md`,
     }
     // Non-first agents get an explicit state_dir
     if (i > 0) {
-      agentEntry.stateDir = `~/.fleet/state/discord-${spec.name}`
+      agentEntry.stateDir = `~/.fleet/state/discord-${spec.name.replace(/\s+/g, "-")}`
     }
     agents[spec.name] = agentEntry
   }

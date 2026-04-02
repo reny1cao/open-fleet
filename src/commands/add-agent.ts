@@ -45,8 +45,8 @@ export async function addAgent(opts: {
     role,
     tokenEnv,
     server,
-    identity: `identities/${name}.md`,
-    stateDir: `~/.fleet/state/discord-${name}`,
+    identity: `identities/${name.replace(/\s+/g, "-")}.md`,
+    stateDir: `~/.fleet/state/discord-${name.replace(/\s+/g, "-")}`,
   }
   config.agents[name] = agentDef
   saveConfig(config, configDir)

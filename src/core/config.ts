@@ -24,7 +24,7 @@ function toSnake(s: string): string {
 
 /** Derive a default tokenEnv from the agent name: my-bot → DISCORD_BOT_TOKEN_MY_BOT */
 function deriveTokenEnv(agentName: string): string {
-  return `DISCORD_BOT_TOKEN_${agentName.toUpperCase().replace(/-/g, "_")}`
+  return `DISCORD_BOT_TOKEN_${agentName.toUpperCase().replace(/[-\s]+/g, "_")}`
 }
 
 function normalizeAgentAdapter(value: unknown): AgentAdapterKind {
@@ -340,13 +340,14 @@ export function resolveStateDir(agentName: string, config: FleetConfig): string 
   // Explicit stateDir on the agent
   if (agent.stateDir) return expandHome(agent.stateDir)
 
-  // Default: ~/.fleet/state/<fleetName>-<agentName>
-  return expandHome(`~/.fleet/state/${config.fleet.name}-${agentName}`)
+  // Default: ~/.fleet/state/<fleetName>-<agentName> (spaces replaced with -)
+  const safeName = agentName.replace(/\s+/g, "-")
+  return expandHome(`~/.fleet/state/${config.fleet.name}-${safeName}`)
 }
 
 // ── sessionName ───────────────────────────────────────────────────────────────
 
-/** Returns the tmux session name: <fleetName>-<agentName> */
+/** Returns the tmux session name: <fleetName>-<agentName> (spaces replaced with -) */
 export function sessionName(fleetName: string, agentName: string): string {
-  return `${fleetName}-${agentName}`
+  return `${fleetName}-${agentName}`.replace(/\s+/g, "-")
 }
