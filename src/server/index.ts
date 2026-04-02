@@ -1,6 +1,6 @@
 import { loadTaskStore, saveTaskStore, createTask, updateTask, getTask, listTasks, activeTasks, sortByPriority } from "../tasks/store"
 import type { TaskStatus, TaskPriority, TaskResult } from "../tasks/types"
-import { notifyTaskAssigned, notifyTaskDone, notifyTaskBlocked, notifyTaskReassigned } from "../tasks/notify"
+import { notifyTaskAssigned, notifyTaskDone, notifyTaskBlocked, notifyTaskReassigned, notifyTaskReview, notifyTaskVerify } from "../tasks/notify"
 
 const PORT = parseInt(process.env.FLEET_API_PORT ?? "4680")
 const HOST = process.env.FLEET_API_HOST ?? "127.0.0.1" // localhost only by default — set to Tailscale IP for remote access
@@ -68,7 +68,9 @@ const server = Bun.serve({
     // GET /tasks/board — active tasks grouped by status
     if (method === "GET" && path === "/tasks/board") {
       const store = loadTaskStore()
-      const active = activeTasks(store)
+      const project = url.searchParams.get("project") ?? undefined
+      let active = activeTasks(store)
+      if (project) active = active.filter(t => t.project === project)
       const board: Record<string, typeof active> = {}
       for (const t of active) {
         if (!board[t.status]) board[t.status] = []
@@ -132,7 +134,7 @@ const server = Bun.serve({
       const note = body.note as string | undefined
       if (note && note.length > MAX_NOTE) return badRequest(`note exceeds ${MAX_NOTE} characters`)
       const newStatus = body.status as TaskStatus | undefined
-      const validStatuses = new Set(["open", "in_progress", "done", "blocked", "cancelled"])
+      const validStatuses = new Set(["open", "in_progress", "review", "verify", "done", "blocked", "cancelled"])
       if (newStatus && !validStatuses.has(newStatus)) return badRequest(`invalid status: "${newStatus}"`)
 
       const store = loadTaskStore()
@@ -150,11 +152,16 @@ const server = Bun.serve({
         })
         saveTaskStore(store)
 
-        // Fire-and-forget notifications
-        if (newStatus === "done") notifyTaskDone(task).catch(() => {})
-        else if (newStatus === "blocked") notifyTaskBlocked(task).catch(() => {})
-        if (newAssignee !== undefined && newAssignee !== oldAssignee) {
-          notifyTaskReassigned(task, oldAssignee, newAssignee).catch(() => {})
+        // Fire-and-forget notifications (skip if quiet)
+        const quiet = body.quiet === true
+        if (!quiet) {
+          if (newStatus === "done") notifyTaskDone(task).catch(() => {})
+          else if (newStatus === "blocked") notifyTaskBlocked(task).catch(() => {})
+          else if (newStatus === "review") notifyTaskReview(task).catch(() => {})
+          else if (newStatus === "verify") notifyTaskVerify(task).catch(() => {})
+          if (newAssignee !== undefined && newAssignee !== oldAssignee) {
+            notifyTaskReassigned(task, oldAssignee, newAssignee).catch(() => {})
+          }
         }
 
         return json(task)

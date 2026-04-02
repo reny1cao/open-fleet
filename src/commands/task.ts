@@ -1,6 +1,6 @@
 import { loadTaskStore, saveTaskStore, createTask, updateTask, getTask, listTasks, activeTasks, sortByPriority } from "../tasks/store"
 import type { TaskStatus, TaskPriority, TaskResult } from "../tasks/types"
-import { notifyTaskAssigned, notifyTaskDone, notifyTaskBlocked, notifyTaskReassigned } from "../tasks/notify"
+import { notifyTaskAssigned, notifyTaskDone, notifyTaskBlocked, notifyTaskReassigned, notifyTaskReview, notifyTaskVerify } from "../tasks/notify"
 import { useHttpApi, httpCreateTask, httpUpdateTask, httpListTasks, httpGetTask, httpGetBoard } from "../tasks/client"
 
 function formatPriority(p: string): string {
@@ -17,6 +17,8 @@ function formatStatus(s: string): string {
   switch (s) {
     case "in_progress": return "in_progress"
     case "blocked": return "BLOCKED"
+    case "review": return "review"
+    case "verify": return "verify"
     default: return s
   }
 }
@@ -45,10 +47,10 @@ export async function task(args: string[], opts: { json?: boolean }): Promise<vo
     default:
       throw new Error(
         "Usage: fleet task <create|update|list|board|show|recap>\n" +
-        "  fleet task create <title> [--assign <agent>] [--priority <p>] [--workspace <ws>] [--desc <d>]\n" +
-        "  fleet task update <task-id> --status <status> [--assign <agent>] [--note <text>] [--result <json>]\n" +
-        "  fleet task list [--assignee <agent>] [--status <status>] [--mine]\n" +
-        "  fleet task board\n" +
+        "  fleet task create <title> [--assign <agent>] [--priority <p>] [--workspace <ws>] [--desc <d>] [--project <proj>]\n" +
+        "  fleet task update <task-id> --status <status> [--assign <agent>] [--note <text>] [--result <json>] [--quiet]\n" +
+        "  fleet task list [--assignee <agent>] [--status <status>] [--project <proj>] [--mine]\n" +
+        "  fleet task board [--project <proj>]\n" +
         "  fleet task show <task-id>\n" +
         "  fleet task recap [--since 2h|4h|today|24h]"
       )
@@ -123,6 +125,7 @@ async function taskUpdate(args: string[], opts: { json?: boolean }): Promise<voi
   let note: string | undefined
   let resultJson: string | undefined
   let blockedReason: string | undefined
+  let quiet = false
 
   for (let i = 1; i < args.length; i++) {
     if (args[i] === "--status" && args[i + 1]) { status = args[++i] as TaskStatus; continue }
@@ -130,6 +133,7 @@ async function taskUpdate(args: string[], opts: { json?: boolean }): Promise<voi
     if (args[i] === "--note" && args[i + 1]) { note = args[++i]; continue }
     if (args[i] === "--result" && args[i + 1]) { resultJson = args[++i]; continue }
     if (args[i] === "--reason" && args[i + 1]) { blockedReason = args[++i]; continue }
+    if (args[i] === "--quiet") { quiet = true; continue }
     if (args[i] === "--json") continue
   }
 
@@ -149,7 +153,7 @@ async function taskUpdate(args: string[], opts: { json?: boolean }): Promise<voi
   let updated
   let oldAssignee: string | undefined
   if (useHttpApi()) {
-    updated = await httpUpdateTask(taskId, { status, assignee: assign, note, result, blockedReason })
+    updated = await httpUpdateTask(taskId, { status, assignee: assign, note, result, blockedReason, quiet })
     oldAssignee = undefined // server handles notifications
   } else {
     const store = loadTaskStore()
@@ -168,12 +172,16 @@ async function taskUpdate(args: string[], opts: { json?: boolean }): Promise<voi
   }
 
   // Notifications: local mode only — server handles them in HTTP mode
-  if (!useHttpApi()) {
+  if (!quiet && !useHttpApi()) {
     const self = process.env.FLEET_SELF
     if (status === "done") {
       notifyTaskDone(updated, self).catch(() => {})
     } else if (status === "blocked") {
       notifyTaskBlocked(updated, self).catch(() => {})
+    } else if (status === "review") {
+      notifyTaskReview(updated, self).catch(() => {})
+    } else if (status === "verify") {
+      notifyTaskVerify(updated, self).catch(() => {})
     }
     if (assign !== undefined && assign !== oldAssignee) {
       notifyTaskReassigned(updated, oldAssignee, assign, self).catch(() => {})
@@ -258,6 +266,8 @@ async function taskBoard(args: string[], opts: { json?: boolean }): Promise<void
   const byStatus: Record<string, typeof active> = {
     open: [],
     in_progress: [],
+    review: [],
+    verify: [],
     blocked: [],
   }
   for (const t of active) {
@@ -265,6 +275,8 @@ async function taskBoard(args: string[], opts: { json?: boolean }): Promise<void
   }
 
   const sections: [string, typeof active][] = [
+    ["VERIFY", sortByPriority(byStatus.verify)],
+    ["REVIEW", sortByPriority(byStatus.review)],
     ["IN PROGRESS", sortByPriority(byStatus.in_progress)],
     ["BLOCKED", sortByPriority(byStatus.blocked)],
     ["OPEN", sortByPriority(byStatus.open)],
@@ -409,14 +421,18 @@ async function taskRecap(args: string[], opts: { json?: boolean }): Promise<void
   // Summary counts — handle both typed notes and legacy untyped notes (text-based fallback)
   const isStatusDone = (e: typeof events[0]) => e.text.includes("→ done")
   const isStatusBlocked = (e: typeof events[0]) => e.text.includes("→ blocked")
+  const isStatusReview = (e: typeof events[0]) => e.text.includes("→ review")
+  const isStatusVerify = (e: typeof events[0]) => e.text.includes("→ verify")
   const isStatusChange = (e: typeof events[0]) => e.type === "status_change" || e.text.startsWith("Status:")
   const completed = events.filter(e => isStatusChange(e) && isStatusDone(e))
   const created = events.filter(e => e.type === "created")
   const blocked = events.filter(e => isStatusChange(e) && isStatusBlocked(e))
+  const inReview = events.filter(e => isStatusChange(e) && isStatusReview(e))
+  const inVerify = events.filter(e => isStatusChange(e) && isStatusVerify(e))
   const assignments = events.filter(e => e.type === "assignment" || e.text.startsWith("Reassigned:"))
 
   console.log(`\nRecap since ${cutoff.toISOString().slice(0, 16)}:`)
-  console.log(`  ${created.length} created | ${completed.length} completed | ${blocked.length} blocked | ${assignments.length} reassigned`)
+  console.log(`  ${created.length} created | ${completed.length} completed | ${inReview.length} in review | ${inVerify.length} in verify | ${blocked.length} blocked | ${assignments.length} reassigned`)
 
   // Completed tasks
   if (completed.length > 0) {
@@ -439,12 +455,13 @@ async function taskRecap(args: string[], opts: { json?: boolean }): Promise<void
     }
   }
 
-  // Currently in progress
-  const inProgress = store.tasks.filter(t => t.status === "in_progress")
+  // Currently active (in progress, review, verify)
+  const activeStatuses = new Set(["in_progress", "review", "verify"])
+  const inProgress = store.tasks.filter(t => activeStatuses.has(t.status))
   if (inProgress.length > 0) {
-    console.log(`\nStill in progress:`)
+    console.log(`\nActive:`)
     for (const t of sortByPriority(inProgress)) {
-      console.log(`  ${t.id}  [${formatPriority(t.priority)}]  ${t.assignee ?? "unassigned"}  ${truncate(t.title, 40)}`)
+      console.log(`  ${t.id}  [${formatPriority(t.priority)}]  ${formatStatus(t.status)}  ${t.assignee ?? "unassigned"}  ${truncate(t.title, 40)}`)
     }
   }
 

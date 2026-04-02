@@ -15,10 +15,10 @@ interface NotifyContext {
 
 /**
  * Resolve the Discord channel for a task notification.
- * Priority: workspace match → assignee's primary work channel → fleet default workspace channel.
+ * Priority: project match → workspace match → assignee's primary work channel → fleet default workspace channel.
  * #command is NEVER used for task notifications.
  */
-function resolveChannelId(config: FleetConfig, taskWorkspace?: string, assignee?: string): string | null {
+function resolveChannelId(config: FleetConfig, taskWorkspace?: string, assignee?: string, project?: string): string | null {
   const channels = config.discord.channels
   const home = homedir()
   const normalize = (p: string) => {
@@ -26,6 +26,12 @@ function resolveChannelId(config: FleetConfig, taskWorkspace?: string, assignee?
     if (resolved.startsWith("~/")) resolved = home + resolved.slice(1)
     else if (resolved === "~") resolved = home
     return resolved.replace(/\/+$/, "")
+  }
+
+  // 0. Match task project to a channel label (e.g., project "fleet-dev" → channel "fleet-dev")
+  if (project) {
+    const ch = channels[project]
+    if (ch) return ch.id
   }
 
   // 1. Match task workspace to a channel's workspace
@@ -81,7 +87,7 @@ async function resolveContext(task: Task, opts?: { assigneeOverride?: string; se
     const configDir = findConfigDir()
     const config = loadConfig(configDir)
 
-    const channelId = resolveChannelId(config, task.workspace, opts?.assigneeOverride ?? task.assignee)
+    const channelId = resolveChannelId(config, task.workspace, opts?.assigneeOverride ?? task.assignee, task.project)
     if (!channelId) return null
 
     // Resolve sender's bot token (notification appears as their message):
@@ -191,6 +197,51 @@ export async function notifyTaskBlocked(task: Task, sender?: string): Promise<vo
 
   const reason = task.blockedReason ?? "no reason given"
   const msg = `${mention(ctx, leadName)} Task blocked: **${task.title}** — ${reason}\nTask ID: \`${task.id}\` | Assignee: ${task.assignee ?? "unassigned"}`
+
+  try {
+    await ctx.discord.sendMessage(ctx.token, ctx.channelId, msg)
+  } catch (err) {
+    process.stderr.write(`[tasks] Notification failed: ${err instanceof Error ? err.message : err}\n`)
+  }
+}
+
+export async function notifyTaskReview(task: Task, sender?: string): Promise<void> {
+  const ctx = await resolveContext(task, { sender: sender ?? task.assignee })
+  if (!ctx) return
+
+  // Find reviewer: agent with role "reviewer"
+  const reviewerEntry = Object.entries(ctx.config.agents).find(([, def]) => def.role === "reviewer")
+  if (!reviewerEntry) {
+    // No reviewer configured — notify lead instead
+    const leadName = ctx.config.structure?.lead
+      ?? Object.entries(ctx.config.agents).find(([, def]) => def.role === "lead")?.[0]
+    if (!leadName) return
+    const msg = `${mention(ctx, leadName)} Task ready for review: **${task.title}**\nTask ID: \`${task.id}\` | Assignee: ${task.assignee ?? "unassigned"}`
+    try { await ctx.discord.sendMessage(ctx.token, ctx.channelId, msg) } catch {}
+    return
+  }
+
+  const [reviewerName] = reviewerEntry
+  const assigneeMention = task.assignee ? ` by ${mention(ctx, task.assignee)}` : ""
+  const msg = `${mention(ctx, reviewerName)} Task ready for review${assigneeMention}: **${task.title}** [${formatPriority(task.priority)}]\nTask ID: \`${task.id}\` — run \`fleet task show ${task.id}\` for details.`
+
+  try {
+    await ctx.discord.sendMessage(ctx.token, ctx.channelId, msg)
+  } catch (err) {
+    process.stderr.write(`[tasks] Notification failed: ${err instanceof Error ? err.message : err}\n`)
+  }
+}
+
+export async function notifyTaskVerify(task: Task, sender?: string): Promise<void> {
+  const ctx = await resolveContext(task, { sender })
+  if (!ctx) return
+
+  // Notify lead/user for final verification
+  const leadName = ctx.config.structure?.lead
+    ?? Object.entries(ctx.config.agents).find(([, def]) => def.role === "lead")?.[0]
+  if (!leadName) return
+
+  const msg = `${mention(ctx, leadName)} Task ready for verification: **${task.title}** [${formatPriority(task.priority)}]\nReview passed — needs final approval.\nTask ID: \`${task.id}\``
 
   try {
     await ctx.discord.sendMessage(ctx.token, ctx.channelId, msg)

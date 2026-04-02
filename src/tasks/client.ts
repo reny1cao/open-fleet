@@ -91,6 +91,7 @@ export async function httpUpdateTask(taskId: string, opts: {
   note?: string
   result?: TaskResult
   blockedReason?: string
+  quiet?: boolean
 }): Promise<Task> {
   const res = await apiFetch(`/tasks/${taskId}`, {
     method: "PATCH",
