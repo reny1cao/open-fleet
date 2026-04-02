@@ -45,14 +45,25 @@ async function parseBody(req: Request): Promise<Record<string, unknown>> {
   }
 }
 
+// Load dashboard HTML at startup
+const DASHBOARD_HTML = await Bun.file(new URL("dashboard.html", import.meta.url).pathname).text()
+
 const server = Bun.serve({
   port: PORT,
   hostname: HOST,
   async fetch(req) {
-    if (!checkAuth(req)) return unauthorized()
-
     const url = new URL(req.url)
     const path = url.pathname
+
+    // GET /dashboard — serve the web UI (no auth required, JS handles it via token param)
+    if (path === "/dashboard" || path === "/dashboard/") {
+      return new Response(DASHBOARD_HTML, {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      })
+    }
+
+    if (!checkAuth(req)) return unauthorized()
+
     const method = req.method
 
     // GET /tasks — list tasks with optional filters
