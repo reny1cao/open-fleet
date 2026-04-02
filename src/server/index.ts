@@ -1,6 +1,9 @@
 import { loadTaskStore, saveTaskStore, createTask, updateTask, getTask, listTasks, activeTasks, sortByPriority } from "../tasks/store"
 import type { TaskStatus, TaskPriority, TaskResult } from "../tasks/types"
 import { notifyTaskAssigned, notifyTaskDone, notifyTaskBlocked, notifyTaskReassigned, notifyTaskReview, notifyTaskVerify } from "../tasks/notify"
+import { findConfigDir, loadConfig, resolveStateDir } from "../core/config"
+import { readHeartbeat, readRemoteHeartbeat } from "../core/heartbeat"
+import { loadState, getAgentState } from "../watchdog/state"
 
 const PORT = parseInt(process.env.FLEET_API_PORT ?? "4680")
 const HOST = process.env.FLEET_API_HOST ?? "127.0.0.1" // localhost only by default — set to Tailscale IP for remote access
@@ -181,7 +184,72 @@ const server = Bun.serve({
       }
     }
 
-    return new Response(JSON.stringify({ error: "Not found", endpoints: ["GET /tasks", "GET /tasks/:id", "GET /tasks/board", "POST /tasks", "PATCH /tasks/:id"] }), {
+    // GET /agents — real agent status with heartbeat + watchdog state
+    if (method === "GET" && path === "/agents") {
+      try {
+        const configDir = findConfigDir()
+        const config = loadConfig(configDir)
+        const watchdogState = loadState()
+        const taskStore = loadTaskStore()
+
+        const agents = await Promise.all(
+          Object.entries(config.agents).map(async ([name, def]) => {
+            // Read heartbeat (local or remote)
+            let heartbeat
+            const isRemote = def.server !== "local" && config.servers?.[def.server]
+            if (isRemote) {
+              const serverConfig = config.servers![def.server]
+              const rawStateDir = def.stateDir ?? `~/.fleet/state/${config.fleet.name}-${name}`
+              heartbeat = await readRemoteHeartbeat(rawStateDir, serverConfig)
+            } else {
+              const stateDir = resolveStateDir(name, config)
+              heartbeat = readHeartbeat(stateDir)
+            }
+
+            // Watchdog state
+            const agentWatch = getAgentState(watchdogState, name)
+
+            // Current task (active in_progress or review)
+            const activeTasks = taskStore.tasks.filter(
+              t => t.assignee === name && (t.status === "in_progress" || t.status === "review")
+            )
+
+            // Derive combined status
+            let status: string = heartbeat.state
+            if (heartbeat.state === "dead" && agentWatch.consecutiveFailures === 0) {
+              status = "off"
+            }
+
+            return {
+              name,
+              role: def.role,
+              server: def.server,
+              workspace: def.workspace ?? config.defaults.workspace,
+              channels: def.channels,
+              status,
+              heartbeat: {
+                state: heartbeat.state,
+                lastSeen: heartbeat.lastSeen,
+                ageSec: heartbeat.ageSec,
+              },
+              watchdog: {
+                lastHealthy: agentWatch.lastHealthy,
+                consecutiveFailures: agentWatch.consecutiveFailures,
+                lastRestart: agentWatch.lastRestart,
+                outputStaleCount: agentWatch.outputStaleCount,
+              },
+              activeTasks: activeTasks.map(t => ({ id: t.id, title: t.title, status: t.status })),
+            }
+          })
+        )
+
+        return json({ agents })
+      } catch (err) {
+        return badRequest(`Failed to load agent status: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+
+    return new Response(JSON.stringify({ error: "Not found", endpoints: ["GET /tasks", "GET /tasks/:id", "GET /tasks/board", "POST /tasks", "PATCH /tasks/:id", "GET /agents"] }), {
       status: 404,
       headers: { "Content-Type": "application/json" },
     })
