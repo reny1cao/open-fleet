@@ -497,43 +497,69 @@ function renderTabs(tasks) {
   tabs.innerHTML = html;
 }
 
-function renderAgents(tasks) {
-  const agents = {};
-  tasks.forEach(t => {
-    if (!t.assignee) return;
-    if (!agents[t.assignee]) agents[t.assignee] = [];
-    if (t.status !== 'done' && t.status !== 'cancelled') agents[t.assignee].push(t);
-  });
-
+async function renderAgents() {
   const list = document.getElementById('agent-list');
-  const agentNames = Object.keys(agents).sort();
+  try {
+    const data = await apiFetch('/agents');
+    const agents = data.agents || data || [];
 
-  tasks.forEach(t => { if (t.assignee && !agents[t.assignee]) agents[t.assignee] = []; });
+    if (agents.length === 0) {
+      list.innerHTML = '<div class="agent-card"><div class="agent-status">No agents found</div></div>';
+      return;
+    }
 
-  if (agentNames.length === 0) {
-    list.innerHTML = '<div class="agent-card"><div class="agent-status">No agents found</div></div>';
-    return;
+    const statusColors = { alive: 'var(--green)', stale: 'var(--yellow)', dead: 'var(--red)', off: 'var(--text-muted)', unknown: 'var(--text-muted)' };
+
+    list.innerHTML = agents.map(a => {
+      const dotColor = statusColors[a.status] || statusColors.unknown;
+      const hb = a.heartbeat;
+      const age = hb?.ageSec != null ? (hb.ageSec < 60 ? `${hb.ageSec}s ago` : `${Math.floor(hb.ageSec / 60)}m ago`) : '';
+      const failures = a.watchdog?.consecutiveFailures || 0;
+      const tasks = a.activeTasks || [];
+
+      return `
+        <div class="agent-card">
+          <div class="agent-name">
+            <span class="agent-dot" style="background:${dotColor}"></span>
+            ${escapeHtml(a.name)}
+            <span class="agent-role">${escapeHtml(a.role || '')}</span>
+          </div>
+          <div class="agent-status">
+            ${a.status}${age ? ` &middot; ${age}` : ''}${failures > 0 ? ` &middot; <span style="color:var(--red)">${failures} failures</span>` : ''}
+          </div>
+          ${tasks.length === 0
+            ? ''
+            : tasks.map(t => `
+              <div class="agent-status">
+                <span class="status-badge status-${t.status}">${t.status.replace('_', ' ')}</span>
+                <a class="agent-task-link" onclick="showTask('${t.id}')">${escapeHtml(t.id)}</a>
+              </div>
+            `).join('')}
+        </div>`;
+    }).join('');
+  } catch {
+    // Fallback: infer agents from tasks
+    const agents = {};
+    allTasks.forEach(t => {
+      if (!t.assignee) return;
+      if (!agents[t.assignee]) agents[t.assignee] = [];
+      if (t.status !== 'done' && t.status !== 'cancelled') agents[t.assignee].push(t);
+    });
+    const names = Object.keys(agents).sort();
+    if (names.length === 0) {
+      list.innerHTML = '<div class="agent-card"><div class="agent-status">No agents found</div></div>';
+      return;
+    }
+    list.innerHTML = names.map(name => {
+      const active = agents[name];
+      const isActive = active.some(t => t.status === 'in_progress');
+      return `
+        <div class="agent-card">
+          <div class="agent-name"><span class="agent-dot ${isActive ? 'active' : 'idle'}"></span>${escapeHtml(name)}</div>
+          ${active.length === 0 ? '<div class="agent-status">Idle</div>' : active.map(t => `<div class="agent-status"><span class="status-badge status-${t.status}">${t.status.replace('_',' ')}</span> <a class="agent-task-link" onclick="showTask('${t.id}')">${escapeHtml(t.id)}</a></div>`).join('')}
+        </div>`;
+    }).join('');
   }
-
-  list.innerHTML = agentNames.map(name => {
-    const active = agents[name] || [];
-    const isActive = active.some(t => t.status === 'in_progress' || t.status === 'review');
-    return `
-      <div class="agent-card">
-        <div class="agent-name">
-          <span class="agent-dot ${isActive ? 'active' : 'idle'}"></span>
-          ${escapeHtml(name)}
-        </div>
-        ${active.length === 0
-          ? '<div class="agent-status">Idle</div>'
-          : active.map(t => `
-            <div class="agent-status">
-              <span class="status-badge status-${t.status}">${t.status.replace('_', ' ')}</span>
-              <a class="agent-task-link" onclick="showTask('${t.id}')">${escapeHtml(t.id)}</a>
-            </div>
-          `).join('')}
-      </div>`;
-  }).join('');
 }
 
 function renderStats(tasks) {
@@ -642,7 +668,7 @@ async function refresh() {
     allTasks = await apiFetch('/tasks');
     renderBoard(allTasks);
     renderTabs(allTasks);
-    renderAgents(allTasks);
+    renderAgents();
     renderStats(allTasks);
     updateTabTitle();
     document.getElementById('error-banner').classList.remove('show');
