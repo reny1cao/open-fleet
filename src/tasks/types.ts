@@ -1,4 +1,4 @@
-export type TaskStatus = "open" | "in_progress" | "review" | "verify" | "done" | "blocked" | "cancelled"
+export type TaskStatus = "backlog" | "open" | "in_progress" | "review" | "verify" | "done" | "blocked" | "cancelled"
 export type TaskPriority = "low" | "normal" | "high" | "urgent"
 
 export type TaskNoteType = "comment" | "status_change" | "assignment" | "priority_change"
@@ -57,6 +57,7 @@ export interface TaskStore {
 
 // Valid status transitions
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
+  backlog: ["open", "in_progress", "cancelled"],
   open: ["in_progress", "cancelled", "blocked"],
   in_progress: ["review", "done", "blocked", "cancelled"],
   review: ["verify", "in_progress", "blocked", "cancelled"],

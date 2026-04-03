@@ -148,7 +148,7 @@ const server = Bun.serve({
       const note = body.note as string | undefined
       if (note && note.length > MAX_NOTE) return badRequest(`note exceeds ${MAX_NOTE} characters`)
       const newStatus = body.status as TaskStatus | undefined
-      const validStatuses = new Set(["open", "in_progress", "review", "verify", "done", "blocked", "cancelled"])
+      const validStatuses = new Set(["backlog", "open", "in_progress", "review", "verify", "done", "blocked", "cancelled"])
       if (newStatus && !validStatuses.has(newStatus)) return badRequest(`invalid status: "${newStatus}"`)
 
       const store = loadTaskStore()

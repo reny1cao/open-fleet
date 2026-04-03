@@ -53,6 +53,7 @@ Usage:
   fleet watchdog [--interval N] [--dry-run] [--verbose] [--no-alert]
   fleet task create <title> [--assign <agent>] [--priority <p>]
   fleet task update <task-id> --status <status> [--note <text>]
+  fleet task comment <task-id> <text>
   fleet task list [--assignee <agent>] [--status <status>] [--mine]
   fleet task board
   fleet task show <task-id>

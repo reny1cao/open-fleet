@@ -44,11 +44,14 @@ export async function task(args: string[], opts: { json?: boolean }): Promise<vo
       return taskShow(args.slice(1), opts)
     case "recap":
       return taskRecap(args.slice(1), opts)
+    case "comment":
+      return taskComment(args.slice(1), opts)
     default:
       throw new Error(
-        "Usage: fleet task <create|update|list|board|show|recap>\n" +
+        "Usage: fleet task <create|update|comment|list|board|show|recap>\n" +
         "  fleet task create <title> [--assign <agent>] [--priority <p>] [--workspace <ws>] [--desc <d>] [--project <proj>]\n" +
         "  fleet task update <task-id> --status <status> [--assign <agent>] [--note <text>] [--result <json>] [--quiet]\n" +
+        "  fleet task comment <task-id> <text>        Post a comment/update to a task\n" +
         "  fleet task list [--assignee <agent>] [--status <status>] [--project <proj>] [--mine]\n" +
         "  fleet task board [--project <proj>]\n" +
         "  fleet task show <task-id>\n" +
@@ -189,6 +192,35 @@ async function taskUpdate(args: string[], opts: { json?: boolean }): Promise<voi
   }
 }
 
+async function taskComment(args: string[], opts: { json?: boolean }): Promise<void> {
+  const taskId = args[0]
+  if (!taskId || taskId.startsWith("--")) throw new Error("Usage: fleet task comment <task-id> <text>")
+
+  // Collect remaining args as the comment text (everything after the task ID, except --json)
+  const textParts: string[] = []
+  for (let i = 1; i < args.length; i++) {
+    if (args[i] === "--json") continue
+    textParts.push(args[i])
+  }
+  const text = textParts.join(" ")
+  if (!text) throw new Error("Usage: fleet task comment <task-id> <text>")
+
+  let updated
+  if (useHttpApi()) {
+    updated = await httpUpdateTask(taskId, { note: text })
+  } else {
+    const store = loadTaskStore()
+    updated = updateTask(store, taskId, { note: text })
+    saveTaskStore(store)
+  }
+
+  if (opts.json) {
+    console.log(JSON.stringify(updated))
+  } else {
+    console.log(`${updated.id}: comment added`)
+  }
+}
+
 async function taskList(args: string[], opts: { json?: boolean }): Promise<void> {
   let assignee: string | undefined
   let status: TaskStatus | undefined
@@ -264,6 +296,7 @@ async function taskBoard(args: string[], opts: { json?: boolean }): Promise<void
   }
 
   const byStatus: Record<string, typeof active> = {
+    backlog: [],
     open: [],
     in_progress: [],
     review: [],
@@ -280,6 +313,7 @@ async function taskBoard(args: string[], opts: { json?: boolean }): Promise<void
     ["IN PROGRESS", sortByPriority(byStatus.in_progress)],
     ["BLOCKED", sortByPriority(byStatus.blocked)],
     ["OPEN", sortByPriority(byStatus.open)],
+    ["BACKLOG", sortByPriority(byStatus.backlog)],
   ]
 
   let totalShown = 0
