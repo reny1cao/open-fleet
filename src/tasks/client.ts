@@ -79,7 +79,7 @@ export async function httpCreateTask(opts: {
 }): Promise<Task> {
   const res = await apiFetch("/tasks", {
     method: "POST",
-    body: JSON.stringify(opts),
+    body: JSON.stringify({ ...opts, createdBy: process.env.FLEET_SELF }),
   })
   return res.json()
 }
@@ -95,7 +95,7 @@ export async function httpUpdateTask(taskId: string, opts: {
 }): Promise<Task> {
   const res = await apiFetch(`/tasks/${taskId}`, {
     method: "PATCH",
-    body: JSON.stringify(opts),
+    body: JSON.stringify({ ...opts, author: process.env.FLEET_SELF }),
   })
   return res.json()
 }
