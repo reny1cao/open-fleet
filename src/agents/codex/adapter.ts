@@ -149,6 +149,13 @@ export class CodexAgentAdapter implements AgentAdapter {
       }
     }
 
+    // Resolve API URL so agents can use fleet task commands via HTTP
+    const apiHost = config.fleet.apiHost ?? process.env.FLEET_API_HOST
+    const apiPort = config.fleet.apiPort ?? parseInt(process.env.FLEET_API_PORT ?? "4680")
+    const apiUrl = apiHost
+      ? `http://${apiHost}:${apiPort}`
+      : `http://127.0.0.1:${apiPort}`
+
     await runtime.start({
       session,
       env: {
@@ -156,6 +163,8 @@ export class CodexAgentAdapter implements AgentAdapter {
         [agentDef.tokenEnv]: token,
         FLEET_CONFIG: fleetConfigPath,
         FLEET_SELF: agentName,
+        FLEET_API_URL: apiUrl,
+        ...(process.env.FLEET_API_TOKEN ? { FLEET_API_TOKEN: process.env.FLEET_API_TOKEN } : {}),
       },
       workDir,
       command,

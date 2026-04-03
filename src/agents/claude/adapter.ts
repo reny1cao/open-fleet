@@ -176,17 +176,18 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       ? null // remote agents don't run boot-check in the wrapper
       : `cd '${fleetCliDir}' && bun run src/cli.ts boot-check ${agentName} 2>&1 | tail -20`
 
-    // For remote agents, inject FLEET_API_URL so task commands route via HTTP
+    // Inject FLEET_API_URL so task commands route via HTTP (all agents, not just remote)
     const apiHost = config.fleet.apiHost ?? process.env.FLEET_API_HOST
     const apiPort = config.fleet.apiPort ?? parseInt(process.env.FLEET_API_PORT ?? "4680")
     const apiToken = process.env.FLEET_API_TOKEN ?? ""
-    const apiEnvLines: string[] = isRemote && apiHost
-      ? [
-          `export FLEET_API_URL="http://${apiHost}:${apiPort}"`,
-          ...(apiToken ? [`export FLEET_API_TOKEN="${apiToken}"`] : []),
-          `export FLEET_SELF="${agentName}"`,
-        ]
-      : [`export FLEET_SELF="${agentName}"`]
+    const apiUrl = apiHost
+      ? `http://${apiHost}:${apiPort}`
+      : `http://127.0.0.1:${apiPort}`
+    const apiEnvLines: string[] = [
+      `export FLEET_API_URL="${apiUrl}"`,
+      ...(apiToken ? [`export FLEET_API_TOKEN="${apiToken}"`] : []),
+      `export FLEET_SELF="${agentName}"`,
+    ]
 
     const wrapperLines = [
       "#!/bin/bash",
