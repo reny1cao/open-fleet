@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs"
+import { readFileSync, writeFileSync, mkdirSync, existsSync, renameSync } from "fs"
 import { join } from "path"
 import type { ServerConfig } from "./types"
 
@@ -55,18 +55,16 @@ export function readHeartbeat(stateDir: string): HeartbeatInfo {
   }
 }
 
-/** Write a heartbeat file (called from the wrapper script via a helper). */
+/** Write a heartbeat file. Used by tests; agents use heartbeatShellSnippet instead. */
 export function writeHeartbeat(stateDir: string): void {
   mkdirSync(stateDir, { recursive: true })
   const data: HeartbeatData = {
     timestamp: new Date().toISOString(),
     pid: process.pid,
   }
-  // Atomic write: write to temp file then rename to avoid partial reads
   const target = join(stateDir, HEARTBEAT_FILE)
   const tmp = target + ".tmp"
   writeFileSync(tmp, JSON.stringify(data) + "\n")
-  const { renameSync } = require("fs")
   renameSync(tmp, target)
 }
 

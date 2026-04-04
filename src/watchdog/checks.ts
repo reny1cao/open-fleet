@@ -43,10 +43,10 @@ export async function checkHeartbeat(
     } else {
       const serverConfig = config.servers?.[agentDef.server]
       if (serverConfig) {
-        heartbeat = await readRemoteHeartbeat(serverConfig, agentDef.stateDir ?? `~/.fleet/state/discord-${agentName}`)
+        heartbeat = await readRemoteHeartbeat(agentDef.stateDir ?? `~/.fleet/state/discord-${agentName}`, serverConfig)
       }
     }
-  } catch {}
+  } catch { /* ignore: heartbeat read failure → report as degraded/unknown */ }
 
   if (!heartbeat) {
     return { agent: agentName, check: "heartbeat", status: "degraded", details: { state: "unknown" } }

@@ -38,7 +38,7 @@ export async function use(
           return
         }
       }
-    } catch {}
+    } catch { /* ignore: malformed config.json — fall through to error */ }
   }
 
   throw new Error(

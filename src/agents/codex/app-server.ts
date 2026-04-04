@@ -96,10 +96,10 @@ class CodexAppServerClient {
       if (stdin && typeof stdin !== "number") {
         stdin.end()
       }
-    } catch {}
+    } catch { /* ignore: stdin may already be closed */ }
     try {
       this.proc.kill()
-    } catch {}
+    } catch { /* ignore: process may already be dead */ }
     await this.proc.exited.catch(() => undefined)
   }
 
@@ -173,7 +173,7 @@ class CodexAppServerClient {
           persistExtendedHistory: false,
         })
         return resumed.thread.id
-      } catch {}
+      } catch { /* ignore: resume failed — will start fresh thread below */ }
     }
 
     const started = await this.request<ThreadResponse>("thread/start", {

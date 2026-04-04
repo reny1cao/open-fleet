@@ -244,7 +244,7 @@ export class DiscordBot {
 
     try {
       await this.api.triggerTyping(this.opts.token, message.channel_id)
-    } catch {}
+    } catch { /* ignore: typing indicator is cosmetic */ }
 
     try {
       const reply = await this.opts.onMention({

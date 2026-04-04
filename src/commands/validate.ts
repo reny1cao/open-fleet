@@ -1,32 +1,13 @@
 import { existsSync, readFileSync } from "fs"
 import { join } from "path"
-import { homedir } from "os"
 import { findConfigDir, loadConfig, resolveStateDir } from "../core/config"
+import { colorLabel } from "../core/utils"
 import type { FleetConfig } from "../core/types"
 
 export interface ValidationResult {
   check: string
   status: "pass" | "warn" | "fail"
   message: string
-}
-
-// ── color helpers ──────────────────────────────────────────────────────────────
-
-const COLORS = {
-  pass: "\x1b[32m",
-  warn: "\x1b[33m",
-  fail: "\x1b[31m",
-  reset: "\x1b[0m",
-}
-
-function colorLabel(status: ValidationResult["status"]): string {
-  return `${COLORS[status]}[${status}]${COLORS.reset}`
-}
-
-function expandHome(p: string): string {
-  if (p.startsWith("~/")) return join(homedir(), p.slice(2))
-  if (p === "~") return homedir()
-  return p
 }
 
 // ── checks ─────────────────────────────────────────────────────────────────────
@@ -285,7 +266,7 @@ function checkAccessJson(config: FleetConfig): ValidationResult[] {
           }
         }
       }
-    } catch {}
+    } catch { /* ignore: malformed access.json — skip validation */ }
   }
 
   return results

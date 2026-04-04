@@ -34,7 +34,7 @@ async function getVersion(): Promise<string> {
     })
     const sha = new TextDecoder().decode(result.stdout).trim()
     if (sha) return `fleet ${pkg} (${sha})`
-  } catch {}
+  } catch { /* ignore: git SHA is optional */ }
   return `fleet ${pkg}`
 }
 

@@ -27,7 +27,7 @@ export async function watch(opts: { interval?: number } = {}): Promise<void> {
     session: sessionName(config.fleet.name, name),
     runtime: resolveRuntime(name, config),
     stateDir: resolveStateDir(name, config),
-    rawStateDir: (def as any).stateDir ?? `~/.fleet/state/${config.fleet.name}-${name}`,
+    rawStateDir: def.stateDir ?? `~/.fleet/state/${config.fleet.name}-${name}`,
   }))
 
   const intervalSec = opts.interval ?? 5
@@ -74,8 +74,8 @@ export async function watch(opts: { interval?: number } = {}): Promise<void> {
 
       return {
         name: agent.name,
-        role: (agent.def as any).role ?? "",
-        server: (agent.def as any).server ?? "local",
+        role: agent.def.role ?? "",
+        server: agent.def.server ?? "local",
         state,
         heartbeat: hb.state,
         ageSec: hb.ageSec,
@@ -173,9 +173,7 @@ function eventIcon(type: ActivityEvent["type"]): string {
   }
 }
 
-/**
- * Extract a testable snapshot from agent data (for unit testing the render logic).
- */
+/** Build an AgentSnapshot (used by tests). */
 export function buildSnapshot(
   name: string,
   role: string,

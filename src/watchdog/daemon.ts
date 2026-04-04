@@ -211,7 +211,7 @@ export async function runDaemon(config: WatchdogConfig): Promise<void> {
       try {
         const { patch } = await import("../commands/patch")
         await patch({ json: true })
-      } catch {}
+      } catch { /* ignore: patching is optional maintenance */ }
       lastPatchCheck = now
     }
 

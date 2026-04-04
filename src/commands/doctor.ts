@@ -1,9 +1,9 @@
-import { existsSync, readFileSync, readdirSync, statSync } from "fs"
+import { existsSync, readFileSync } from "fs"
 import { join } from "path"
-import { homedir } from "os"
 import { findConfigDir, loadConfig, loadEnv, resolveStateDir, sessionName } from "../core/config"
 import { DiscordApi } from "../channel/discord/api"
 import { resolveRuntime } from "../runtime/resolve"
+import { resolvePluginServerPaths, colorLabel, COLORS } from "../core/utils"
 import type { FleetConfig } from "../core/types"
 
 export interface CheckResult {
@@ -15,52 +15,6 @@ export interface CheckResult {
 interface AdapterRequirements {
   claude: boolean
   codex: boolean
-}
-
-// ── helpers ────────────────────────────────────────────────────────────────────
-
-function expandHome(p: string): string {
-  if (p.startsWith("~/")) return join(homedir(), p.slice(2))
-  if (p === "~") return homedir()
-  return p
-}
-
-function compareVersionSegments(a: string, b: string): number {
-  const aParts = a.split(".").map(part => Number(part))
-  const bParts = b.split(".").map(part => Number(part))
-  const max = Math.max(aParts.length, bParts.length)
-  for (let i = 0; i < max; i++) {
-    const diff = (aParts[i] ?? 0) - (bParts[i] ?? 0)
-    if (diff !== 0) return diff
-  }
-  return 0
-}
-
-function resolveClaudeDiscordPluginPath(): string | null {
-  // Check cache directory (versioned: cache/.../discord/0.0.4/server.ts)
-  const cacheRoot = expandHome("~/.claude/plugins/cache/claude-plugins-official/discord")
-  if (existsSync(cacheRoot)) {
-    const versions = readdirSync(cacheRoot)
-      .filter((entry) => {
-        const entryPath = join(cacheRoot, entry)
-        const serverPath = join(entryPath, "server.ts")
-        return statSync(entryPath).isDirectory() && existsSync(serverPath)
-      })
-      .sort(compareVersionSegments)
-    if (versions.length > 0) {
-      return join(cacheRoot, versions[versions.length - 1], "server.ts")
-    }
-  }
-
-  // Check marketplace directory (flat: marketplaces/.../discord/server.ts)
-  const marketplacePath = expandHome(
-    "~/.claude/plugins/marketplaces/claude-plugins-official/external_plugins/discord/server.ts"
-  )
-  if (existsSync(marketplacePath)) {
-    return marketplacePath
-  }
-
-  return null
 }
 
 async function runWithTimeout(
@@ -94,20 +48,6 @@ function getAdapterRequirements(config?: FleetConfig): AdapterRequirements {
     claude: Object.values(config.agents).some((agent) => (agent.agentAdapter ?? "claude") === "claude"),
     codex: Object.values(config.agents).some((agent) => (agent.agentAdapter ?? "claude") === "codex"),
   }
-}
-
-// ── color helpers ──────────────────────────────────────────────────────────────
-
-const COLORS = {
-  pass: "\x1b[32m",   // green
-  warn: "\x1b[33m",   // yellow
-  fail: "\x1b[31m",   // red
-  info: "\x1b[36m",   // cyan
-  reset: "\x1b[0m",
-}
-
-function colorLabel(status: CheckResult["status"]): string {
-  return `${COLORS[status]}[${status}]${COLORS.reset}`
 }
 
 // ── checks ────────────────────────────────────────────────────────────────────
@@ -277,8 +217,8 @@ async function checkPluginInstalled(required: boolean): Promise<CheckResult> {
   if (!required) {
     return { check: "plugin:installed", status: "info", message: "Discord Claude plugin skipped (no Claude agents configured)" }
   }
-  const pluginPath = resolveClaudeDiscordPluginPath()
-  if (pluginPath && existsSync(pluginPath)) {
+  const pluginPath = resolvePluginServerPaths()[0]
+  if (pluginPath) {
     return { check: "plugin:installed", status: "pass", message: "Discord plugin installed" }
   }
   return { check: "plugin:installed", status: "fail", message: "Discord plugin not found" }
@@ -300,9 +240,9 @@ async function checkPatches(required: boolean): Promise<CheckResult[]> {
       },
     ]
   }
-  const pluginPath = resolveClaudeDiscordPluginPath()
+  const pluginPath = resolvePluginServerPaths()[0]
 
-  if (!pluginPath || !existsSync(pluginPath)) {
+  if (!pluginPath) {
     return [
       {
         check: "patch:STATE_DIR",

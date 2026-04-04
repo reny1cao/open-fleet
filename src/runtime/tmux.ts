@@ -80,7 +80,7 @@ export class TmuxLocal implements RuntimeAdapter {
       await run(["tmux", "load-buffer", "-b", "fleet-inject", tmpFile])
       await run(["tmux", "paste-buffer", "-b", "fleet-inject", "-t", session])
       await run(["tmux", "send-keys", "-t", session, "", "Enter"])
-      try { unlinkSync(tmpFile) } catch {}
+      try { unlinkSync(tmpFile) } catch { /* ignore: temp file cleanup is best-effort */ }
     } else {
       // Single line: simple send-keys
       await run(["tmux", "send-keys", "-t", session, text, "Enter"])

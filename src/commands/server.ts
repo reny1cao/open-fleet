@@ -17,10 +17,10 @@ function getServerPid(): number | null {
       return pid
     } catch {
       // Process not running, clean up stale PID file
-      try { unlinkSync(PID_FILE) } catch {}
+      try { unlinkSync(PID_FILE) } catch { /* ignore: PID file may already be gone */ }
       return null
     }
-  } catch {
+  } catch { /* ignore: malformed PID file */
     return null
   }
 }
@@ -120,9 +120,9 @@ async function serverStop(opts: { json?: boolean }): Promise<void> {
         break
       }
     }
-    try { unlinkSync(PID_FILE) } catch {}
+    try { unlinkSync(PID_FILE) } catch { /* ignore: best-effort cleanup */ }
   } catch {
-    try { unlinkSync(PID_FILE) } catch {}
+    try { unlinkSync(PID_FILE) } catch { /* ignore: best-effort cleanup */ }
   }
 
   if (opts.json) {

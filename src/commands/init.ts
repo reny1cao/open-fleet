@@ -9,12 +9,7 @@ import { writeBootIdentity } from "../core/identity"
 import { DiscordApi } from "../channel/discord/api"
 import { writeAccessConfig } from "../channel/discord/access"
 import { patch } from "./patch"
-
-function expandHome(p: string): string {
-  if (p.startsWith("~/")) return join(homedir(), p.slice(2))
-  if (p === "~") return homedir()
-  return p
-}
+import { expandHome } from "../core/utils"
 
 function tokenEnvName(agentName: string): string {
   return `DISCORD_BOT_TOKEN_${agentName.toUpperCase().replace(/-/g, "_")}`

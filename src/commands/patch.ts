@@ -1,12 +1,10 @@
-import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from "fs"
+import { readFileSync, writeFileSync, existsSync } from "fs"
 import { join } from "path"
 import { homedir } from "os"
 import { loadConfig } from "../core/config"
 import { sshRun } from "../runtime/remote"
 import type { ServerConfig } from "../core/types"
-
-const PLUGIN_CACHE_ROOT = ".claude/plugins/cache/claude-plugins-official/discord"
-const PLUGIN_MARKETPLACE_ROOT = ".claude/plugins/marketplaces/claude-plugins-official/external_plugins/discord"
+import { PLUGIN_CACHE_ROOT, PLUGIN_MARKETPLACE_ROOT, resolvePluginServerPaths } from "../core/utils"
 const PATTERN = /const PARTNER_BOT_IDS = new Set\(\[[\s\S]*?\]\)/
 const MESSAGE_CREATE_NEEDLE = "client.on('messageCreate', msg => {"
 const BOT_DROP_NEEDLE = "if (msg.author.bot) return"
@@ -25,43 +23,6 @@ const MENTION_FALLBACK_REPLACEMENT = [
   "  if (client.user && msg.content.includes(`<@${client.user.id}>`)) return true",
 ].join("\n")
 
-function compareVersionSegments(a: string, b: string): number {
-  const aParts = a.split(".").map(part => Number(part))
-  const bParts = b.split(".").map(part => Number(part))
-  const max = Math.max(aParts.length, bParts.length)
-  for (let i = 0; i < max; i++) {
-    const diff = (aParts[i] ?? 0) - (bParts[i] ?? 0)
-    if (diff !== 0) return diff
-  }
-  return 0
-}
-
-function resolveLocalPluginServerPaths(): string[] {
-  const paths: string[] = []
-
-  // Check cache directory (versioned: cache/.../discord/0.0.4/server.ts)
-  const cacheRoot = join(homedir(), PLUGIN_CACHE_ROOT)
-  if (existsSync(cacheRoot)) {
-    const versions = readdirSync(cacheRoot)
-      .filter((entry) => {
-        const entryPath = join(cacheRoot, entry)
-        const serverPath = join(entryPath, "server.ts")
-        return statSync(entryPath).isDirectory() && existsSync(serverPath)
-      })
-      .sort(compareVersionSegments)
-    if (versions.length > 0) {
-      paths.push(join(cacheRoot, versions[versions.length - 1], "server.ts"))
-    }
-  }
-
-  // Check marketplace directory (flat: marketplaces/.../discord/server.ts)
-  const marketplacePath = join(homedir(), PLUGIN_MARKETPLACE_ROOT, "server.ts")
-  if (existsSync(marketplacePath)) {
-    paths.push(marketplacePath)
-  }
-
-  return paths
-}
 
 function remoteResolvePluginServerPathsCmd(): string {
   const cacheRoot = `$HOME/${PLUGIN_CACHE_ROOT}`
@@ -100,7 +61,7 @@ function collectAllBotIds(): string[] {
           }
         }
       }
-    } catch {}
+    } catch { /* ignore: malformed config.json */ }
   }
 
   return [...allIds]
@@ -131,10 +92,10 @@ function collectAllRemoteServers(): ServerConfig[] {
                 }
               }
             }
-          } catch {}
+          } catch { /* ignore: skip fleets with invalid config */ }
         }
       }
-    } catch {}
+    } catch { /* ignore: malformed config.json */ }
   }
 
   return [...seen.values()]
@@ -178,9 +139,10 @@ function patchContent(content: string, replacement: string): { updated: string; 
   return { updated, changed: updated !== content, patternFound: true }
 }
 
-export async function patch(opts?: { json?: boolean }): Promise<void> {
-  const log = opts?.json ? () => {} : console.log.bind(console)
-  const warn = opts?.json ? () => {} : console.warn.bind(console)
+export async function patch(opts?: { json?: boolean; silent?: boolean }): Promise<void> {
+  const noop = () => {}
+  const log = (opts?.json || opts?.silent) ? noop : console.log.bind(console)
+  const warn = (opts?.json || opts?.silent) ? noop : console.warn.bind(console)
 
   // 1. Collect bot IDs from ALL fleets
   const botIds = collectAllBotIds()
@@ -193,7 +155,7 @@ export async function patch(opts?: { json?: boolean }): Promise<void> {
   const replacement = buildReplacement(botIds)
 
   // 2. Patch local server.ts (both cache and marketplace paths)
-  const localPluginPaths = resolveLocalPluginServerPaths()
+  const localPluginPaths = resolvePluginServerPaths()
   if (localPluginPaths.length === 0) {
     warn(`  warn: local Discord plugin server.ts not found under cache or marketplace`)
   }
@@ -288,7 +250,7 @@ export async function patch(opts?: { json?: boolean }): Promise<void> {
           writeLocal(tmpLocal, finalContent)
           const { scp: scpFn } = await import("../runtime/remote")
           await scpFn(server, tmpLocal, remotePath)
-          try { unlinkSync(tmpLocal) } catch {}
+          try { unlinkSync(tmpLocal) } catch { /* ignore: temp file cleanup is best-effort */ }
         }
       }
     } catch (err) {
@@ -296,7 +258,7 @@ export async function patch(opts?: { json?: boolean }): Promise<void> {
     }
   }
 
-  if (opts?.json) {
+  if (opts?.json && !opts?.silent) {
     console.log(JSON.stringify({ botIds, remoteServers: remoteServers.map(s => s.sshHost) }, null, 2))
   }
 }

@@ -16,11 +16,11 @@ export function logEvent(event: WatchdogEvent): void {
       const size = statSync(LOG_FILE).size
       if (size > MAX_LOG_SIZE) {
         const backup = LOG_FILE + ".1"
-        try { renameSync(backup, backup + ".old") } catch {}
+        try { renameSync(backup, backup + ".old") } catch { /* ignore: old backup may not exist */ }
         renameSync(LOG_FILE, backup)
-        try { unlinkSync(backup + ".old") } catch {}
+        try { unlinkSync(backup + ".old") } catch { /* ignore: cleanup is best-effort */ }
       }
-    } catch {}
+    } catch { /* ignore: log rotation failure is non-fatal */ }
   }
 
   appendFileSync(LOG_FILE, JSON.stringify(event) + "\n")

@@ -119,7 +119,7 @@ export async function addAgent(opts: {
   const botIdsPath = join(configDir, "bot-ids.json")
   let existingBotIds: Record<string, string> = {}
   if (existsSync(botIdsPath)) {
-    try { existingBotIds = JSON.parse(readFileSync(botIdsPath, "utf8")) } catch {}
+    try { existingBotIds = JSON.parse(readFileSync(botIdsPath, "utf8")) } catch { /* ignore: start fresh if corrupt */ }
   }
   for (const [n, id] of Object.entries(botIds)) {
     if (id !== "UNKNOWN") existingBotIds[n] = id

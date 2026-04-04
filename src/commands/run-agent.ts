@@ -1,4 +1,3 @@
-import { homedir } from "os"
 import { isAbsolute, join } from "path"
 import { getToken, loadConfig, findConfigDir, resolveStateDir } from "../core/config"
 import { getAgentAdapterKind } from "../agents/resolve"
@@ -7,12 +6,7 @@ import { getCodexThreadId, setCodexThreadId } from "../agents/codex/state"
 import { runCodexTurn } from "../agents/codex/app-server"
 import { DiscordApi } from "../channel/discord/api"
 import { DiscordBot } from "../channel/discord/bot"
-
-function expandHome(p: string): string {
-  if (p.startsWith("~/")) return join(homedir(), p.slice(2))
-  if (p === "~") return homedir()
-  return p
-}
+import { expandHome } from "../core/utils"
 
 function resolveWorkspacePath(configDir: string, workspace: string): string {
   const expanded = expandHome(workspace)

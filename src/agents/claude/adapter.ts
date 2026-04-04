@@ -9,12 +9,7 @@ import type { StartAgentContext } from "../types"
 import { homedir } from "os"
 import { join } from "path"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
-
-function expandHome(p: string): string {
-  if (p.startsWith("~/")) return join(homedir(), p.slice(2))
-  if (p === "~") return homedir()
-  return p
-}
+import { expandHome } from "../../core/utils"
 
 export class ClaudeAgentAdapter implements AgentAdapter {
   readonly kind = "claude" as const
@@ -237,7 +232,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       const remoteWrapper = `/tmp/fleet-wrapper-${session}.sh`
       await scp(serverConfig, `/tmp/fleet-wrapper-${session}-local.sh`, remoteWrapper)
       await sshRun(serverConfig, `chmod 700 '${remoteWrapper}'`)
-      try { (await import("fs")).unlinkSync(`/tmp/fleet-wrapper-${session}-local.sh`) } catch {}
+      try { (await import("fs")).unlinkSync(`/tmp/fleet-wrapper-${session}-local.sh`) } catch { /* ignore: temp file cleanup is best-effort */ }
     }
 
     const command = isRemote
@@ -258,7 +253,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
             proxyEnv.HTTPS_PROXY = globalConfig.proxy
           }
         }
-      } catch {}
+      } catch { /* ignore: proxy config missing or malformed */ }
     }
 
     await runtime.start({
@@ -295,17 +290,12 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       await runtime.waitFor(session, /Listening for channel messages/, 60_000)
     }
 
-    // Auto-patch after start: plugin may have been reinstalled fresh
+    // Auto-patch after start: plugin may have been reinstalled fresh.
+    // Always run in json mode to suppress human-readable output that would
+    // corrupt the caller's JSON on stdout.
     try {
       const { patch: runPatch } = await import("../../commands/patch")
-      // Suppress stdout when caller expects JSON to avoid corrupting output
-      const origLog = console.log
-      if (opts.json) console.log = () => {}
-      try {
-        await runPatch({ json: true })
-      } finally {
-        if (opts.json) console.log = origLog
-      }
+      await runPatch({ silent: true })
     } catch (e) {
       if (!opts.json) {
         console.warn(`  Warning: auto-patch failed — ${e instanceof Error ? e.message : e}`)

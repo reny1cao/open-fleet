@@ -30,8 +30,6 @@ const ANSI_RE = /\x1b\[[0-9;]*[a-zA-Z]/g
 // Global sequence counter for chronological ordering across agents
 let _seqCounter = 0
 
-/** Reset sequence counter (for testing). */
-export function resetSequence(): void { _seqCounter = 0 }
 
 /**
  * Parse tmux output lines into meaningful activity events.

@@ -44,7 +44,7 @@ function resolveProxy(): string | undefined {
       const config = JSON.parse(readFileSync(configPath, "utf8"))
       if (config.proxy) return config.proxy
     }
-  } catch {}
+  } catch { /* ignore: proxy config missing or malformed */ }
 
   return undefined
 }

@@ -3,14 +3,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs"
 import { join, dirname } from "path"
 import { homedir } from "os"
 import type { FleetConfig, AgentDef, ServerConfig, OrgStructure, ChannelDef, AgentAdapterKind } from "./types"
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function expandHome(p: string): string {
-  if (p.startsWith("~/")) return join(homedir(), p.slice(2))
-  if (p === "~") return homedir()
-  return p
-}
+import { expandHome } from "./utils"
 
 /** snake_case → camelCase (single word boundary conversion) */
 function toCamel(s: string): string {
@@ -73,7 +66,7 @@ export function findConfigDir(startDir?: string, globalConfigDir?: string): stri
       if (defaultFleet && existsSync(join(defaultFleet, "fleet.yaml"))) {
         return defaultFleet
       }
-    } catch {}
+    } catch { /* ignore: malformed config.json — fall through to error */ }
   }
 
   throw new Error("fleet.yaml not found. Run 'fleet init' to create one.")
@@ -90,7 +83,7 @@ export function writeGlobalConfig(fleetDir: string, fleetName?: string): void {
   // Read existing config to preserve fleets registry
   let existing: Record<string, unknown> = {}
   if (existsSync(configPath)) {
-    try { existing = JSON.parse(readFileSync(configPath, "utf8")) } catch {}
+    try { existing = JSON.parse(readFileSync(configPath, "utf8")) } catch { /* ignore: start fresh if corrupt */ }
   }
 
   const fleets = (existing.fleets ?? {}) as Record<string, string>

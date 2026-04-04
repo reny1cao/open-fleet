@@ -5,50 +5,13 @@ import { findConfigDir, loadConfig, getToken, resolveStateDir } from "../core/co
 import { writeBootIdentity, writeRoster } from "../core/identity"
 import { writeAccessConfig } from "../channel/discord/access"
 import { DiscordApi } from "../channel/discord/api"
+import { resolvePluginServerPaths } from "../core/utils"
 import type { FleetConfig } from "../core/types"
 
 export interface BootCheckResult {
   step: string
   status: "pass" | "fail" | "warn" | "fixed"
   message: string
-}
-
-// ── Plugin resolution (shared with doctor/patch) ────────────────────────────
-
-const PLUGIN_CACHE_ROOT = ".claude/plugins/cache/claude-plugins-official/discord"
-const PLUGIN_MARKETPLACE_ROOT = ".claude/plugins/marketplaces/claude-plugins-official/external_plugins/discord"
-
-function compareVersionSegments(a: string, b: string): number {
-  const aParts = a.split(".").map(Number)
-  const bParts = b.split(".").map(Number)
-  const max = Math.max(aParts.length, bParts.length)
-  for (let i = 0; i < max; i++) {
-    const diff = (aParts[i] ?? 0) - (bParts[i] ?? 0)
-    if (diff !== 0) return diff
-  }
-  return 0
-}
-
-function resolvePluginPath(): string | null {
-  const cacheRoot = join(homedir(), PLUGIN_CACHE_ROOT)
-  if (existsSync(cacheRoot)) {
-    const { readdirSync } = require("fs")
-    const versions = (readdirSync(cacheRoot) as string[])
-      .filter((entry: string) => {
-        const entryPath = join(cacheRoot, entry)
-        const serverPath = join(entryPath, "server.ts")
-        return statSync(entryPath).isDirectory() && existsSync(serverPath)
-      })
-      .sort(compareVersionSegments)
-    if (versions.length > 0) {
-      return join(cacheRoot, versions[versions.length - 1], "server.ts")
-    }
-  }
-
-  const marketplacePath = join(homedir(), PLUGIN_MARKETPLACE_ROOT, "server.ts")
-  if (existsSync(marketplacePath)) return marketplacePath
-
-  return null
 }
 
 // ── Boot-check steps ────────────────────────────────────────────────────────
@@ -90,7 +53,7 @@ async function checkAndRegenerateAccess(
 }
 
 function checkPluginIntegrity(log: (...args: unknown[]) => void): BootCheckResult {
-  const pluginPath = resolvePluginPath()
+  const pluginPath = resolvePluginServerPaths()[0] ?? null
   if (!pluginPath) {
     return { step: "plugin", status: "fail", message: "Discord plugin server.ts not found" }
   }
@@ -234,7 +197,7 @@ function injectTaskContext(
 
   if (relevantTasks.length === 0) {
     const contextPath = join(stateDir, "tasks-context.md")
-    try { writeFileSync(contextPath, "", "utf8") } catch {}
+    try { writeFileSync(contextPath, "", "utf8") } catch { /* ignore: empty context file is optional */ }
     return { step: "tasks", status: "pass", message: "No active tasks for this agent" }
   }
 

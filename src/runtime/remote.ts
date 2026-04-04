@@ -1,7 +1,7 @@
 import type { RuntimeAdapter, StartOpts } from "./types"
 import type { ServerConfig } from "../core/types"
 
-const SSH_TIMEOUT = 5
+const SSH_TIMEOUT = 10
 // PATH prefix for non-interactive SSH shells (bun/claude not in default PATH)
 const REMOTE_PATH_PREFIX = "export PATH=$HOME/.bun/bin:$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"
 
@@ -63,7 +63,7 @@ export class TmuxRemote implements RuntimeAdapter {
     writeFileSync(localScript, scriptLines.join("\n") + "\n")
     await scp(this.server, localScript, remoteScript)
     await sshRun(this.server, `chmod +x '${remoteScript}'`)
-    try { unlinkSync(localScript) } catch {}
+    try { unlinkSync(localScript) } catch { /* ignore: temp file cleanup is best-effort */ }
 
     // Start tmux with the script
     await sshRun(this.server,
@@ -110,7 +110,7 @@ export class TmuxRemote implements RuntimeAdapter {
       await sshRun(this.server, `tmux paste-buffer -b fleet-inject -t '${session}'`)
       await sshRun(this.server, `tmux send-keys -t '${session}' '' Enter`)
       await sshRun(this.server, `rm -f '${tmpRemote}'`, { throwOnError: false })
-      try { unlinkSync(tmpLocal) } catch {}
+      try { unlinkSync(tmpLocal) } catch { /* ignore: temp file cleanup is best-effort */ }
     } else {
       await sshRun(this.server, `tmux send-keys -t '${session}' '${text.replace(/'/g, "'\\''")}' Enter`)
     }
