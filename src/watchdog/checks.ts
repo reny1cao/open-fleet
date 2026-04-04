@@ -7,7 +7,7 @@ import type { HealthCheckResult, WatchdogState } from "./types"
 import { getAgentState } from "./state"
 import { createHash } from "crypto"
 
-function hashOutput(output: string): string {
+export function hashOutput(output: string): string {
   return createHash("md5").update(output.trim()).digest("hex").substring(0, 12)
 }
 

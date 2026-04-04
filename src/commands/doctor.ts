@@ -365,13 +365,21 @@ async function checkSessions(configDir: string): Promise<CheckResult[]> {
 
   for (const [name] of Object.entries(config.agents)) {
     const session = sessionName(config.fleet.name, name)
-    const runtime = resolveRuntime(name, config)
-    const running = await runtime.isRunning(session)
-    results.push({
-      check: `session:${name}`,
-      status: "info",
-      message: `${name}: ${running ? "running" : "stopped"}`,
-    })
+    try {
+      const runtime = resolveRuntime(name, config)
+      const running = await runtime.isRunning(session)
+      results.push({
+        check: `session:${name}`,
+        status: "info",
+        message: `${name}: ${running ? "running" : "stopped"}`,
+      })
+    } catch {
+      results.push({
+        check: `session:${name}`,
+        status: "warn",
+        message: `${name}: could not check (tmux not available?)`,
+      })
+    }
   }
 
   return results

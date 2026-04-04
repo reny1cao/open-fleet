@@ -101,12 +101,12 @@ function collectAllRemoteServers(): ServerConfig[] {
   return [...seen.values()]
 }
 
-function buildReplacement(botIds: string[]): string {
+export function buildReplacement(botIds: string[]): string {
   const lines = botIds.map(id => `  '${id}',`).join("\n")
   return `const PARTNER_BOT_IDS = new Set([\n${lines}\n])`
 }
 
-function patchMentionFallback(content: string): { updated: string; changed: boolean } {
+export function patchMentionFallback(content: string): { updated: string; changed: boolean } {
   // Already patched — the fallback line is present
   if (content.includes("msg.content.includes(`<@${client.user.id}>`")) {
     return { updated: content, changed: false }
@@ -118,7 +118,7 @@ function patchMentionFallback(content: string): { updated: string; changed: bool
   return { updated, changed: updated !== content }
 }
 
-function patchContent(content: string, replacement: string): { updated: string; changed: boolean; patternFound: boolean } {
+export function patchContent(content: string, replacement: string): { updated: string; changed: boolean; patternFound: boolean } {
   if (PATTERN.test(content)) {
     const updated = content.replace(PATTERN, replacement)
     return { updated, changed: updated !== content, patternFound: true }

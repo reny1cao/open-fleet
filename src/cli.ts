@@ -84,11 +84,11 @@ Flags:
   --version   Print version and git SHA`)
 }
 
-function parseFlag(args: string[], flag: string): boolean {
+export function parseFlag(args: string[], flag: string): boolean {
   return args.includes(flag)
 }
 
-function parseFlagValue(args: string[], flag: string): string | undefined {
+export function parseFlagValue(args: string[], flag: string): string | undefined {
   const idx = args.indexOf(flag)
   return idx >= 0 && idx + 1 < args.length ? args[idx + 1] : undefined
 }
