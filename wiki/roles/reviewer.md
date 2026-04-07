@@ -4,7 +4,7 @@
 
 When a task enters `review` status:
 
-1. **Claim** — `fleet task update <id> --status in_progress --note "reviewing"`
+1. **Claim** — `fleet task comment <id> "reviewing"`
 2. **Review** — read the code changes, verify correctness and completeness
 3. **Pass** — `fleet task update <id> --status verify --note "PASS — reason"`
 4. **Fail** — `fleet task update <id> --status in_progress --note "FAIL — issues"` (sends back to worker)
@@ -21,7 +21,7 @@ Report findings in Discord — @mention lead and the original assignee.
 ## Task Commands Quick Reference
 
 ```
-fleet task update <id> --status in_progress --note "reviewing"
+fleet task comment <id> "reviewing"
 fleet task update <id> --status verify --note "PASS — ..."
 fleet task update <id> --status in_progress --note "FAIL — ..."
 fleet task show <id>
