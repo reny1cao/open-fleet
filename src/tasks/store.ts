@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from "
 import { join, dirname } from "path"
 import { homedir } from "os"
 import { findConfigDir, loadConfig } from "../core/config"
-import type { Task, TaskStore, TaskStatus, TaskPriority, TaskNote, TaskNoteType, TaskResult } from "./types"
+import type { Task, TaskStore, TaskStatus, TaskPriority, TaskResult } from "./types"
 import { isValidTransition, transitionError } from "./types"
 
 function tasksDir(): string {

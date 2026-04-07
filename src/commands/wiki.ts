@@ -1,5 +1,5 @@
 import { findConfigDir } from "../core/config"
-import { listWikiEntries, loadWikiSections, buildProjectWiki, workspaceToProjectKey } from "../core/wiki"
+import { listWikiEntries } from "../core/wiki"
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs"
 import { join, dirname, resolve } from "path"
 

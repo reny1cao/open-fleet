@@ -211,7 +211,9 @@ export async function runDaemon(config: WatchdogConfig): Promise<void> {
       try {
         const { patch } = await import("../commands/patch")
         await patch({ json: true })
-      } catch {}
+      } catch (err) {
+        process.stderr.write(`[watchdog] patch check failed: ${err instanceof Error ? err.message : err}\n`)
+      }
       lastPatchCheck = now
     }
 

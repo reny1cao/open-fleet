@@ -244,7 +244,9 @@ export class DiscordBot {
 
     try {
       await this.api.triggerTyping(this.opts.token, message.channel_id)
-    } catch {}
+    } catch (err) {
+      process.stderr.write(`[discord] triggerTyping failed: ${err instanceof Error ? err.message : err}\n`)
+    }
 
     try {
       const reply = await this.opts.onMention({

@@ -46,7 +46,9 @@ export async function checkHeartbeat(
         heartbeat = await readRemoteHeartbeat(serverConfig, agentDef.stateDir ?? `~/.fleet/state/discord-${agentName}`)
       }
     }
-  } catch {}
+  } catch (err) {
+    process.stderr.write(`[watchdog] heartbeat check failed for ${agentName}: ${err instanceof Error ? err.message : err}\n`)
+  }
 
   if (!heartbeat) {
     return { agent: agentName, check: "heartbeat", status: "degraded", details: { state: "unknown" } }

@@ -1,7 +1,7 @@
 import { loadTaskStore, saveTaskStore, createTask, updateTask, getTask, listTasks, activeTasks, sortByPriority } from "../tasks/store"
 import type { TaskStatus, TaskPriority, TaskResult } from "../tasks/types"
 import { notifyTaskAssigned, notifyTaskDone, notifyTaskBlocked, notifyTaskReassigned, notifyTaskReview, notifyTaskVerify } from "../tasks/notify"
-import { useHttpApi, httpCreateTask, httpUpdateTask, httpListTasks, httpGetTask, httpGetBoard } from "../tasks/client"
+import { useHttpApi, httpCreateTask, httpUpdateTask, httpListTasks, httpGetTask } from "../tasks/client"
 
 function formatPriority(p: string): string {
   switch (p) {
@@ -277,7 +277,7 @@ async function taskBoard(args: string[], opts: { json?: boolean }): Promise<void
   let active
   if (useHttpApi()) {
     const allTasks = await httpListTasks({ project })
-    active = allTasks.filter((t: any) => t.status !== "done" && t.status !== "cancelled")
+    active = allTasks.filter(t => t.status !== "done" && t.status !== "cancelled")
   } else {
     const store = loadTaskStore()
     let tasks = activeTasks(store)

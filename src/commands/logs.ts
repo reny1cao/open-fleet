@@ -1,6 +1,7 @@
 import { findConfigDir, loadConfig, sessionName } from "../core/config"
 import { resolveRuntime } from "../runtime/resolve"
 import type { RuntimeAdapter } from "../runtime/types"
+import type { FleetConfig } from "../core/types"
 
 interface LogEntry {
   agent: string
@@ -38,7 +39,7 @@ export async function logs(
 
 async function captureOne(
   name: string,
-  config: any,
+  config: FleetConfig,
   lineCount: number,
 ): Promise<LogEntry> {
   const session = sessionName(config.fleet.name, name)
@@ -66,7 +67,7 @@ async function captureOne(
 
 async function captureLogs(
   agentNames: string[],
-  config: any,
+  config: FleetConfig,
   lineCount: number,
   json?: boolean,
 ): Promise<void> {
@@ -98,7 +99,7 @@ async function captureLogs(
 
 async function followLogs(
   agentNames: string[],
-  config: any,
+  config: FleetConfig,
   lineCount: number,
   json?: boolean,
 ): Promise<void> {

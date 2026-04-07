@@ -235,7 +235,9 @@ function injectTaskContext(
 
   if (relevantTasks.length === 0) {
     const contextPath = join(stateDir, "tasks-context.md")
-    try { writeFileSync(contextPath, "", "utf8") } catch {}
+    try { writeFileSync(contextPath, "", "utf8") } catch (err) {
+      process.stderr.write(`[boot-check] failed to write empty tasks-context.md: ${err instanceof Error ? err.message : err}\n`)
+    }
     return { step: "tasks", status: "pass", message: "No active tasks for this agent" }
   }
 
@@ -337,7 +339,9 @@ function injectProjectWiki(
 
   if (sections.length === 0) {
     const wikiPath = join(stateDir, "project-wiki.md")
-    try { writeFileSync(wikiPath, "", "utf8") } catch {}
+    try { writeFileSync(wikiPath, "", "utf8") } catch (err) {
+      process.stderr.write(`[boot-check] failed to write empty project-wiki.md: ${err instanceof Error ? err.message : err}\n`)
+    }
     return { step: "wiki", status: "pass", message: "No wiki entries found — skipping" }
   }
 

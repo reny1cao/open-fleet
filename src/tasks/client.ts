@@ -4,7 +4,7 @@
  * Mirrors the store.ts API but routes through HTTP.
  */
 
-import type { Task, TaskStore, TaskStatus, TaskPriority, TaskResult } from "./types"
+import type { Task, TaskStatus, TaskPriority, TaskResult } from "./types"
 
 function apiUrl(): string | undefined {
   return process.env.FLEET_API_URL
