@@ -18,6 +18,8 @@ const VALID_PRIORITIES = new Set(["low", "normal", "high", "urgent"])
 const MAX_TITLE = 500
 const MAX_DESCRIPTION = 5000
 const MAX_NOTE = 2000
+const MAX_PROJECT = 200
+const MAX_BLOCKED_REASON = 2000
 
 function unauthorized(): Response {
   return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } })
@@ -40,11 +42,11 @@ function checkAuth(req: Request): boolean {
   return header === `Bearer ${API_TOKEN}`
 }
 
-async function parseBody(req: Request): Promise<Record<string, unknown>> {
+async function parseBody(req: Request): Promise<Record<string, unknown> | null> {
   try {
     return await req.json() as Record<string, unknown>
   } catch {
-    return {}
+    return null
   }
 }
 
@@ -165,11 +167,14 @@ const server = Bun.serve({
     // POST /tasks — create a task
     if (method === "POST" && path === "/tasks") {
       const body = await parseBody(req)
+      if (!body) return badRequest("invalid JSON body")
       const title = body.title as string | undefined
       if (!title) return badRequest("title is required")
       if (title.length > MAX_TITLE) return badRequest(`title exceeds ${MAX_TITLE} characters`)
       const description = body.description as string | undefined
       if (description && description.length > MAX_DESCRIPTION) return badRequest(`description exceeds ${MAX_DESCRIPTION} characters`)
+      const project = body.project as string | undefined
+      if (project && project.length > MAX_PROJECT) return badRequest(`project exceeds ${MAX_PROJECT} characters`)
       const priority = (body.priority as string) ?? "normal"
       if (!VALID_PRIORITIES.has(priority)) return badRequest(`invalid priority: "${priority}". Must be: low, normal, high, urgent`)
 
@@ -191,7 +196,7 @@ const server = Bun.serve({
         parentId: body.parentId as string | undefined,
         dependsOn,
         createdBy: body.createdBy as string | undefined,
-        project: body.project as string | undefined,
+        project,
       })
       saveTaskStore(store)
 
@@ -205,8 +210,11 @@ const server = Bun.serve({
     const taskUpdateMatch = path.match(/^\/tasks\/(task-\d+)$/)
     if (method === "PATCH" && taskUpdateMatch) {
       const body = await parseBody(req)
+      if (!body) return badRequest("invalid JSON body")
       const note = body.note as string | undefined
       if (note && note.length > MAX_NOTE) return badRequest(`note exceeds ${MAX_NOTE} characters`)
+      const blockedReason = body.blockedReason as string | undefined
+      if (blockedReason && blockedReason.length > MAX_BLOCKED_REASON) return badRequest(`blockedReason exceeds ${MAX_BLOCKED_REASON} characters`)
       const newStatus = body.status as TaskStatus | undefined
       const validStatuses = new Set(["backlog", "open", "in_progress", "review", "verify", "done", "blocked", "cancelled"])
       if (newStatus && !validStatuses.has(newStatus)) return badRequest(`invalid status: "${newStatus}"`)
@@ -221,7 +229,7 @@ const server = Bun.serve({
           assignee: newAssignee,
           note,
           result: body.result as TaskResult | undefined,
-          blockedReason: body.blockedReason as string | undefined,
+          blockedReason,
           author: body.author as string | undefined,
         })
         saveTaskStore(store)
@@ -247,7 +255,7 @@ const server = Bun.serve({
       }
     }
 
-    return new Response(JSON.stringify({ error: "Not found", endpoints: ["GET /tasks", "GET /tasks/:id", "GET /tasks/board", "POST /tasks", "PATCH /tasks/:id", "GET /agents"] }), {
+    return new Response(JSON.stringify({ error: "Not found", endpoints: ["GET /dashboard", "GET /agents", "GET /tasks", "GET /tasks/:id", "GET /tasks/board", "POST /tasks", "PATCH /tasks/:id"] }), {
       status: 404,
       headers: { "Content-Type": "application/json" },
     })

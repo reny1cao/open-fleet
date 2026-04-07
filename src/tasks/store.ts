@@ -111,14 +111,17 @@ export function updateTask(
 
   const now = new Date().toISOString()
   const author = opts.author ?? process.env.FLEET_SELF ?? "human"
+  let changed = false
 
   if (opts.assignee !== undefined && opts.assignee !== task.assignee) {
+    changed = true
     const oldAssignee = task.assignee
     task.assignee = opts.assignee || undefined
     task.notes.push({ timestamp: now, author, type: "assignment", text: `Reassigned: ${oldAssignee ?? "unassigned"} → ${opts.assignee || "unassigned"}`, oldValue: oldAssignee, newValue: opts.assignee || undefined })
   }
 
   if (opts.status && opts.status !== task.status) {
+    changed = true
     if (!isValidTransition(task.status, opts.status)) {
       throw new Error(transitionError(task.status, opts.status))
     }
@@ -141,14 +144,18 @@ export function updateTask(
   }
 
   if (opts.note) {
+    changed = true
     task.notes.push({ timestamp: now, author, type: "comment", text: opts.note })
   }
 
   if (opts.result) {
+    changed = true
     task.result = opts.result
   }
 
-  task.updatedAt = now
+  if (changed) {
+    task.updatedAt = now
+  }
   return task
 }
 
