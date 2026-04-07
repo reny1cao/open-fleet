@@ -5,7 +5,9 @@
   "bin": { "fleet": "src/index.ts" },
   "scripts": {
     "dev": "bun run src/index.ts",
+    "build": "bun build --compile --outfile fleet-bin src/index.ts",
     "build:remote": "bun build --target bun --outfile fleet-remote.mjs src/index.ts",
+    "install-cli": "ln -sf \"$(pwd)/fleet\" \"$HOME/.local/bin/fleet\"",
     "test": "bun test"
   },
   "dependencies": {
