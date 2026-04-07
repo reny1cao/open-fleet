@@ -136,7 +136,7 @@ const server = Bun.serve({
       saveTaskStore(store)
 
       // Fire-and-forget notification
-      if (task.assignee) notifyTaskAssigned(task).catch(() => {})
+      if (task.assignee) notifyTaskAssigned(task).catch(e => console.error('[notify]', e.message))
 
       return json(task, 201)
     }
@@ -169,12 +169,12 @@ const server = Bun.serve({
         // Fire-and-forget notifications (skip if quiet)
         const quiet = body.quiet === true
         if (!quiet) {
-          if (newStatus === "done") notifyTaskDone(task).catch(() => {})
-          else if (newStatus === "blocked") notifyTaskBlocked(task).catch(() => {})
-          else if (newStatus === "review") notifyTaskReview(task).catch(() => {})
-          else if (newStatus === "verify") notifyTaskVerify(task).catch(() => {})
+          if (newStatus === "done") notifyTaskDone(task).catch(e => console.error('[notify]', e.message))
+          else if (newStatus === "blocked") notifyTaskBlocked(task).catch(e => console.error('[notify]', e.message))
+          else if (newStatus === "review") notifyTaskReview(task).catch(e => console.error('[notify]', e.message))
+          else if (newStatus === "verify") notifyTaskVerify(task).catch(e => console.error('[notify]', e.message))
           if (newAssignee !== undefined && newAssignee !== oldAssignee) {
-            notifyTaskReassigned(task, oldAssignee, newAssignee).catch(() => {})
+            notifyTaskReassigned(task, oldAssignee, newAssignee).catch(e => console.error('[notify]', e.message))
           }
         }
 

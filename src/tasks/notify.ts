@@ -162,7 +162,7 @@ export async function notifyTaskAssigned(task: Task, sender?: string): Promise<v
   const ctx = await resolveContext(task, { sender: sender ?? task.createdBy })
   if (!ctx) return
 
-  const msg = `${mention(ctx, task.assignee)} You've been assigned: **${task.title}** [${formatPriority(task.priority)}]\nTask ID: \`${task.id}\` — run \`fleet task show ${task.id}\` for details.`
+  const msg = `${mention(ctx, task.assignee)} ← **${task.title}** [${formatPriority(task.priority)}] (\`${task.id}\`)`
 
   try {
     await ctx.discord.sendMessage(ctx.token, ctx.channelId, msg)
@@ -178,7 +178,7 @@ export async function notifyTaskDone(task: Task, sender?: string): Promise<void>
   const creator = task.createdBy
   const summary = task.result?.summary ?? task.notes.filter(n => n.type === "comment").pop()?.text ?? ""
   const summaryLine = summary ? ` — ${summary}` : ""
-  const msg = `${mention(ctx, creator)} Task done: **${task.title}**${summaryLine}\nTask ID: \`${task.id}\``
+  const msg = `${mention(ctx, creator)} ✅ **${task.title}**${summaryLine} (\`${task.id}\`)`
 
   try {
     await ctx.discord.sendMessage(ctx.token, ctx.channelId, msg)
@@ -196,7 +196,7 @@ export async function notifyTaskBlocked(task: Task, sender?: string): Promise<vo
   if (!leadName) return
 
   const reason = task.blockedReason ?? "no reason given"
-  const msg = `${mention(ctx, leadName)} Task blocked: **${task.title}** — ${reason}\nTask ID: \`${task.id}\` | Assignee: ${task.assignee ?? "unassigned"}`
+  const msg = `${mention(ctx, leadName)} 🚫 **${task.title}** blocked: ${reason} (\`${task.id}\` → ${task.assignee ?? "unassigned"})`
 
   try {
     await ctx.discord.sendMessage(ctx.token, ctx.channelId, msg)
@@ -216,14 +216,14 @@ export async function notifyTaskReview(task: Task, sender?: string): Promise<voi
     const leadName = ctx.config.structure?.lead
       ?? Object.entries(ctx.config.agents).find(([, def]) => def.role === "lead")?.[0]
     if (!leadName) return
-    const msg = `${mention(ctx, leadName)} Task ready for review: **${task.title}**\nTask ID: \`${task.id}\` | Assignee: ${task.assignee ?? "unassigned"}`
-    try { await ctx.discord.sendMessage(ctx.token, ctx.channelId, msg) } catch {}
+    const msg = `${mention(ctx, leadName)} 📝 **${task.title}** ready for review (\`${task.id}\` → ${task.assignee ?? "unassigned"})`
+    try { await ctx.discord.sendMessage(ctx.token, ctx.channelId, msg) } catch (err) { process.stderr.write(`[tasks] Notification failed: ${err instanceof Error ? err.message : err}\n`) }
     return
   }
 
   const [reviewerName] = reviewerEntry
   const assigneeMention = task.assignee ? ` by ${mention(ctx, task.assignee)}` : ""
-  const msg = `${mention(ctx, reviewerName)} Task ready for review${assigneeMention}: **${task.title}** [${formatPriority(task.priority)}]\nTask ID: \`${task.id}\` — run \`fleet task show ${task.id}\` for details.`
+  const msg = `${mention(ctx, reviewerName)} 📝 **${task.title}**${assigneeMention} [${formatPriority(task.priority)}] (\`${task.id}\`)`
 
   try {
     await ctx.discord.sendMessage(ctx.token, ctx.channelId, msg)
@@ -241,7 +241,7 @@ export async function notifyTaskVerify(task: Task, sender?: string): Promise<voi
     ?? Object.entries(ctx.config.agents).find(([, def]) => def.role === "lead")?.[0]
   if (!leadName) return
 
-  const msg = `${mention(ctx, leadName)} Task ready for verification: **${task.title}** [${formatPriority(task.priority)}]\nReview passed — needs final approval.\nTask ID: \`${task.id}\``
+  const msg = `${mention(ctx, leadName)} 🔍 **${task.title}** ready to verify [${formatPriority(task.priority)}] (\`${task.id}\`)`
 
   try {
     await ctx.discord.sendMessage(ctx.token, ctx.channelId, msg)
@@ -255,17 +255,12 @@ export async function notifyTaskReassigned(task: Task, oldAssignee: string | und
   const ctx = await resolveContext(task, { sender })
   if (!ctx) return
 
-  const parts: string[] = []
-  if (newAssignee) {
-    parts.push(`${mention(ctx, newAssignee)} You've been assigned: **${task.title}** [${formatPriority(task.priority)}]`)
-  }
-  if (oldAssignee && oldAssignee !== newAssignee) {
-    parts.push(`${mention(ctx, oldAssignee)} Task **${task.title}** has been reassigned to ${newAssignee ? mention(ctx, newAssignee) : "unassigned"}.`)
-  }
-  parts.push(`Task ID: \`${task.id}\``)
+  const target = newAssignee ? mention(ctx, newAssignee) : "unassigned"
+  const from = oldAssignee ? ` (was ${mention(ctx, oldAssignee)})` : ""
+  const msg = `${target} ← **${task.title}** [${formatPriority(task.priority)}]${from} (\`${task.id}\`)`
 
   try {
-    await ctx.discord.sendMessage(ctx.token, ctx.channelId, parts.join("\n"))
+    await ctx.discord.sendMessage(ctx.token, ctx.channelId, msg)
   } catch (err) {
     process.stderr.write(`[tasks] Notification failed: ${err instanceof Error ? err.message : err}\n`)
   }

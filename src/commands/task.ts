@@ -115,7 +115,7 @@ async function taskCreate(args: string[], opts: { json?: boolean }): Promise<voi
   // Notifications: local mode only — server handles them in HTTP mode
   const self = process.env.FLEET_SELF
   if (!useHttpApi() && created.assignee) {
-    notifyTaskAssigned(created, self).catch(() => {})
+    notifyTaskAssigned(created, self).catch(e => console.error('[notify]', e.message))
   }
 }
 
@@ -178,16 +178,16 @@ async function taskUpdate(args: string[], opts: { json?: boolean }): Promise<voi
   if (!quiet && !useHttpApi()) {
     const self = process.env.FLEET_SELF
     if (status === "done") {
-      notifyTaskDone(updated, self).catch(() => {})
+      notifyTaskDone(updated, self).catch(e => console.error('[notify]', e.message))
     } else if (status === "blocked") {
-      notifyTaskBlocked(updated, self).catch(() => {})
+      notifyTaskBlocked(updated, self).catch(e => console.error('[notify]', e.message))
     } else if (status === "review") {
-      notifyTaskReview(updated, self).catch(() => {})
+      notifyTaskReview(updated, self).catch(e => console.error('[notify]', e.message))
     } else if (status === "verify") {
-      notifyTaskVerify(updated, self).catch(() => {})
+      notifyTaskVerify(updated, self).catch(e => console.error('[notify]', e.message))
     }
     if (assign !== undefined && assign !== oldAssignee) {
-      notifyTaskReassigned(updated, oldAssignee, assign, self).catch(() => {})
+      notifyTaskReassigned(updated, oldAssignee, assign, self).catch(e => console.error('[notify]', e.message))
     }
   }
 }
