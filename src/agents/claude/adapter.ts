@@ -187,6 +187,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       `export FLEET_API_URL="${apiUrl}"`,
       ...(apiToken ? [`export FLEET_API_TOKEN="${apiToken}"`] : []),
       `export FLEET_SELF="${agentName}"`,
+      `export FLEET_DIR="${configDir}"`,
     ]
 
     const wrapperLines = [
