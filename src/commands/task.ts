@@ -479,13 +479,13 @@ async function taskRecap(args: string[], opts: { json?: boolean }): Promise<void
     }
   }
 
-  // Blocked tasks
-  if (blocked.length > 0) {
+  // Currently blocked tasks (filter on current status, not historical events)
+  const currentlyBlocked = store.tasks.filter(t => t.status === "blocked")
+  if (currentlyBlocked.length > 0) {
     console.log(`\nBlocked:`)
-    for (const e of blocked) {
-      const task = store.tasks.find(t => t.id === e.taskId)
-      const reason = task?.blockedReason ?? ""
-      console.log(`  ${e.taskId}  ${e.agent}  ${truncate(e.title, 40)} — ${reason}`)
+    for (const t of currentlyBlocked) {
+      const reason = t.blockedReason || "no reason given"
+      console.log(`  ${t.id}  ${t.assignee ?? "unassigned"}  ${truncate(t.title, 40)} — ${reason}`)
     }
   }
 
