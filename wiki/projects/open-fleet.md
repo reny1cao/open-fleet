@@ -58,7 +58,7 @@ Agents receive these at boot:
 - `FLEET_SELF` — agent name (e.g., "John-Carmack")
 - `FLEET_API_URL` — API server URL (http://127.0.0.1:4680)
 - `FLEET_API_TOKEN` — bearer token for API auth
-- `FLEET_CONFIG_DIR` — path to fleet.yaml directory
+- `FLEET_DIR` — path to fleet.yaml directory
 
 ## Config: fleet.yaml
 
