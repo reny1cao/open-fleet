@@ -65,6 +65,66 @@ const server = Bun.serve({
       })
     }
 
+    // GET /agents — no auth required (dashboard fetches this directly)
+    if (req.method === "GET" && path === "/agents") {
+      try {
+        const configDir = findConfigDir()
+        const config = loadConfig(configDir)
+        const watchdogState = loadState()
+        const taskStore = loadTaskStore()
+
+        const agents = await Promise.all(
+          Object.entries(config.agents).map(async ([name, def]) => {
+            let heartbeat
+            const isRemote = def.server !== "local" && config.servers?.[def.server]
+            if (isRemote) {
+              const serverConfig = config.servers![def.server]
+              const rawStateDir = def.stateDir ?? `~/.fleet/state/${config.fleet.name}-${name}`
+              heartbeat = await readRemoteHeartbeat(rawStateDir, serverConfig)
+            } else {
+              const stateDir = resolveStateDir(name, config)
+              heartbeat = readHeartbeat(stateDir)
+            }
+
+            const agentWatch = getAgentState(watchdogState, name)
+            const activeTasks = taskStore.tasks.filter(
+              t => t.assignee === name && (t.status === "in_progress" || t.status === "review")
+            )
+
+            let status: string = heartbeat.state
+            if (heartbeat.state === "dead" && agentWatch.consecutiveFailures === 0) {
+              status = "off"
+            }
+
+            return {
+              name,
+              role: def.role,
+              server: def.server,
+              workspace: def.workspace ?? config.defaults.workspace,
+              channels: def.channels,
+              status,
+              heartbeat: {
+                state: heartbeat.state,
+                lastSeen: heartbeat.lastSeen,
+                ageSec: heartbeat.ageSec,
+              },
+              watchdog: {
+                lastHealthy: agentWatch.lastHealthy,
+                consecutiveFailures: agentWatch.consecutiveFailures,
+                lastRestart: agentWatch.lastRestart,
+                outputStaleCount: agentWatch.outputStaleCount,
+              },
+              activeTasks: activeTasks.map(t => ({ id: t.id, title: t.title, status: t.status })),
+            }
+          })
+        )
+
+        return json({ agents })
+      } catch (err) {
+        return badRequest(`Failed to load agent status: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+
     if (!checkAuth(req)) return unauthorized()
 
     const method = req.method
@@ -135,8 +195,8 @@ const server = Bun.serve({
       })
       saveTaskStore(store)
 
-      // Fire-and-forget notification
-      if (task.assignee) notifyTaskAssigned(task).catch(e => console.error('[notify]', e.message))
+      // Fire-and-forget notification — use creator as sender so it comes from their bot
+      if (task.assignee) notifyTaskAssigned(task, task.createdBy).catch(e => console.error('[notify]', e.message))
 
       return json(task, 201)
     }
@@ -167,85 +227,23 @@ const server = Bun.serve({
         saveTaskStore(store)
 
         // Fire-and-forget notifications (skip if quiet)
+        // Use author (the agent making the update) as sender so the notification
+        // comes from the worker's bot, not the lead's bot
         const quiet = body.quiet === true
+        const sender = (body.author as string | undefined) ?? task.assignee
         if (!quiet) {
-          if (newStatus === "done") notifyTaskDone(task).catch(e => console.error('[notify]', e.message))
-          else if (newStatus === "blocked") notifyTaskBlocked(task).catch(e => console.error('[notify]', e.message))
-          else if (newStatus === "review") notifyTaskReview(task).catch(e => console.error('[notify]', e.message))
-          else if (newStatus === "verify") notifyTaskVerify(task).catch(e => console.error('[notify]', e.message))
+          if (newStatus === "done") notifyTaskDone(task, sender).catch(e => console.error('[notify]', e.message))
+          else if (newStatus === "blocked") notifyTaskBlocked(task, sender).catch(e => console.error('[notify]', e.message))
+          else if (newStatus === "review") notifyTaskReview(task, sender).catch(e => console.error('[notify]', e.message))
+          else if (newStatus === "verify") notifyTaskVerify(task, sender).catch(e => console.error('[notify]', e.message))
           if (newAssignee !== undefined && newAssignee !== oldAssignee) {
-            notifyTaskReassigned(task, oldAssignee, newAssignee).catch(e => console.error('[notify]', e.message))
+            notifyTaskReassigned(task, oldAssignee, newAssignee, sender).catch(e => console.error('[notify]', e.message))
           }
         }
 
         return json(task)
       } catch (err) {
         return badRequest(err instanceof Error ? err.message : String(err))
-      }
-    }
-
-    // GET /agents — real agent status with heartbeat + watchdog state
-    if (method === "GET" && path === "/agents") {
-      try {
-        const configDir = findConfigDir()
-        const config = loadConfig(configDir)
-        const watchdogState = loadState()
-        const taskStore = loadTaskStore()
-
-        const agents = await Promise.all(
-          Object.entries(config.agents).map(async ([name, def]) => {
-            // Read heartbeat (local or remote)
-            let heartbeat
-            const isRemote = def.server !== "local" && config.servers?.[def.server]
-            if (isRemote) {
-              const serverConfig = config.servers![def.server]
-              const rawStateDir = def.stateDir ?? `~/.fleet/state/${config.fleet.name}-${name}`
-              heartbeat = await readRemoteHeartbeat(rawStateDir, serverConfig)
-            } else {
-              const stateDir = resolveStateDir(name, config)
-              heartbeat = readHeartbeat(stateDir)
-            }
-
-            // Watchdog state
-            const agentWatch = getAgentState(watchdogState, name)
-
-            // Current task (active in_progress or review)
-            const activeTasks = taskStore.tasks.filter(
-              t => t.assignee === name && (t.status === "in_progress" || t.status === "review")
-            )
-
-            // Derive combined status
-            let status: string = heartbeat.state
-            if (heartbeat.state === "dead" && agentWatch.consecutiveFailures === 0) {
-              status = "off"
-            }
-
-            return {
-              name,
-              role: def.role,
-              server: def.server,
-              workspace: def.workspace ?? config.defaults.workspace,
-              channels: def.channels,
-              status,
-              heartbeat: {
-                state: heartbeat.state,
-                lastSeen: heartbeat.lastSeen,
-                ageSec: heartbeat.ageSec,
-              },
-              watchdog: {
-                lastHealthy: agentWatch.lastHealthy,
-                consecutiveFailures: agentWatch.consecutiveFailures,
-                lastRestart: agentWatch.lastRestart,
-                outputStaleCount: agentWatch.outputStaleCount,
-              },
-              activeTasks: activeTasks.map(t => ({ id: t.id, title: t.title, status: t.status })),
-            }
-          })
-        )
-
-        return json({ agents })
-      } catch (err) {
-        return badRequest(`Failed to load agent status: ${err instanceof Error ? err.message : String(err)}`)
       }
     }
 
