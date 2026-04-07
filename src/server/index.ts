@@ -1,9 +1,10 @@
 import { loadTaskStore, saveTaskStore, createTask, updateTask, getTask, listTasks, activeTasks, sortByPriority } from "../tasks/store"
 import type { TaskStatus, TaskPriority, TaskResult } from "../tasks/types"
 import { notifyTaskAssigned, notifyTaskDone, notifyTaskBlocked, notifyTaskReassigned, notifyTaskReview, notifyTaskVerify } from "../tasks/notify"
-import { findConfigDir, loadConfig, resolveStateDir } from "../core/config"
+import { findConfigDir, loadConfig, resolveStateDir, sessionName } from "../core/config"
 import { readHeartbeat, readRemoteHeartbeat } from "../core/heartbeat"
 import { loadState, getAgentState } from "../watchdog/state"
+import { resolveRuntime } from "../runtime/resolve"
 
 const PORT = parseInt(process.env.FLEET_API_PORT ?? "4680")
 const HOST = process.env.FLEET_API_HOST ?? "127.0.0.1" // localhost only by default — set to Tailscale IP for remote access
@@ -50,6 +51,24 @@ async function parseBody(req: Request): Promise<Record<string, unknown> | null> 
   }
 }
 
+function parseSince(since: string): Date {
+  const now = new Date()
+  if (since === "today") {
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  }
+  const match = since.match(/^(\d+)(h|m|d)$/)
+  if (match) {
+    const [, amount, unit] = match
+    const ms = unit === "h" ? parseInt(amount) * 3600000
+      : unit === "m" ? parseInt(amount) * 60000
+      : parseInt(amount) * 86400000
+    return new Date(now.getTime() - ms)
+  }
+  const parsed = new Date(since)
+  if (!isNaN(parsed.getTime())) return parsed
+  return new Date(now.getTime() - 2 * 3600000) // default 2h
+}
+
 // Load dashboard HTML at startup
 const DASHBOARD_HTML = await Bun.file(new URL("dashboard.html", import.meta.url).pathname).text()
 
@@ -93,6 +112,23 @@ const server = Bun.serve({
               t => t.assignee === name && (t.status === "in_progress" || t.status === "review")
             )
 
+            // Recent activity: last 5 events from this agent's tasks
+            const recentEvents: { timestamp: string; taskId: string; type: string; text: string }[] = []
+            for (const task of taskStore.tasks) {
+              for (const note of task.notes) {
+                if (note.author === name) {
+                  recentEvents.push({ timestamp: note.timestamp, taskId: task.id, type: note.type, text: note.text })
+                }
+              }
+            }
+            recentEvents.sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+            const recentActivity = recentEvents.slice(0, 5)
+
+            // Daily stats
+            const todayStart = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).toISOString()
+            const todayCompleted = taskStore.tasks.filter(t => t.assignee === name && t.completedAt && t.completedAt >= todayStart).length
+            const todayEvents = recentEvents.filter(e => e.timestamp >= todayStart).length
+
             let status: string = heartbeat.state
             if (heartbeat.state === "dead" && agentWatch.consecutiveFailures === 0) {
               status = "off"
@@ -116,7 +152,9 @@ const server = Bun.serve({
                 lastRestart: agentWatch.lastRestart,
                 outputStaleCount: agentWatch.outputStaleCount,
               },
-              activeTasks: activeTasks.map(t => ({ id: t.id, title: t.title, status: t.status })),
+              activeTasks: activeTasks.map(t => ({ id: t.id, title: t.title, status: t.status, priority: t.priority, startedAt: t.startedAt })),
+              recentActivity,
+              dailyStats: { completed: todayCompleted, events: todayEvents },
             }
           })
         )
@@ -127,9 +165,93 @@ const server = Bun.serve({
       }
     }
 
+    // GET /activity — chronological stream of task events (no auth, for dashboard)
+    if (req.method === "GET" && path === "/activity") {
+      try {
+        const store = loadTaskStore()
+        const since = parseSince(url.searchParams.get("since") ?? "2h")
+        const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50"), 200)
+
+        const events: { timestamp: string; agent: string; taskId: string; taskTitle: string; type: string; text: string }[] = []
+
+        for (const task of store.tasks) {
+          // Task creation events
+          if (new Date(task.createdAt) >= since) {
+            events.push({
+              timestamp: task.createdAt,
+              agent: task.createdBy,
+              taskId: task.id,
+              taskTitle: task.title,
+              type: "created",
+              text: `Created: "${task.title}"${task.assignee ? ` → ${task.assignee}` : ""}`,
+            })
+          }
+          // Note events
+          for (const note of task.notes) {
+            if (new Date(note.timestamp) >= since) {
+              events.push({
+                timestamp: note.timestamp,
+                agent: note.author,
+                taskId: task.id,
+                taskTitle: task.title,
+                type: note.type,
+                text: note.text,
+              })
+            }
+          }
+        }
+
+        events.sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+        return json({ events: events.slice(0, limit), since: since.toISOString() })
+      } catch (err) {
+        return badRequest(`Failed to load activity: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+
+    // GET /agents/:name/logs — last N lines of tmux output (no auth, for dashboard)
+    const logsMatch = path.match(/^\/agents\/([^/]+)\/logs$/)
+    if (req.method === "GET" && logsMatch) {
+      try {
+        const agentName = decodeURIComponent(logsMatch[1])
+        const lines = Math.min(parseInt(url.searchParams.get("lines") ?? "30"), 200)
+        const configDir = findConfigDir()
+        const config = loadConfig(configDir)
+
+        if (!config.agents[agentName]) return notFound(`Agent not found: ${agentName}`)
+
+        const session = sessionName(config.fleet.name, agentName)
+        const runtime = resolveRuntime(agentName, config)
+        const output = await runtime.captureOutput(session, lines)
+
+        return json({ agent: agentName, lines: output.split("\n") })
+      } catch (err) {
+        return json({ agent: logsMatch[1], lines: [], error: err instanceof Error ? err.message : String(err) })
+      }
+    }
+
     if (!checkAuth(req)) return unauthorized()
 
     const method = req.method
+
+    // POST /agents/:name/restart — trigger agent restart
+    const restartMatch = path.match(/^\/agents\/([^/]+)\/restart$/)
+    if (method === "POST" && restartMatch) {
+      try {
+        const agentName = decodeURIComponent(restartMatch[1])
+        const configDir = findConfigDir()
+        const config = loadConfig(configDir)
+
+        if (!config.agents[agentName]) return notFound(`Agent not found: ${agentName}`)
+
+        const session = sessionName(config.fleet.name, agentName)
+        const runtime = resolveRuntime(agentName, config)
+        await runtime.sendKeys(session, "/exit")
+
+        return json({ agent: agentName, status: "restart_triggered", session })
+      } catch (err) {
+        return badRequest(`Failed to restart agent: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
 
     // GET /tasks — list tasks with optional filters
     if (method === "GET" && path === "/tasks") {
@@ -255,7 +377,7 @@ const server = Bun.serve({
       }
     }
 
-    return new Response(JSON.stringify({ error: "Not found", endpoints: ["GET /dashboard", "GET /agents", "GET /tasks", "GET /tasks/:id", "GET /tasks/board", "POST /tasks", "PATCH /tasks/:id"] }), {
+    return new Response(JSON.stringify({ error: "Not found", endpoints: ["GET /dashboard", "GET /agents", "GET /agents/:name/logs", "GET /activity", "POST /agents/:name/restart", "GET /tasks", "GET /tasks/:id", "GET /tasks/board", "POST /tasks", "PATCH /tasks/:id"] }), {
       status: 404,
       headers: { "Content-Type": "application/json" },
     })
