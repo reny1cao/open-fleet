@@ -70,3 +70,21 @@ const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
 export function isValidTransition(from: TaskStatus, to: TaskStatus): boolean {
   return VALID_TRANSITIONS[from]?.includes(to) ?? false
 }
+
+export function validTransitionsFrom(status: TaskStatus): TaskStatus[] {
+  return VALID_TRANSITIONS[status] ?? []
+}
+
+/** Build a helpful error message for an invalid transition, suggesting the shortest valid path. */
+export function transitionError(from: TaskStatus, to: TaskStatus): string {
+  const valid = validTransitionsFrom(from)
+  const validList = valid.length > 0 ? valid.join(", ") : "none (terminal state)"
+
+  // Find a 1-hop path: from → X → to
+  const intermediate = valid.find(mid => VALID_TRANSITIONS[mid]?.includes(to))
+  const hint = intermediate
+    ? `\nHint: ${from} → ${intermediate} → ${to}`
+    : ""
+
+  return `Invalid transition: ${from} → ${to}. Valid from ${from}: ${validList}${hint}`
+}

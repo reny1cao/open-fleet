@@ -3,7 +3,7 @@ import { join, dirname } from "path"
 import { homedir } from "os"
 import { findConfigDir, loadConfig } from "../core/config"
 import type { Task, TaskStore, TaskStatus, TaskPriority, TaskNote, TaskNoteType, TaskResult } from "./types"
-import { isValidTransition } from "./types"
+import { isValidTransition, transitionError } from "./types"
 
 function tasksDir(): string {
   return join(homedir(), ".fleet", "tasks")
@@ -120,7 +120,7 @@ export function updateTask(
 
   if (opts.status && opts.status !== task.status) {
     if (!isValidTransition(task.status, opts.status)) {
-      throw new Error(`Invalid transition: ${task.status} → ${opts.status}`)
+      throw new Error(transitionError(task.status, opts.status))
     }
     const oldStatus = task.status
     task.status = opts.status
