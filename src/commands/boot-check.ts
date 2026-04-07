@@ -5,6 +5,7 @@ import { findConfigDir, loadConfig, getToken, resolveStateDir } from "../core/co
 import { writeBootIdentity, writeRoster } from "../core/identity"
 import { writeAccessConfig } from "../channel/discord/access"
 import { DiscordApi } from "../channel/discord/api"
+import { loadWikiSections, buildProjectWiki } from "../core/wiki"
 import type { FleetConfig } from "../core/types"
 
 export interface BootCheckResult {
@@ -322,6 +323,45 @@ function injectTaskContext(
   }
 }
 
+// ── Project wiki injection ─────────────────────────────────────────────────
+
+function injectProjectWiki(
+  agentName: string,
+  agentRole: string,
+  workspace: string | undefined,
+  stateDir: string,
+  configDir: string,
+  log: (...args: unknown[]) => void,
+): BootCheckResult {
+  const sections = loadWikiSections(configDir, agentRole, workspace)
+
+  if (sections.length === 0) {
+    const wikiPath = join(stateDir, "project-wiki.md")
+    try { writeFileSync(wikiPath, "", "utf8") } catch {}
+    return { step: "wiki", status: "pass", message: "No wiki entries found — skipping" }
+  }
+
+  const content = buildProjectWiki(sections)
+  const wikiPath = join(stateDir, "project-wiki.md")
+
+  try {
+    writeFileSync(wikiPath, content + "\n", "utf8")
+  } catch (e) {
+    return {
+      step: "wiki",
+      status: "warn",
+      message: `Failed to write project-wiki.md — ${e instanceof Error ? e.message : e}`,
+    }
+  }
+
+  const sources = sections.map(s => s.source).join(", ")
+  return {
+    step: "wiki",
+    status: "pass",
+    message: `Injected wiki context (${content.length} chars, sources: ${sources})`,
+  }
+}
+
 // ── Main export ─────────────────────────────────────────────────────────────
 
 export async function bootCheck(
@@ -398,19 +438,19 @@ export async function bootCheck(
   }
 
   // Step 1: Regenerate access.json from fleet.yaml
-  log("  [1/5] Regenerating access.json...")
+  log("  [1/6] Regenerating access.json...")
   const accessResult = await checkAndRegenerateAccess(agentName, config, stateDir, botIds, log)
   results.push(accessResult)
   log(`        ${accessResult.status}: ${accessResult.message}`)
 
   // Step 2: Verify plugin integrity
-  log("  [2/5] Checking plugin integrity...")
+  log("  [2/6] Checking plugin integrity...")
   const pluginResult = checkPluginIntegrity(log)
   results.push(pluginResult)
   log(`        ${pluginResult.status}: ${pluginResult.message}`)
 
   // Step 3: Verify identity.md
-  log("  [3/5] Checking identity...")
+  log("  [3/6] Checking identity...")
   // Regenerate identity + roster to ensure they're current
   writeBootIdentity(agentName, config, botIds, stateDir, botDisplayNames)
   writeRoster(agentName, config, botIds, stateDir, botDisplayNames)
@@ -419,13 +459,20 @@ export async function bootCheck(
   log(`        ${identityResult.status}: ${identityResult.message}`)
 
   // Step 4: Inject task context (failure-tolerant — never blocks boot)
-  log("  [4/5] Injecting task context...")
+  log("  [4/6] Injecting task context...")
   const taskResult = injectTaskContext(agentName, agentDef.role, stateDir, config.fleet.name, log)
   results.push(taskResult)
   log(`        ${taskResult.status}: ${taskResult.message}`)
 
-  // Step 5: Log boot command + env snapshot
-  log("  [5/5] Logging boot command...")
+  // Step 5: Inject project wiki context (failure-tolerant)
+  log("  [5/6] Injecting project wiki...")
+  const workspace = agentDef.workspace ?? config.defaults.workspace
+  const wikiResult = injectProjectWiki(agentName, agentDef.role, workspace, stateDir, configDir, log)
+  results.push(wikiResult)
+  log(`        ${wikiResult.status}: ${wikiResult.message}`)
+
+  // Step 6: Log boot command + env snapshot
+  log("  [6/6] Logging boot command...")
   const token = getToken(agentName, config, configDir)
   const bootLogResult = logBootCommand(agentName, stateDir, {
     DISCORD_BOT_TOKEN: token,
