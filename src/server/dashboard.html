@@ -837,6 +837,18 @@ function renderMissionControl() {
 
     const sparkline = renderSparkline(a);
 
+    // Lead-specific stats: count of tasks they've assigned to others
+    const isLead = a.role === 'lead';
+    const assignedOut = isLead ? allTasks.filter(t => t.createdBy === a.name && t.status !== 'done' && t.status !== 'cancelled').length : 0;
+
+    // Heartbeat label: leads/unknown show role instead of raw "unknown"
+    let heartbeatLabel = '';
+    if (hb.ageSec != null) {
+      heartbeatLabel = ageSec(hb.ageSec);
+    } else if (isLead) {
+      heartbeatLabel = 'human';
+    }
+
     let taskHtml;
     if (tasks.length > 0) {
       taskHtml = tasks.map(t => `
@@ -850,8 +862,35 @@ function renderMissionControl() {
         </div>
       `).join('');
     } else {
-      taskHtml = '<div class="ac-task-empty">No active tasks</div>';
+      // Show last completed task or last action instead of empty "No active tasks"
+      const lastCompleted = allTasks
+        .filter(t => t.assignee === a.name && t.status === 'done' && t.completedAt)
+        .sort((x, y) => y.completedAt.localeCompare(x.completedAt))[0];
+      const lastAction = (a.recentActivity || [])[0];
+
+      if (lastCompleted) {
+        taskHtml = `
+          <div class="ac-task" style="opacity:0.6" onclick="event.stopPropagation();showTask('${escapeJs(lastCompleted.id)}')">
+            <div class="ac-task-header">
+              <span class="status-badge status-done">done</span>
+              <span class="ac-task-id">${escapeHtml(lastCompleted.id)}</span>
+              <span style="color:var(--text-muted);font-size:10px;margin-left:auto;font-family:monospace">${timeAgo(lastCompleted.completedAt)}</span>
+            </div>
+            <div class="ac-task-title">${escapeHtml(lastCompleted.title)}</div>
+          </div>`;
+      } else if (lastAction) {
+        taskHtml = `<div class="ac-task-empty" style="font-style:normal">${escapeHtml(lastAction.text)} <span style="font-family:monospace;font-size:10px">${timeAgo(lastAction.timestamp)}</span></div>`;
+      } else if (isLead) {
+        taskHtml = `<div class="ac-task-empty">${assignedOut > 0 ? `${assignedOut} tasks assigned` : 'No tasks assigned'}</div>`;
+      } else {
+        taskHtml = '<div class="ac-task-empty">No activity yet</div>';
+      }
     }
+
+    // Role badge: leads get a distinct style
+    const roleBadge = isLead
+      ? `<span class="ac-role" style="background:color-mix(in srgb, var(--accent) 15%, var(--bg));color:var(--accent)">${escapeHtml(a.role)}</span>`
+      : `<span class="ac-role">${escapeHtml(a.role || '')}</span>`;
 
     return `
       <div class="agent-card${hasIssues ? ' has-issues' : ''}" onclick="showAgentDetail('${escapeJs(a.name)}')">
@@ -859,13 +898,14 @@ function renderMissionControl() {
           <div class="ac-identity">
             <span class="ac-dot ${a.status}"></span>
             <span class="ac-name">${escapeHtml(a.name)}</span>
-            <span class="ac-role">${escapeHtml(a.role || '')}</span>
+            ${roleBadge}
           </div>
-          <span class="ac-heartbeat">${hb.ageSec != null ? ageSec(hb.ageSec) : ''} ${sparkline}</span>
+          <span class="ac-heartbeat">${heartbeatLabel} ${sparkline}</span>
         </div>
         ${taskHtml}
         <div class="ac-footer">
           <div class="ac-stats">
+            ${isLead ? `<span class="ac-stat"><b>${assignedOut}</b> assigned</span>` : ''}
             <span class="ac-stat"><b>${doneToday}</b> done today</span>
             ${failures > 0 ? `<span class="ac-stat" style="color:var(--red)"><b>${failures}</b> failures</span>` : ''}
           </div>
