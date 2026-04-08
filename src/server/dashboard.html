@@ -500,8 +500,8 @@
   }
   .priority-badge.urgent { background: color-mix(in srgb, var(--red) 15%, var(--bg)); color: var(--red); }
   .priority-badge.high { background: color-mix(in srgb, var(--orange) 15%, var(--bg)); color: var(--orange); }
-  .priority-badge.normal { color: var(--text-muted); }
-  .priority-badge.low { color: var(--text-muted); }
+  .priority-badge.normal { background: color-mix(in srgb, var(--text-muted) 10%, var(--bg)); color: var(--text-muted); }
+  .priority-badge.low { background: color-mix(in srgb, var(--text-muted) 10%, var(--bg)); color: var(--text-muted); }
 
   /* ── Timeline (Linus) ── */
   .tl-container { padding: 16px 24px; overflow-x: auto; overflow-y: auto; height: 100%; }
@@ -593,7 +593,7 @@
     .view-tabs { font-size: 11px; }
     .mc-main { padding: 10px 12px; }
     .agent-grid { grid-template-columns: 1fr; }
-    .board-view { flex-direction: column; overflow-x: visible; }
+    .board-view { flex-direction: column; overflow-x: visible; height: auto; }
     .board-lane { min-width: 100%; }
     .board-lane-body { padding: 6px 12px; }
     .modal { width: 95vw; padding: 14px; }
@@ -897,17 +897,13 @@ function renderSparkline(agent) {
   return `<span class="sparkline">${bars.join('')}</span>`;
 }
 
-// ── Activity feed ──
-async function renderActivityFeed() {
+// ── Activity feed (uses pre-fetched allActivity from refresh cycle) ──
+function renderActivityFeed() {
   const feed = document.getElementById('feed-list');
-  let events = [];
 
-  // Try /activity endpoint first, fall back to extracting from task notes
-  try {
-    const data = await apiFetch('/activity?since=4h&limit=30');
-    events = data.events || [];
-  } catch (err) {
-    console.warn('[activity] /activity endpoint unavailable, using task notes fallback:', err.message);
+  // Use pre-fetched data; fall back to task notes if /activity wasn't available
+  let events = allActivity.length > 0 ? [...allActivity] : [];
+  if (events.length === 0) {
     for (const task of allTasks) {
       for (const note of (task.notes || [])) {
         events.push({
@@ -1434,12 +1430,14 @@ if (savedTheme) {
 // ── Data refresh ──
 async function refresh() {
   try {
-    const [tasks, agentsData] = await Promise.all([
+    const [tasks, agentsData, activityData] = await Promise.all([
       apiFetch('/tasks'),
       apiFetch('/agents').catch(() => null),
+      apiFetch('/activity?since=4h&limit=30').catch(() => null),
     ]);
 
     allTasks = tasks;
+    allActivity = activityData?.events || [];
     if (agentsData) {
       allAgents = agentsData.agents || agentsData || [];
     } else {
