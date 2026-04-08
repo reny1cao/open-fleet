@@ -5,6 +5,9 @@ import { findConfigDir, loadConfig, resolveStateDir, sessionName } from "../core
 import { readHeartbeat, readRemoteHeartbeat } from "../core/heartbeat"
 import { loadState, getAgentState } from "../watchdog/state"
 import { resolveRuntime } from "../runtime/resolve"
+import { existsSync, readdirSync, statSync, readFileSync } from "fs"
+import { join, resolve, extname, relative } from "path"
+import { homedir } from "os"
 
 const PORT = parseInt(process.env.FLEET_API_PORT ?? "4680")
 const HOST = process.env.FLEET_API_HOST ?? "127.0.0.1" // localhost only by default — set to Tailscale IP for remote access
@@ -46,6 +49,40 @@ function checkAuth(req: Request): boolean {
 async function parseBody(req: Request): Promise<Record<string, unknown> | null> {
   try {
     return await req.json() as Record<string, unknown>
+  } catch {
+    return null
+  }
+}
+
+function expandHome(p: string): string {
+  return p.startsWith('~/') ? join(homedir(), p.slice(2)) : p
+}
+
+function resolveProjectDir(project: string): string | null {
+  try {
+    const configDir = findConfigDir()
+    const config = loadConfig(configDir)
+
+    // 1. Match channel label (e.g., "fleet-dev" → workspace)
+    const channelDef = config.discord.channels[project]
+    if (channelDef?.workspace) {
+      const dir = expandHome(channelDef.workspace)
+      if (existsSync(dir)) return dir
+    }
+
+    // 2. Search channels for workspace path containing project name
+    for (const [, ch] of Object.entries(config.discord.channels)) {
+      if (ch.workspace && ch.workspace.includes(project)) {
+        const dir = expandHome(ch.workspace)
+        if (existsSync(dir)) return dir
+      }
+    }
+
+    // 3. Fallback: ~/workspace/<project>
+    const fallback = join(homedir(), 'workspace', project)
+    if (existsSync(fallback)) return fallback
+
+    return null
   } catch {
     return null
   }
@@ -229,6 +266,81 @@ const server = Bun.serve({
       }
     }
 
+    // GET /docs/:project — doc index for a project (no auth)
+    const docsIndexMatch = path.match(/^\/docs\/([^/]+)$/)
+    if (req.method === "GET" && docsIndexMatch) {
+      try {
+        const project = decodeURIComponent(docsIndexMatch[1])
+        const projectDir = resolveProjectDir(project)
+        if (!projectDir) return notFound(`Project not found: ${project}`)
+
+        const docs: { name: string; path: string; size: number; modified: string }[] = []
+        const MAX_DOC_SIZE = 50000
+        const scanFile = (filePath: string, displayPath: string) => {
+          try {
+            const st = statSync(filePath)
+            if (!st.isFile() || st.size > MAX_DOC_SIZE) return
+            if (extname(filePath) !== '.md') return
+            docs.push({ name: displayPath.replace(/\.md$/, ''), path: displayPath, size: st.size, modified: st.mtime.toISOString() })
+          } catch {}
+        }
+
+        // Priority 1: STATUS.md
+        const statusPath = join(projectDir, 'STATUS.md')
+        if (existsSync(statusPath)) scanFile(statusPath, 'STATUS.md')
+
+        // Priority 2: wiki/projects/<project>.md
+        const wikiDir = join(projectDir, 'wiki', 'projects')
+        if (existsSync(wikiDir)) {
+          for (const f of readdirSync(wikiDir)) scanFile(join(wikiDir, f), `wiki/projects/${f}`)
+        }
+
+        // Priority 3: docs/*.md (top-level only, no subdirs)
+        const docsDir = join(projectDir, 'docs')
+        if (existsSync(docsDir)) {
+          for (const f of readdirSync(docsDir)) scanFile(join(docsDir, f), `docs/${f}`)
+        }
+
+        // Priority 4: wiki/shared.md + wiki/roles/
+        const sharedPath = join(projectDir, 'wiki', 'shared.md')
+        if (existsSync(sharedPath)) scanFile(sharedPath, 'wiki/shared.md')
+        const rolesDir = join(projectDir, 'wiki', 'roles')
+        if (existsSync(rolesDir)) {
+          for (const f of readdirSync(rolesDir)) scanFile(join(rolesDir, f), `wiki/roles/${f}`)
+        }
+
+        return json({ project, docs })
+      } catch (err) {
+        return badRequest(`Failed to list docs: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+
+    // GET /docs/:project/*path — raw markdown content (no auth)
+    const docsContentMatch = path.match(/^\/docs\/([^/]+)\/(.+)$/)
+    if (req.method === "GET" && docsContentMatch) {
+      try {
+        const project = decodeURIComponent(docsContentMatch[1])
+        const docPath = decodeURIComponent(docsContentMatch[2])
+        const projectDir = resolveProjectDir(project)
+        if (!projectDir) return notFound(`Project not found: ${project}`)
+
+        // Prevent path traversal
+        const fullPath = resolve(projectDir, docPath)
+        if (!fullPath.startsWith(resolve(projectDir))) return badRequest("Invalid path")
+        if (!existsSync(fullPath)) return notFound(`Doc not found: ${docPath}`)
+
+        const st = statSync(fullPath)
+        if (!st.isFile()) return notFound(`Not a file: ${docPath}`)
+        if (st.size > 50000) return badRequest(`Doc exceeds 50KB limit`)
+
+        const content = readFileSync(fullPath, 'utf8')
+        return json({ project, path: docPath, content, size: st.size, modified: st.mtime.toISOString() })
+      } catch (err) {
+        if (err instanceof Response) throw err
+        return badRequest(`Failed to read doc: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+
     if (!checkAuth(req)) return unauthorized()
 
     const method = req.method
@@ -377,7 +489,7 @@ const server = Bun.serve({
       }
     }
 
-    return new Response(JSON.stringify({ error: "Not found", endpoints: ["GET /dashboard", "GET /agents", "GET /agents/:name/logs", "GET /activity", "POST /agents/:name/restart", "GET /tasks", "GET /tasks/:id", "GET /tasks/board", "POST /tasks", "PATCH /tasks/:id"] }), {
+    return new Response(JSON.stringify({ error: "Not found", endpoints: ["GET /dashboard", "GET /agents", "GET /agents/:name/logs", "GET /activity", "GET /docs/:project", "GET /docs/:project/*path", "POST /agents/:name/restart", "GET /tasks", "GET /tasks/:id", "GET /tasks/board", "POST /tasks", "PATCH /tasks/:id"] }), {
       status: 404,
       headers: { "Content-Type": "application/json" },
     })
