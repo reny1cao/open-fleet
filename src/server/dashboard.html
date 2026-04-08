@@ -67,28 +67,27 @@
   .status-pips {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
   }
 
   .pip {
-    width: 10px; height: 10px; border-radius: 50%;
-    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 4px;
     cursor: pointer;
-    position: relative;
+    font-size: 11px;
+    color: var(--text-muted);
   }
-  .pip:hover::after {
-    content: attr(data-tip);
-    position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
-    background: var(--surface); border: 1px solid var(--border);
-    padding: 2px 8px; border-radius: 4px; font-size: 11px;
-    color: var(--text); white-space: nowrap; z-index: 200;
-    pointer-events: none;
+  .pip-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    border: 1px solid var(--border);
+    flex-shrink: 0;
   }
-  .pip.alive { background: var(--green); border-color: var(--green); }
-  .pip.stale { background: var(--yellow); border-color: var(--yellow); }
-  .pip.dead { background: var(--red); border-color: var(--red); }
-  .pip.off { background: var(--border); }
-  .pip.unknown { background: var(--border); }
+  .pip-dot.alive { background: var(--green); border-color: var(--green); }
+  .pip-dot.stale { background: var(--yellow); border-color: var(--yellow); }
+  .pip-dot.dead { background: var(--red); border-color: var(--red); }
+  .pip-dot.off { background: var(--border); }
+  .pip-dot.unknown { background: var(--border); }
 
   .status-sep { color: var(--border); }
   .status-stat b { color: var(--text); font-weight: 600; }
@@ -429,7 +428,7 @@
   /* Board cards */
   .board-card {
     background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
-    padding: 8px 10px; cursor: pointer; transition: border-color 0.15s, background 0.15s;
+    padding: 8px 10px; cursor: default; transition: border-color 0.15s, background 0.15s;
   }
   .board-card:hover { border-color: var(--accent); background: var(--surface-hover); }
   .board-card.card-stale { border-left: 3px solid var(--yellow); }
@@ -734,7 +733,14 @@ function timeAgo(iso) {
 function timeShort(iso) {
   if (!iso) return '';
   const d = new Date(iso);
-  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  const hm = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1);
+  const isYesterday = d.toDateString() === yesterday.toDateString();
+  if (isToday) return hm;
+  if (isYesterday) return `Yday ${hm}`;
+  return `${d.getMonth()+1}/${d.getDate()} ${hm}`;
 }
 
 function ageSec(s) {
@@ -779,25 +785,24 @@ function onSearch() {
 // ── Status bar ──
 function renderStatusBar() {
   const bar = document.getElementById('status-bar');
+  const shortName = (name) => name.split('-')[0];
   const pips = allAgents.map(a =>
-    `<span class="pip ${a.status}" data-tip="${escapeHtml(a.name)}: ${a.status}"></span>`
+    `<span class="pip"><span class="pip-dot ${a.status}"></span>${escapeHtml(shortName(a.name))}</span>`
   ).join('');
 
-  const alive = allAgents.filter(a => a.status === 'alive').length;
-  const total = allAgents.length;
   const active = allTasks.filter(t => t.status === 'in_progress').length;
   const blocked = allTasks.filter(t => t.status === 'blocked').length;
   const inReview = allTasks.filter(t => t.status === 'review' || t.status === 'verify').length;
   const done = allTasks.filter(t => t.status === 'done').length;
+  const total = allTasks.length;
 
   bar.innerHTML = `
     <span class="status-pips">${pips}</span>
-    <span class="status-stat"><b>${alive}</b>/${total} agents</span>
     <span class="status-sep">|</span>
     <span class="status-stat"><b>${active}</b> active</span>
     ${blocked > 0 ? `<span class="status-stat" style="color:var(--red)"><b>${blocked}</b> blocked</span>` : ''}
     ${inReview > 0 ? `<span class="status-stat"><b>${inReview}</b> review</span>` : ''}
-    <span class="status-stat"><b>${done}</b> done</span>
+    <span class="status-stat"><b>${done}</b>/${total} done</span>
   `;
 
   const prefix = blocked > 0 ? `(${blocked}!) ` : active > 0 ? `(${active}) ` : '';
@@ -1080,7 +1085,13 @@ function renderBoard() {
     });
   }
 
-  container.innerHTML = BOARD_LANES.map(lane => {
+  // Sprint progress summary
+  const totalTasks = allTasks.length;
+  const doneTasks = allTasks.filter(t => t.status === 'done').length;
+  const pct = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
+  const progressHtml = `<div style="display:flex;align-items:center;gap:10px;padding:6px 12px;font-size:11px;color:var(--text-muted);border-bottom:1px solid var(--border)"><span><b style="color:var(--text)">${doneTasks}</b> of <b style="color:var(--text)">${totalTasks}</b> done</span><div style="flex:1;height:4px;background:var(--border);border-radius:2px;max-width:200px"><div style="height:100%;background:var(--green);border-radius:2px;width:${pct}%"></div></div><span>${pct}%</span></div>`;
+
+  container.innerHTML = progressHtml + BOARD_LANES.map(lane => {
     let items = laneData[lane.id];
     let showBtn = '';
 
@@ -1096,7 +1107,7 @@ function renderBoard() {
       : items.map(renderBoardCard).join('');
 
     return `
-      <div class="board-lane">
+      <div class="board-lane lane-${lane.id}">
         <div class="board-lane-header">
           <span class="board-lane-label">${lane.label}</span>
           <span class="board-lane-count" style="color:${lane.color}">${laneData[lane.id].length}</span>
@@ -1115,6 +1126,7 @@ function renderBoardTabs() {
   let html = `<button class="board-tab ${currentProject === '' ? 'active' : ''}" onclick="setProject('')">All<span class="count">${activeCount}</span></button>`;
   for (const p of [...projects].sort()) {
     const count = allTasks.filter(t => t.project === p && t.status !== 'done' && t.status !== 'cancelled').length;
+    if (count === 0 && currentProject !== p) continue;
     html += `<button class="board-tab ${currentProject === p ? 'active' : ''}" onclick="setProject('${escapeJs(p)}')">${escapeHtml(p)}<span class="count">${count}</span></button>`;
   }
   tabs.innerHTML = html;
