@@ -695,6 +695,7 @@ const TL_STATUS_COLORS = {
 // ── State ──
 let allTasks = [];
 let allAgents = [];
+let allActivity = [];
 let currentView = 'mc';
 let currentProject = '';
 let showAllDoneBoard = false;
@@ -712,6 +713,10 @@ function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
+}
+
+function escapeJs(str) {
+  return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
 function timeAgo(iso) {
@@ -825,7 +830,7 @@ function renderMissionControl() {
     let taskHtml;
     if (tasks.length > 0) {
       taskHtml = tasks.map(t => `
-        <div class="ac-task" onclick="event.stopPropagation();showTask('${t.id}')">
+        <div class="ac-task" onclick="event.stopPropagation();showTask('${escapeJs(t.id)}')">
           <div class="ac-task-header">
             <span class="status-badge status-${t.status}">${t.status.replace('_', ' ')}</span>
             <span class="ac-task-id">${escapeHtml(t.id)}</span>
@@ -839,7 +844,7 @@ function renderMissionControl() {
     }
 
     return `
-      <div class="agent-card${hasIssues ? ' has-issues' : ''}" onclick="showAgentDetail('${escapeHtml(a.name)}')">
+      <div class="agent-card${hasIssues ? ' has-issues' : ''}" onclick="showAgentDetail('${escapeJs(a.name)}')">
         <div class="ac-header">
           <div class="ac-identity">
             <span class="ac-dot ${a.status}"></span>
@@ -862,24 +867,30 @@ function renderMissionControl() {
   renderActivityFeed();
 }
 
+function hashCode(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  return h;
+}
+
 function renderSparkline(agent) {
   const bars = [];
-  const isAlive = agent.status === 'alive';
-  const isStale = agent.status === 'stale';
+  const seed = hashCode(agent.name);
 
   for (let i = 0; i < 12; i++) {
     let h, color;
     if (agent.status === 'off' || agent.status === 'unknown') {
       h = 2; color = 'var(--border)';
-    } else if (isAlive) {
-      h = 6 + Math.floor(Math.random() * 10);
+    } else if (agent.status === 'alive') {
+      h = 6 + Math.abs((seed * (i + 1) * 2654435761) >> 16) % 10;
       color = 'var(--green)';
-    } else if (isStale) {
-      h = i < 8 ? 6 + Math.floor(Math.random() * 10) : 2;
-      color = i < 8 ? 'var(--green)' : 'var(--yellow)';
+    } else if (agent.status === 'stale') {
+      const dropoff = Math.max(0, i - 7);
+      h = dropoff > 0 ? 2 : 6 + Math.abs((seed * (i + 1) * 2654435761) >> 16) % 10;
+      color = dropoff > 0 ? 'var(--yellow)' : 'var(--green)';
     } else {
-      h = i < 4 ? 6 + Math.floor(Math.random() * 6) : 2;
-      color = i < 4 ? 'var(--yellow)' : 'var(--red)';
+      h = i < 3 ? 4 + Math.abs((seed * (i + 1) * 2654435761) >> 16) % 6 : 2;
+      color = i < 3 ? 'var(--yellow)' : 'var(--red)';
     }
     bars.push(`<span class="spark-bar" style="height:${h}px;background:${color}"></span>`);
   }
@@ -930,7 +941,7 @@ async function renderActivityFeed() {
       <span class="feed-time">${timeShort(e.timestamp)}</span>
       <span class="feed-agent">${escapeHtml(e.agent || '')}</span>
       <span class="feed-text">${escapeHtml(e.text || '')}</span>
-      ${e.taskId ? `<span class="feed-task-id" onclick="showTask('${e.taskId}')">${escapeHtml(e.taskId)}</span>` : ''}
+      ${e.taskId ? `<span class="feed-task-id" onclick="showTask('${escapeJs(e.taskId)}')">${escapeHtml(e.taskId)}</span>` : ''}
     </div>`).join('');
 }
 
@@ -954,7 +965,11 @@ function computeFlowTiming(task) {
     currentStart = changeTime;
   }
 
-  durations[currentStatus] = (durations[currentStatus] || 0) + (Date.now() - currentStart);
+  // Cap at completedAt for done/cancelled tasks so the last segment doesn't grow forever
+  const endTime = (task.status === 'done' || task.status === 'cancelled') && task.completedAt
+    ? new Date(task.completedAt).getTime()
+    : Date.now();
+  durations[currentStatus] = (durations[currentStatus] || 0) + (endTime - currentStart);
   return { durations, currentStatus, currentStart };
 }
 
@@ -995,7 +1010,7 @@ function renderDependencyChain(task, depth, visited) {
       html += `<div class="dep-item" style="padding-left:${depth * 16}px"><span class="dep-arrow">${depth > 0 ? '\u2514\u2500' : '\u2192'}</span><span class="dep-id">${escapeHtml(depId)}</span><span class="dep-missing">(not found)</span></div>`;
       continue;
     }
-    html += `<div class="dep-item" style="padding-left:${depth * 16}px"><span class="dep-arrow">${depth > 0 ? '\u2514\u2500' : '\u2192'}</span><span class="status-badge status-${dep.status}" style="font-size:9px;padding:1px 5px">${dep.status.replace('_',' ')}</span><a class="dep-link" onclick="showTask('${dep.id}')">${escapeHtml(dep.id)}</a><span class="dep-title">${escapeHtml(dep.title.length > 40 ? dep.title.slice(0,40) + '...' : dep.title)}</span></div>`;
+    html += `<div class="dep-item" style="padding-left:${depth * 16}px"><span class="dep-arrow">${depth > 0 ? '\u2514\u2500' : '\u2192'}</span><span class="status-badge status-${dep.status}" style="font-size:9px;padding:1px 5px">${dep.status.replace('_',' ')}</span><a class="dep-link" onclick="showTask('${escapeJs(dep.id)}')">${escapeHtml(dep.id)}</a><span class="dep-title">${escapeHtml(dep.title.length > 40 ? dep.title.slice(0,40) + '...' : dep.title)}</span></div>`;
     html += renderDependencyChain(dep, depth + 1, visited);
   }
   return html;
@@ -1016,7 +1031,7 @@ function renderBoardCard(task) {
   const depBadge = depCount > 0 ? `<span class="card-dep-badge">${depCount} dep${depCount > 1 ? 's' : ''}</span>` : '';
 
   return `
-    <div class="board-card priority-${task.priority}${isStale ? ' card-stale' : ''}" onclick="showTask('${task.id}')">
+    <div class="board-card priority-${task.priority}${isStale ? ' card-stale' : ''}" onclick="showTask('${escapeJs(task.id)}')">
       <div class="board-card-header">
         <span class="board-card-id">${escapeHtml(task.id)}</span>
         <span class="board-card-timer" title="Time in ${task.status}">${timeStr}</span>
@@ -1099,7 +1114,7 @@ function renderBoardTabs() {
   let html = `<button class="board-tab ${currentProject === '' ? 'active' : ''}" onclick="setProject('')">All<span class="count">${activeCount}</span></button>`;
   for (const p of [...projects].sort()) {
     const count = allTasks.filter(t => t.project === p && t.status !== 'done' && t.status !== 'cancelled').length;
-    html += `<button class="board-tab ${currentProject === p ? 'active' : ''}" onclick="setProject('${escapeHtml(p)}')">${escapeHtml(p)}<span class="count">${count}</span></button>`;
+    html += `<button class="board-tab ${currentProject === p ? 'active' : ''}" onclick="setProject('${escapeJs(p)}')">${escapeHtml(p)}<span class="count">${count}</span></button>`;
   }
   tabs.innerHTML = html;
 }
@@ -1209,7 +1224,7 @@ function renderTimeline() {
       const color = TL_STATUS_COLORS[span.status] || 'var(--text-muted)';
       const label = widthPct > 5 ? escapeHtml(span.title) : '';
 
-      html += `<div class="tl-block" style="left:${leftPct}%;width:${widthPct}%;background:${color}" onclick="showTask('${span.taskId}')" title="${escapeHtml(span.title)} (${span.status})"><span class="tl-block-label">${label}</span></div>`;
+      html += `<div class="tl-block" style="left:${leftPct}%;width:${widthPct}%;background:${color}" onclick="showTask('${escapeJs(span.taskId)}')" title="${escapeHtml(span.title)} (${span.status})"><span class="tl-block-label">${label}</span></div>`;
     }
 
     html += `
@@ -1245,7 +1260,7 @@ async function showTask(taskId) {
     if (task.blockedReason) fields.push(['Blocked', `<span style="color:var(--red)">${escapeHtml(task.blockedReason)}</span>`]);
     if (task.startedAt) fields.push(['Started', timeAgo(task.startedAt)]);
     if (task.completedAt) fields.push(['Completed', timeAgo(task.completedAt)]);
-    if (task.dependsOn?.length) fields.push(['Depends on', task.dependsOn.map(d => `<a class="feed-task-id" onclick="showTask('${d}')">${escapeHtml(d)}</a>`).join(', ')]);
+    if (task.dependsOn?.length) fields.push(['Depends on', task.dependsOn.map(d => `<a class="feed-task-id" onclick="showTask('${escapeJs(d)}')">${escapeHtml(d)}</a>`).join(', ')]);
 
     if (task.result) {
       if (task.result.summary) fields.push(['Result', escapeHtml(task.result.summary)]);
@@ -1260,7 +1275,7 @@ async function showTask(taskId) {
     const depChainHtml = renderDependencyChain(task);
     const dependents = allTasks.filter(t => t.dependsOn && t.dependsOn.includes(task.id));
     const dependentsHtml = dependents.length > 0
-      ? `<div style="margin-top:8px"><span style="font-size:11px;color:var(--text-muted)">Depended on by:</span> ${dependents.map(d => `<a class="feed-task-id" onclick="showTask('${d.id}')">${escapeHtml(d.id)}</a>`).join(', ')}</div>`
+      ? `<div style="margin-top:8px"><span style="font-size:11px;color:var(--text-muted)">Depended on by:</span> ${dependents.map(d => `<a class="feed-task-id" onclick="showTask('${escapeJs(d.id)}')">${escapeHtml(d.id)}</a>`).join(', ')}</div>`
       : '';
 
     const notesHtml = task.notes?.length > 0 ? `
@@ -1313,7 +1328,7 @@ function showAgentDetail(name) {
   if (agent.workspace) fields.push(['Workspace', escapeHtml(agent.workspace)]);
 
   const tasksHtml = tasks.length > 0 ? tasks.map(t => `
-    <div class="ac-task" onclick="showTask('${t.id}')" style="cursor:pointer">
+    <div class="ac-task" onclick="showTask('${escapeJs(t.id)}')" style="cursor:pointer">
       <div class="ac-task-header">
         <span class="status-badge status-${t.status}">${t.status.replace('_', ' ')}</span>
         <span class="ac-task-id">${escapeHtml(t.id)}</span>
@@ -1328,7 +1343,7 @@ function showAgentDetail(name) {
     activityHtml = `<div class="modal-notes"><h3>Recent activity</h3>${recentActivity.map(e => `
       <div class="note">
         <span class="note-time">${timeShort(e.timestamp)}</span>
-        ${e.taskId ? `<span class="feed-task-id" onclick="event.stopPropagation();showTask('${e.taskId}')">${e.taskId}</span>` : ''}
+        ${e.taskId ? `<span class="feed-task-id" onclick="event.stopPropagation();showTask('${escapeJs(e.taskId)}')">${e.taskId}</span>` : ''}
         <div class="note-text">${escapeHtml(e.text || '')}</div>
       </div>`).join('')}</div>`;
   } else {
@@ -1345,7 +1360,7 @@ function showAgentDetail(name) {
       activityHtml = `<div class="modal-notes"><h3>Recent activity</h3>${recent.map(e => `
         <div class="note">
           <span class="note-time">${timeShort(e.timestamp)}</span>
-          <span class="feed-task-id" onclick="event.stopPropagation();showTask('${e.taskId}')">${e.taskId}</span>
+          <span class="feed-task-id" onclick="event.stopPropagation();showTask('${escapeJs(e.taskId)}')">${e.taskId}</span>
           <div class="note-text">${escapeHtml(e.text)}</div>
         </div>`).join('')}</div>`;
     }
@@ -1356,7 +1371,45 @@ function showAgentDetail(name) {
     <h2>${escapeHtml(name)}</h2>
     ${fields.map(([l, v]) => `<div class="modal-field"><div class="modal-label">${l}</div><div class="modal-value">${v}</div></div>`).join('')}
     <div style="margin-top:12px"><div class="mc-section-label">Active Tasks</div>${tasksHtml}</div>
-    ${activityHtml}`;
+    ${activityHtml}
+    <div style="margin-top:12px;display:flex;align-items:center;gap:8px">
+      ${TOKEN ? '<button class="icon-btn" id="agent-restart-btn" style="font-size:11px">&#8635; Restart</button>' : ''}
+      <button class="icon-btn" id="agent-logs-btn" style="font-size:11px">&#9776; Logs</button>
+    </div>
+    <pre id="agent-logs" style="display:none;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:11px;font-family:monospace;color:var(--text-muted);max-height:200px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;margin-top:8px"></pre>`;
+
+  // Wire restart button (addEventListener — no onclick XSS risk)
+  const _rb = document.getElementById('agent-restart-btn');
+  if (_rb) {
+    _rb.addEventListener('click', async () => {
+      if (!confirm('Restart agent ' + name + '?')) return;
+      _rb.disabled = true; _rb.textContent = 'Restarting...';
+      try {
+        await fetch('/agents/' + encodeURIComponent(name) + '/restart', {
+          method: 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN },
+        });
+        _rb.innerHTML = '&#10003; Triggered';
+        _rb.style.borderColor = 'var(--green)'; _rb.style.color = 'var(--green)';
+        setTimeout(() => refresh(), 3000);
+      } catch (err) { _rb.textContent = 'Failed'; _rb.style.color = 'var(--red)'; }
+    });
+  }
+
+  // Wire logs button — auto-loads on modal open
+  const _lb = document.getElementById('agent-logs-btn');
+  const _le = document.getElementById('agent-logs');
+  if (_lb && _le) {
+    const _load = async () => {
+      _le.style.display = 'block'; _le.textContent = 'Loading...';
+      try {
+        const d = await fetch('/agents/' + encodeURIComponent(name) + '/logs?lines=30').then(r => r.json());
+        _le.textContent = (d.lines||[]).length > 0 ? d.lines.join('\n') : 'No log output.';
+        _le.scrollTop = _le.scrollHeight;
+      } catch (err) { _le.textContent = 'Failed: ' + err.message; }
+    };
+    _lb.addEventListener('click', _load);
+    _load();
+  }
 
   document.getElementById('modal-overlay').classList.add('open');
 }
