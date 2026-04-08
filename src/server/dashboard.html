@@ -604,43 +604,43 @@
 <body>
 
 <!-- Status bar -->
-<div class="status-bar" id="status-bar"></div>
+<div class="status-bar" id="status-bar" role="status" aria-live="polite" aria-label="Fleet status summary"></div>
 
 <!-- Header -->
 <div class="header">
   <div class="header-left">
     <h1>&#9889; Fleet <span>Dashboard</span></h1>
-    <div class="view-tabs" id="view-tabs">
-      <button class="view-tab active" data-view="mc" onclick="switchView('mc')">Mission Control</button>
-      <button class="view-tab" data-view="board" onclick="switchView('board')">Board</button>
-      <button class="view-tab" data-view="timeline" onclick="switchView('timeline')">Timeline</button>
+    <div class="view-tabs" id="view-tabs" role="tablist" aria-label="Dashboard views">
+      <button class="view-tab active" data-view="mc" role="tab" aria-selected="true" onclick="switchView('mc')">Mission Control</button>
+      <button class="view-tab" data-view="board" role="tab" aria-selected="false" onclick="switchView('board')">Board</button>
+      <button class="view-tab" data-view="timeline" role="tab" aria-selected="false" onclick="switchView('timeline')">Timeline</button>
     </div>
   </div>
   <div class="header-right">
-    <input class="search-box" id="search" type="text" placeholder="Search... (/)" oninput="onSearch()">
-    <span class="refresh-dot"></span>
-    <button class="icon-btn" onclick="toggleTheme()" title="Toggle theme" id="theme-btn">&#9790;</button>
+    <input class="search-box" id="search" type="text" placeholder="Search... (/)" aria-label="Search tasks and agents" oninput="onSearch()">
+    <span class="refresh-dot" aria-hidden="true"></span>
+    <button class="icon-btn" onclick="toggleTheme()" title="Toggle theme" id="theme-btn" aria-label="Toggle theme">&#9790;</button>
   </div>
 </div>
 
-<div class="error-banner" id="error-banner"></div>
+<div class="error-banner" id="error-banner" role="alert"></div>
 
 <!-- View: Mission Control -->
-<div class="view active" id="view-mc">
+<div class="view active" id="view-mc" role="tabpanel" aria-label="Mission Control">
   <div class="mc-layout">
     <div class="mc-main">
       <div class="mc-section-label">Agents</div>
-      <div class="agent-grid" id="agent-grid"></div>
+      <div class="agent-grid" id="agent-grid"><div class="loading"><span class="loading-spinner"></span>Loading agents...</div></div>
       <div class="activity-feed">
         <div class="mc-section-label">Activity</div>
-        <div class="feed-list" id="feed-list"></div>
+        <div class="feed-list" id="feed-list"><div class="loading"><span class="loading-spinner"></span>Loading activity...</div></div>
       </div>
     </div>
   </div>
 </div>
 
 <!-- View: Board -->
-<div class="view" id="view-board">
+<div class="view" id="view-board" role="tabpanel" aria-label="Board">
   <div class="board-toolbar">
     <div class="board-tabs" id="board-tabs"></div>
     <select class="sort-select" id="sort" onchange="renderBoard()">
@@ -654,12 +654,12 @@
 </div>
 
 <!-- View: Timeline -->
-<div class="view" id="view-timeline">
+<div class="view" id="view-timeline" role="tabpanel" aria-label="Timeline">
   <div id="timeline-container" style="height:calc(100vh - 82px)"></div>
 </div>
 
 <!-- Modal -->
-<div class="modal-overlay" id="modal-overlay">
+<div class="modal-overlay" id="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title">
   <div class="modal" id="modal"></div>
 </div>
 
@@ -760,7 +760,11 @@ function switchView(view) {
   currentView = view;
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.getElementById(`view-${view}`).classList.add('active');
-  document.querySelectorAll('.view-tab').forEach(t => t.classList.toggle('active', t.dataset.view === view));
+  document.querySelectorAll('.view-tab').forEach(t => {
+    const isActive = t.dataset.view === view;
+    t.classList.toggle('active', isActive);
+    t.setAttribute('aria-selected', isActive ? 'true' : 'false');
+  });
   if (view === 'board') renderBoard();
   if (view === 'timeline') renderTimeline();
 }
@@ -1239,9 +1243,12 @@ function renderTimeline() {
 // ══════════════════════════════════════════════════════════════
 
 async function showTask(taskId) {
+  _lastFocusedElement = document.activeElement;
+  const modal = document.getElementById('modal');
+  modal.innerHTML = '<div class="loading"><span class="loading-spinner"></span>Loading task...</div>';
+  document.getElementById('modal-overlay').classList.add('open');
   try {
     const task = await apiFetch(`/tasks/${taskId}`);
-    const modal = document.getElementById('modal');
 
     const fields = [
       ['Status', `<span class="status-badge status-${task.status}">${task.status.replace('_', ' ')}</span>`],
@@ -1291,8 +1298,8 @@ async function showTask(taskId) {
     const bodyText = titleParts.length > 1 ? titleParts.slice(1).join('\n').trim() : (task.title.length > 120 ? task.title : '');
 
     modal.innerHTML = `
-      <button class="modal-close" onclick="closeModal()">&times;</button>
-      <h2>${escapeHtml(task.id)}: ${escapeHtml(shortTitle)}</h2>
+      <button class="modal-close" onclick="closeModal()" aria-label="Close">&times;</button>
+      <h2 id="modal-title">${escapeHtml(task.id)}: ${escapeHtml(shortTitle)}</h2>
       ${bodyText ? `<div class="modal-body">${escapeHtml(bodyText)}</div>` : ''}
       ${fields.map(([l, v]) => `<div class="modal-field"><div class="modal-label">${l}</div><div class="modal-value">${v}</div></div>`).join('')}
       ${flowHtml}
@@ -1300,12 +1307,15 @@ async function showTask(taskId) {
       ${dependentsHtml}
       ${notesHtml}`;
 
-    document.getElementById('modal-overlay').classList.add('open');
-  } catch (err) { console.error('Failed to load task:', err); }
+  } catch (err) {
+    modal.innerHTML = `<div class="loading" style="color:var(--red)">Failed to load task: ${escapeHtml(err.message)}</div>`;
+    console.error('Failed to load task:', err);
+  }
 }
 
 // ── Agent detail modal ──
 function showAgentDetail(name) {
+  _lastFocusedElement = document.activeElement;
   const agent = allAgents.find(a => a.name === name);
   if (!agent) return;
   const modal = document.getElementById('modal');
@@ -1363,8 +1373,8 @@ function showAgentDetail(name) {
   }
 
   modal.innerHTML = `
-    <button class="modal-close" onclick="closeModal()">&times;</button>
-    <h2>${escapeHtml(name)}</h2>
+    <button class="modal-close" onclick="closeModal()" aria-label="Close">&times;</button>
+    <h2 id="modal-title">${escapeHtml(name)}</h2>
     ${fields.map(([l, v]) => `<div class="modal-field"><div class="modal-label">${l}</div><div class="modal-value">${v}</div></div>`).join('')}
     <div style="margin-top:12px"><div class="mc-section-label">Active Tasks</div>${tasksHtml}</div>
     ${activityHtml}
@@ -1410,7 +1420,11 @@ function showAgentDetail(name) {
   document.getElementById('modal-overlay').classList.add('open');
 }
 
-function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); }
+let _lastFocusedElement = null;
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+  if (_lastFocusedElement) { _lastFocusedElement.focus(); _lastFocusedElement = null; }
+}
 
 // ── Theme ──
 function toggleTheme() {
