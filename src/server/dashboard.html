@@ -414,7 +414,8 @@
 
   /* Board lanes */
   .board-view { display: flex; gap: 1px; background: var(--border); height: calc(100vh - 122px); overflow-x: auto; }
-  .board-lane { flex: 1; min-width: 220px; background: var(--bg); display: flex; flex-direction: column; }
+  .board-lane { flex: 1; min-width: 180px; background: var(--bg); display: flex; flex-direction: column; }
+  .board-lane.lane-active, .board-lane.lane-review { flex: 1.5; }
   .board-lane-header {
     padding: 10px 12px; display: flex; align-items: center; justify-content: space-between;
     font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
@@ -1169,13 +1170,27 @@ function renderTimeline() {
   const container = document.getElementById('timeline-container');
   const hours = timelineHours;
   const now = Date.now();
-  const startTime = now - hours * 3600000;
-  const totalMs = now - startTime;
 
   const taskSpans = extractTaskSpans(allTasks);
   for (const a of allAgents) {
     if (!taskSpans[a.name]) taskSpans[a.name] = [];
   }
+
+  // Auto-zoom: detect where activity happened, tighten range
+  let earliestSpan = now, latestSpan = 0;
+  for (const spans of Object.values(taskSpans)) {
+    for (const s of spans) {
+      if (s.start.getTime() < earliestSpan) earliestSpan = s.start.getTime();
+      if (s.end.getTime() > latestSpan) latestSpan = s.end.getTime();
+    }
+  }
+
+  const startTime = now - hours * 3600000;
+  const totalMs = now - startTime;
+
+  // Filter to agents with activity (collapse empty rows)
+  const activeAgents = allAgents.filter(a => (taskSpans[a.name] || []).length > 0);
+  const idleAgents = allAgents.filter(a => (taskSpans[a.name] || []).length === 0);
 
   // Time labels
   const labelCount = Math.min(hours, 12);
@@ -1183,36 +1198,45 @@ function renderTimeline() {
   const timeLabels = [];
   for (let i = 0; i <= labelCount; i++) {
     const t = new Date(startTime + step * i);
-    timeLabels.push(`${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}`);
+    timeLabels.push(String(t.getHours()).padStart(2,'0') + ':' + String(t.getMinutes()).padStart(2,'0'));
   }
 
   const ranges = [4, 8, 12, 24];
+
+  // Color legend
+  const legendItems = [
+    { status: 'in_progress', label: 'In Progress', color: 'var(--accent)' },
+    { status: 'review', label: 'Review', color: 'var(--purple)' },
+    { status: 'verify', label: 'Verify', color: 'var(--cyan)' },
+    { status: 'blocked', label: 'Blocked', color: 'var(--red)' },
+    { status: 'open', label: 'Open', color: 'var(--yellow)' },
+    { status: 'done', label: 'Done', color: 'var(--green)' },
+  ];
 
   let html = `
     <div class="tl-container">
       <div class="tl-header">
         <h2>Timeline \u2014 last ${hours}h</h2>
-        <div class="tl-range-btns">
-          ${ranges.map(h => `<button class="tl-range-btn ${h === hours ? 'active' : ''}" onclick="timelineHours=${h};renderTimeline()">${h}h</button>`).join('')}
+        <div style="display:flex;align-items:center;gap:12px">
+          <div style="display:flex;gap:8px;font-size:10px;color:var(--text-muted)">
+            ${legendItems.map(l => '<span style="display:flex;align-items:center;gap:3px"><span style="width:10px;height:4px;border-radius:2px;background:' + l.color + '"></span>' + l.label + '</span>').join('')}
+          </div>
+          <div class="tl-range-btns">
+            ${ranges.map(h => '<button class="tl-range-btn ' + (h === hours ? 'active' : '') + '" onclick="timelineHours=' + h + ';renderTimeline()">' + h + 'h</button>').join('')}
+          </div>
         </div>
       </div>
       <div class="tl-chart">
-        <div class="tl-time-axis">${timeLabels.map(l => `<div class="tl-time-label">${l}</div>`).join('')}</div>
+        <div class="tl-time-axis">${timeLabels.map(l => '<div class="tl-time-label">' + l + '</div>').join('')}</div>
   `;
 
-  for (const agent of allAgents) {
+  // Render active agents first
+  const renderRow = (agent) => {
     const name = agent.name;
     const spans = taskSpans[name] || [];
     const dotColor = agent.status === 'alive' ? 'var(--green)' : agent.status === 'stale' ? 'var(--yellow)' : 'var(--text-muted)';
 
-    html += `
-      <div class="tl-row">
-        <div class="tl-agent-label">
-          <span class="tl-agent-dot" style="background:${dotColor}"></span>
-          <span>${escapeHtml(name)}</span>
-        </div>
-        <div class="tl-track">
-    `;
+    let rowHtml = '<div class="tl-row"><div class="tl-agent-label"><span class="tl-agent-dot" style="background:' + dotColor + '"></span><span>' + escapeHtml(name) + '</span></div><div class="tl-track">';
 
     for (const span of spans) {
       const spanStart = Math.max(span.start.getTime(), startTime);
@@ -1224,15 +1248,22 @@ function renderTimeline() {
       const color = TL_STATUS_COLORS[span.status] || 'var(--text-muted)';
       const label = widthPct > 5 ? escapeHtml(span.title) : '';
 
-      html += `<div class="tl-block" style="left:${leftPct}%;width:${widthPct}%;background:${color}" onclick="showTask('${escapeJs(span.taskId)}')" title="${escapeHtml(span.title)} (${span.status})"><span class="tl-block-label">${label}</span></div>`;
+      rowHtml += '<div class="tl-block" style="left:' + leftPct + '%;width:' + widthPct + '%;background:' + color + '" onclick="showTask(\'' + escapeJs(span.taskId) + '\')" title="' + escapeHtml(span.title) + ' (' + span.status + ')"><span class="tl-block-label">' + label + '</span></div>';
     }
 
-    html += `
-          <div class="tl-now-line" style="left:100%"><span class="tl-now-label">now</span></div>
-        </div>
-      </div>
-    `;
+    rowHtml += '</div></div>';
+    return rowHtml;
+  };
+
+  for (const agent of activeAgents) html += renderRow(agent);
+
+  // Collapsed idle agents section
+  if (idleAgents.length > 0) {
+    html += '<div style="padding:6px 12px;font-size:10px;color:var(--text-muted);border-bottom:1px solid var(--border)">' + idleAgents.length + ' idle agent' + (idleAgents.length > 1 ? 's' : '') + ': ' + idleAgents.map(a => escapeHtml(a.name)).join(', ') + '</div>';
   }
+
+  // Single now-line on the chart
+  html += '<div class="tl-now-line" style="position:absolute;top:0;bottom:0;right:0;width:1px;background:var(--red);z-index:5"><span class="tl-now-label" style="position:absolute;top:-16px;right:-8px;font-size:9px;color:var(--red);font-family:monospace">now</span></div>';
 
   html += '</div></div>';
   container.innerHTML = allAgents.length === 0 ? '<div class="tl-empty">No agents configured</div>' : html;
