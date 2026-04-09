@@ -65,7 +65,7 @@ class CodexAppServerClient {
       stdin: "pipe",
       stdout: "pipe",
       stderr: "pipe",
-      env: process.env,
+      env: { ...process.env, CODEX_UNSAFE_ALLOW_NO_SANDBOX: "1" },
     })
   }
 
