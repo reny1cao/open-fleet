@@ -347,22 +347,25 @@ const server = Bun.serve({
 
     const SKILLS_DIR = join(homedir(), ".fleet", "skills")
 
-    // GET /skills — list all skills with frontmatter metadata
+    // GET /skills — list all skills (directory-per-skill model: ~/.fleet/skills/<name>/SKILL.md)
     if (req.method === "GET" && path === "/skills") {
       try {
-        const skills: { name: string; description: string; scope: string; tags: string[]; path: string; size: number; modified: string }[] = []
+        const skills: { name: string; description: string; tags: string[]; size: number; modified: string }[] = []
 
-        function scanSkillDir(dir: string, scope: string) {
-          if (!existsSync(dir)) return
-          for (const file of readdirSync(dir)) {
-            if (!file.endsWith(".md")) continue
-            const fullPath = join(dir, file)
-            const stat = statSync(fullPath)
-            if (!stat.isFile() || stat.size > 50 * 1024) continue
+        if (existsSync(SKILLS_DIR)) {
+          for (const entry of readdirSync(SKILLS_DIR)) {
+            if (entry.startsWith(".")) continue
+            const skillDir = join(SKILLS_DIR, entry)
+            if (!statSync(skillDir).isDirectory()) continue
+            const skillFile = join(skillDir, "SKILL.md")
+            if (!existsSync(skillFile)) continue
 
-            const raw = readFileSync(fullPath, "utf8")
+            const stat = statSync(skillFile)
+            if (stat.size > 50 * 1024) continue
+
+            const raw = readFileSync(skillFile, "utf8")
             const fmMatch = raw.match(/^---\n([\s\S]*?)\n---/)
-            let name = file.replace(/\.md$/, "")
+            let name = entry
             let description = ""
             let tags: string[] = []
 
@@ -376,19 +379,7 @@ const server = Bun.serve({
               if (tagsMatch) tags = tagsMatch[1].split(",").map(t => t.trim())
             }
 
-            skills.push({ name, description, scope, tags, path: `${scope}/${file}`, size: stat.size, modified: stat.mtime.toISOString() })
-          }
-        }
-
-        scanSkillDir(join(SKILLS_DIR, "shared"), "shared")
-        // Scan project-specific skill dirs
-        if (existsSync(SKILLS_DIR)) {
-          for (const entry of readdirSync(SKILLS_DIR)) {
-            if (entry === "shared") continue
-            const entryPath = join(SKILLS_DIR, entry)
-            if (statSync(entryPath).isDirectory()) {
-              scanSkillDir(entryPath, entry)
-            }
+            skills.push({ name, description, tags, size: stat.size, modified: stat.mtime.toISOString() })
           }
         }
 
@@ -398,27 +389,23 @@ const server = Bun.serve({
       }
     }
 
-    // GET /skills/:scope/:name — read skill content
-    const skillMatch = path.match(/^\/skills\/([^/]+)\/(.+)$/)
+    // GET /skills/:name — read skill content (directory-per-skill: ~/.fleet/skills/<name>/SKILL.md)
+    const skillMatch = path.match(/^\/skills\/([^/]+)$/)
     if (req.method === "GET" && skillMatch) {
       try {
-        const scope = decodeURIComponent(skillMatch[1])
-        const fileName = decodeURIComponent(skillMatch[2])
-        const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "")
-        if (!safeName.endsWith(".md")) {
-          return notFound(`Skill not found: ${fileName}`)
-        }
-        const filePath = join(SKILLS_DIR, scope, safeName)
+        const skillName = decodeURIComponent(skillMatch[1])
+        const safeName = skillName.replace(/[^a-zA-Z0-9._-]/g, "")
+        const filePath = join(SKILLS_DIR, safeName, "SKILL.md")
         const resolved = resolve(filePath)
         if (!resolved.startsWith(resolve(SKILLS_DIR))) {
           return badRequest("Path traversal detected")
         }
         if (!existsSync(filePath)) {
-          return notFound(`Skill not found: ${scope}/${fileName}`)
+          return notFound(`Skill not found: ${skillName}`)
         }
-        const content = readFileSync(filePath, "utf8")
+        const raw = readFileSync(filePath, "utf8")
         const stat = statSync(filePath)
-        return json({ scope, name: safeName, content, size: stat.size })
+        return json({ name: safeName, content: raw, size: stat.size })
       } catch (err) {
         return badRequest(`Failed to read skill: ${err instanceof Error ? err.message : String(err)}`)
       }
@@ -574,7 +561,7 @@ const server = Bun.serve({
     }
 
 
-    return new Response(JSON.stringify({ error: "Not found", endpoints: ["GET /dashboard", "GET /agents", "GET /agents/:name/logs", "GET /activity", "GET /docs/:project", "GET /docs/:project/*path", "GET /skills", "GET /skills/:scope/:name", "POST /agents/:name/restart", "GET /tasks", "GET /tasks/:id", "GET /tasks/board", "POST /tasks", "PATCH /tasks/:id"] }), {
+    return new Response(JSON.stringify({ error: "Not found", endpoints: ["GET /dashboard", "GET /agents", "GET /agents/:name/logs", "GET /activity", "GET /docs/:project", "GET /docs/:project/*path", "GET /skills", "GET /skills/:name", "POST /agents/:name/restart", "GET /tasks", "GET /tasks/:id", "GET /tasks/board", "POST /tasks", "PATCH /tasks/:id"] }), {
       status: 404,
       headers: { "Content-Type": "application/json" },
     })
