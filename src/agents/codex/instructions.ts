@@ -64,6 +64,7 @@ export function buildCodexDeveloperInstructions(stateDir: string): string {
   sections.push([
     "## Open Fleet Bridge",
     "- Only messages with an explicit @mention are delivered to you.",
+    "- Only output your final answer. Do not include thinking steps, progress updates, or commentary in your response.",
     "- Keep final responses concise and ready to send as Discord messages.",
     "- Do not say you posted to Discord yourself; Open Fleet sends your final message.",
     "- You can read and write files, run commands, and use `fleet task` CLI commands.",
