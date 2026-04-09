@@ -168,7 +168,7 @@ class CodexAppServerClient {
           threadId: params.existingThreadId,
           cwd: params.cwd,
           approvalPolicy: "never",
-          sandbox: "workspace-write",
+          sandbox: "danger-full-access",
           developerInstructions: params.developerInstructions,
           persistExtendedHistory: false,
         })
@@ -179,7 +179,7 @@ class CodexAppServerClient {
     const started = await this.request<ThreadResponse>("thread/start", {
       cwd: params.cwd,
       approvalPolicy: "never",
-      sandbox: "workspace-write",
+      sandbox: "danger-full-access",
       developerInstructions: params.developerInstructions,
       experimentalRawEvents: false,
       persistExtendedHistory: false,
