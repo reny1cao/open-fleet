@@ -18,6 +18,18 @@ if (!API_TOKEN) {
   process.exit(1)
 }
 
+// ── Global safety net ─────────────────────────────────────────────────
+// Fire-and-forget notification promises and async runtime.captureOutput()
+// calls can reject after the response is sent. Without these handlers,
+// the unhandled rejection crashes the entire server process.
+process.on("unhandledRejection", (reason) => {
+  console.error("[fleet-server] Unhandled rejection:", reason instanceof Error ? reason.message : reason)
+})
+process.on("uncaughtException", (err) => {
+  console.error("[fleet-server] Uncaught exception:", err.message)
+  // Don't exit — keep serving. The individual request already failed.
+})
+
 const VALID_PRIORITIES = new Set(["low", "normal", "high", "urgent"])
 const MAX_TITLE = 500
 const MAX_DESCRIPTION = 5000
@@ -113,6 +125,9 @@ const server = Bun.serve({
   port: PORT,
   hostname: HOST,
   async fetch(req) {
+    // Top-level safety net — any uncaught exception inside a route returns
+    // 500 instead of crashing the server process.
+    try {
     const url = new URL(req.url)
     const path = url.pathname
 
@@ -133,12 +148,20 @@ const server = Bun.serve({
 
         const agents = await Promise.all(
           Object.entries(config.agents).map(async ([name, def]) => {
-            let heartbeat
+            let heartbeat: { state: string; lastSeen: string | null; ageSec: number | null }
             const isRemote = def.server !== "local" && config.servers?.[def.server]
             if (isRemote) {
               const serverConfig = config.servers![def.server]
               const rawStateDir = def.stateDir ?? `~/.fleet/state/${config.fleet.name}-${name}`
-              heartbeat = await readRemoteHeartbeat(rawStateDir, serverConfig)
+              // Timeout SSH heartbeat reads — one hanging remote must not block the entire /agents response
+              try {
+                heartbeat = await Promise.race([
+                  readRemoteHeartbeat(rawStateDir, serverConfig),
+                  new Promise<never>((_, reject) => setTimeout(() => reject(new Error("ssh timeout")), 8000)),
+                ])
+              } catch {
+                heartbeat = { state: "unknown", lastSeen: null, ageSec: null }
+              }
             } else {
               const stateDir = resolveStateDir(name, config)
               heartbeat = readHeartbeat(stateDir)
@@ -258,7 +281,11 @@ const server = Bun.serve({
 
         const session = sessionName(config.fleet.name, agentName)
         const runtime = resolveRuntime(agentName, config)
-        const output = await runtime.captureOutput(session, lines)
+        // Timeout capture to prevent hanging on unresponsive tmux/SSH
+        const output = await Promise.race([
+          runtime.captureOutput(session, lines),
+          new Promise<string>((_, reject) => setTimeout(() => reject(new Error("capture timeout")), 10000)),
+        ])
 
         return json({ agent: agentName, lines: output.split("\n") })
       } catch (err) {
@@ -565,6 +592,15 @@ const server = Bun.serve({
       status: 404,
       headers: { "Content-Type": "application/json" },
     })
+
+    } catch (err) {
+      // Top-level catch — prevents server crash on any uncaught route error
+      console.error(`[fleet-server] Unhandled error in ${req.method} ${new URL(req.url).pathname}:`, err instanceof Error ? err.message : err)
+      return new Response(JSON.stringify({ error: "Internal server error" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
   },
 })
 
