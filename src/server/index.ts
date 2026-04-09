@@ -347,15 +347,17 @@ const server = Bun.serve({
 
     const SKILLS_DIR = join(homedir(), ".fleet", "skills")
 
-    // GET /skills — list all skills (directory-per-skill model: ~/.fleet/skills/<name>/SKILL.md)
+    // GET /skills?project=<name> — list skills (global + optional project-scoped)
     if (req.method === "GET" && path === "/skills") {
       try {
-        const skills: { name: string; description: string; tags: string[]; size: number; modified: string }[] = []
+        const skills: { name: string; description: string; tags: string[]; scope: string; size: number; modified: string }[] = []
+        const projectFilter = url.searchParams.get("project")
 
-        if (existsSync(SKILLS_DIR)) {
-          for (const entry of readdirSync(SKILLS_DIR)) {
+        function scanSkillsIn(dir: string, scope: string) {
+          if (!existsSync(dir)) return
+          for (const entry of readdirSync(dir)) {
             if (entry.startsWith(".")) continue
-            const skillDir = join(SKILLS_DIR, entry)
+            const skillDir = join(dir, entry)
             if (!statSync(skillDir).isDirectory()) continue
             const skillFile = join(skillDir, "SKILL.md")
             if (!existsSync(skillFile)) continue
@@ -379,8 +381,29 @@ const server = Bun.serve({
               if (tagsMatch) tags = tagsMatch[1].split(",").map(t => t.trim())
             }
 
-            skills.push({ name, description, tags, size: stat.size, modified: stat.mtime.toISOString() })
+            skills.push({ name, description, tags, scope, size: stat.size, modified: stat.mtime.toISOString() })
           }
+        }
+
+        // Global skills
+        scanSkillsIn(SKILLS_DIR, "global")
+
+        // Project-scoped skills (from workspace/.fleet/skills/)
+        if (projectFilter) {
+          try {
+            const configDir = findConfigDir()
+            const config = loadConfig(configDir)
+            const channels = config.discord?.channels || {}
+            for (const [, ch] of Object.entries(channels)) {
+              const ws = (ch as { workspace?: string }).workspace
+              if (!ws) continue
+              const expanded = ws.replace(/^~/, homedir())
+              if (expanded.includes(projectFilter) || projectFilter === Object.keys(channels).find(k => (channels[k] as { workspace?: string }).workspace === ws)) {
+                const projectSkillsDir = join(expanded, ".fleet", "skills")
+                scanSkillsIn(projectSkillsDir, projectFilter)
+              }
+            }
+          } catch {}
         }
 
         return json({ skills, count: skills.length })
