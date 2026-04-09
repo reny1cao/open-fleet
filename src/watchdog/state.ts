@@ -1,7 +1,8 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs"
+import { readFileSync, mkdirSync, existsSync } from "fs"
 import { join } from "path"
 import { homedir } from "os"
 import type { WatchdogState, AgentWatchState, ServerWatchState } from "./types"
+import { atomicWriteJsonSync } from "../core/atomic-write"
 
 const WATCHDOG_DIR = join(homedir(), ".fleet", "watchdog")
 const STATE_FILE = join(WATCHDOG_DIR, "state.json")
@@ -47,7 +48,7 @@ export function loadState(): WatchdogState {
 export function saveState(state: WatchdogState): void {
   mkdirSync(WATCHDOG_DIR, { recursive: true })
   state.lastTick = new Date().toISOString()
-  writeFileSync(STATE_FILE, JSON.stringify(state, null, 2))
+  atomicWriteJsonSync(STATE_FILE, state)
 }
 
 export function getAgentState(state: WatchdogState, name: string): AgentWatchState {

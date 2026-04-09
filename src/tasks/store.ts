@@ -1,7 +1,8 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from "fs"
-import { join, dirname } from "path"
+import { readFileSync, existsSync, mkdirSync } from "fs"
+import { join } from "path"
 import { homedir } from "os"
 import { findConfigDir, loadConfig } from "../core/config"
+import { atomicWriteJsonSync } from "../core/atomic-write"
 import type { Task, TaskStore, TaskStatus, TaskPriority, TaskResult } from "./types"
 import { isValidTransition, transitionError } from "./types"
 
@@ -35,12 +36,8 @@ export function loadTaskStore(fleet?: string): TaskStore {
 }
 
 export function saveTaskStore(store: TaskStore): void {
-  const dir = tasksDir()
-  mkdirSync(dir, { recursive: true })
-  const filePath = tasksFilePath(store.fleet)
-  const tmpPath = filePath + `.tmp.${Date.now()}`
-  writeFileSync(tmpPath, JSON.stringify(store, null, 2) + "\n", "utf8")
-  renameSync(tmpPath, filePath)
+  mkdirSync(tasksDir(), { recursive: true })
+  atomicWriteJsonSync(tasksFilePath(store.fleet), store)
 }
 
 function nextTaskId(store: TaskStore): string {
