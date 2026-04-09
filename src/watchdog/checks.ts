@@ -6,6 +6,7 @@ import type { FleetConfig } from "../core/types"
 import type { HealthCheckResult, WatchdogState } from "./types"
 import { getAgentState } from "./state"
 import { createHash } from "crypto"
+import { classifyTerminalOutput } from "./error-classifier"
 
 function hashOutput(output: string): string {
   return createHash("md5").update(output.trim()).digest("hex").substring(0, 12)
@@ -114,16 +115,37 @@ export async function checkPlugin(
     return { agent: agentName, check: "plugin", status: "degraded", details: { error: "capture failed" } }
   }
 
-  const hasError = /ECONNREFUSED|plugin.*disconnected|401.*Unauthorized|authentication_error/i.test(output)
-  const has401 = /401|authentication_error|Please run \/login/i.test(output)
+  // Use structured classifier instead of inline regex
+  const classified = classifyTerminalOutput(output)
+  if (!classified) {
+    return { agent: agentName, check: "plugin", status: "healthy", details: {} }
+  }
 
-  if (has401) {
-    return { agent: agentName, check: "plugin", status: "critical", details: { error: "auth_expired" } }
+  // Map classifier categories to watchdog error types for backward compat
+  const errorType = classified.category === "auth" ? "auth_expired"
+    : classified.category === "billing" ? "billing_exhausted"
+    : classified.category === "context_overflow" ? "context_overflow"
+    : classified.category === "rate_limit" ? "rate_limited"
+    : classified.category === "timeout" ? "plugin_timeout"
+    : "plugin_crash"
+
+  const status = classified.retryable ? "degraded" : "critical"
+
+  return {
+    agent: agentName,
+    check: "plugin",
+    status,
+    details: {
+      error: errorType,
+      classified: {
+        category: classified.category,
+        retryable: classified.retryable,
+        shouldCompact: classified.shouldCompact,
+        shouldAlert: classified.shouldAlert,
+        message: classified.message,
+      },
+    },
   }
-  if (hasError) {
-    return { agent: agentName, check: "plugin", status: "critical", details: { error: "plugin_crash" } }
-  }
-  return { agent: agentName, check: "plugin", status: "healthy", details: {} }
 }
 
 // Check disk space on the local machine

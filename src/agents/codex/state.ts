@@ -1,5 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
+import { existsSync, mkdirSync, readFileSync } from "fs"
 import { join } from "path"
+import { atomicWriteJsonSync } from "../../core/atomic-write"
 
 export type CodexThreadMap = Record<string, string>
 
@@ -35,5 +36,5 @@ export function setCodexThreadId(stateDir: string, scopeKey: string, threadId: s
   mkdirSync(stateDir, { recursive: true })
   const next = loadCodexThreadMap(stateDir)
   next[scopeKey] = threadId
-  writeFileSync(statePath(stateDir), JSON.stringify(next, null, 2) + "\n", "utf8")
+  atomicWriteJsonSync(statePath(stateDir), next)
 }

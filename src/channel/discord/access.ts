@@ -1,6 +1,7 @@
-import { writeFileSync, readFileSync, mkdirSync } from "fs"
+import { readFileSync, mkdirSync } from "fs"
 import { join } from "path"
 import type { AccessConfig, AccessConfigOpts } from "../types"
+import { atomicWriteJsonSync } from "../../core/atomic-write"
 
 // ── writeAccessConfig ─────────────────────────────────────────────────────────
 
@@ -26,7 +27,7 @@ export function writeAccessConfig(stateDir: string, opts: AccessConfigOpts): voi
     pending: {},
   }
 
-  writeFileSync(join(stateDir, "access.json"), JSON.stringify(config, null, 2))
+  atomicWriteJsonSync(join(stateDir, "access.json"), config)
 }
 
 // ── readAccessConfig ──────────────────────────────────────────────────────────
