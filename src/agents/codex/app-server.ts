@@ -60,7 +60,7 @@ class CodexAppServerClient {
   private closed = false
 
   constructor(private readonly cwd: string) {
-    this.proc = Bun.spawn(["codex", "app-server", "--listen", "stdio://", "-s", "danger-full-access"], {
+    this.proc = Bun.spawn(["codex", "app-server", "--enable", "use_legacy_landlock", "-s", "danger-full-access", "--listen", "stdio://"], {
       cwd,
       stdin: "pipe",
       stdout: "pipe",
