@@ -1,6 +1,6 @@
 # Open Fleet — Current Status
 
-Last updated: 2026-03-29
+Last updated: 2026-04-08
 
 ## Project Switch SOP
 
@@ -17,66 +17,89 @@ Last updated: 2026-03-29
 4. Post in channel — "back online, STATUS.md read, tests green, ready"
 5. Lead assigns first tasks
 
-## What Shipped This Session
+## What Shipped This Session (2026-04-07/08)
 
-**152 tests passing across 13 test files.**
+**193 tests passing across 14 test files. 6 sprints, 26+ tasks shipped.**
 
-### Fleet Logs (`fleet logs`)
-- `fleet logs <agent>` — tail agent's tmux pane output
-- `fleet logs --all` — interleave all agents' output with agent name prefix
-- `fleet logs <agent> --lines N` — last N lines (default 50)
-- `--json` support for machine-readable output
-- Works for local and remote agents (SSH + tmux capture)
-- Handles empty tmux output gracefully
+### Fleet Task System — Fully Operational
+- `fleet task` CLI wired into binary — 7 subcommands (create, update, comment, list, board, show, recap)
+- Agent self-serve: agents can update their own task status via CLI
+- Token synced across server + all agents via shared `.env`
+- Task lifecycle enforcement with path hints on invalid transitions
+- Concise single-line notifications + error logging (no more silent `.catch`)
+- Notification sender attribution — comes from the agent's bot, not lead's
 
-### Agent Heartbeat System
-- Background process in agent wrapper writes `heartbeat.json` every 30s
-- `readHeartbeat(stateDir)` — returns state: alive (< 60s), stale (< 5min), dead (>= 5min), unknown
-- `readRemoteHeartbeat()` — SSH-reads heartbeat from remote agents
-- Atomic writes (temp + rename) to prevent partial reads
-- Injected into Claude adapter's wrapper script via `heartbeatShellSnippet()`
+### Project Wiki System
+- `wiki/` scoped by workspace + role (shared → role → project)
+- `fleet wiki list|show|set` CLI commands
+- Injected on boot via `--append-system-prompt-file project-wiki.md`
+- 4KB cap, path traversal protection
+- `wiki/projects/open-fleet.md` populated with architecture + commands + conventions
 
-### Fleet Status Upgrade
-- Shows heartbeat-aware state: `[alive]`, `[stale]`, `[hung?]`, `[on]`, `[off]`
-- "Last seen" age in human-readable format (5s ago, 2m ago, 1h ago)
-- JSON output includes `heartbeat`, `lastSeen`, `ageSec` fields
-- Remote agents: reads heartbeat via SSH with correct `~` path expansion
+### Dashboard v2 — World-Class Fleet Management UI
+- **3 views:** Mission Control (agent cards + activity feed), Board (4-lane Kanban), Timeline (Gantt-lite)
+- **Mission Control:** Agent grid with status dots, current task, heartbeat sparkline, daily stats. Idle cards show last completed task. Lead shows "lead" badge + assigned count.
+- **Board:** 4 lanes (Backlog/Active/Review/Done). Active/Review 50% wider. Flow timing on cards. Stale indicators (yellow border). Sprint progress bar. Blocked-first sort.
+- **Timeline:** Horizontal Gantt with color legend, collapsible idle rows, configurable range (4h/8h/12h/24h), restart button per agent, boot-check badges.
+- **Agent modal:** Restart button + live log viewer (30 lines from tmux)
+- **Task modal:** Flow timeline bar, dependency chain (recursive + reverse), notes history
+- **Docs drawer:** Slide-out panel showing project docs (STATUS.md, wiki, ARCHITECTURE.md). Per-project via filesystem resolver. Lightweight inline markdown renderer.
+- **Status bar:** Named agent pips, sprint momentum (done/total)
+- **Activity feed:** Chronological events with date-aware timestamps
+- **Security:** Token stripped from URL, XSS-safe (escapeHtml + escapeJs), auth on destructive ops only
+- **Accessibility:** 11 ARIA attributes, focus management, loading states
+- **UX:** Keyboard shortcuts (1/2/3 views, d docs, / search, Esc close), theme toggle, adaptive polling with backoff, graceful degradation on endpoint failures
+- **Single self-contained HTML file** — zero dependencies, zero build step
 
-### Fleet Watch (`fleet watch`)
-- Phase 1: clear + print loop every 5s with agent status table
-- Phase 2: parsed activity feed with event classification
-  - Detects: git commits, test runs, file edits, Discord messages, thinking states
-  - Strips ANSI codes and noise
-  - Chronologically interleaved across all agents
-  - Agent name prefix on each line
+### API Endpoints (server on port 4680)
+- `GET /tasks`, `GET /tasks/board`, `GET /tasks/:id`, `POST /tasks`, `PATCH /tasks/:id`
+- `GET /agents` (extended: recentActivity, dailyStats, activeTasks)
+- `GET /activity?since=2h&limit=50`
+- `GET /agents/:name/logs?lines=30`
+- `POST /agents/:name/restart` (auth required)
+- `GET /docs/:project`, `GET /docs/:project/*path`
+- `GET /dashboard` (no auth)
 
-### Knowledge Docs (reverted)
-- Built `loadKnowledgeDocs()` to auto-inject `~/.fleet/docs/knowledge/` into agent context
-- Reverted per user feedback — injecting every learning into every session is not the right design
-- Knowledge files remain in `~/.fleet/docs/knowledge/` for reference
-- Better design needed (selective injection, per-project, or agent-requested)
+### Infrastructure Fixes
+- CLI binary symlink fixed
+- Agent env: FLEET_API_URL, FLEET_API_TOKEN, FLEET_SELF, FLEET_DIR all injected
+- `~/.fleet/config.json` global fallback created
+- Heartbeat daemon for real alive/stale/dead status
+- State dir mappings fixed in fleet.yaml
+- Boot-check: tasks-context.md + project-wiki.md populated for all agents
+- SG-Lab agents know their local server environment (CLAUDE.md updated)
+
+### Codebase Polish
+- 4 `any` types narrowed to proper types
+- 5 unused imports removed
+- 13 silent `.catch(() => {})` → error logging
+- Dashboard: fake sparklines → deterministic hash, XSS onclick fix, layout flexbox, flow timing leak fix, dead CSS cleanup, badge backgrounds, mobile board fix
 
 ## Known Gaps
 
-- **Heartbeat is Claude-only** — Codex adapter doesn't use a wrapper script, so no heartbeat injection
-- **SSH user mismatch** — `fleet logs`/`fleet status` may fail if SSH alias resolves to wrong user (config issue, not code bug)
-- **Fleet watch activity feed** — output quality depends on what's in the tmux pane; agents in long-running operations show less meaningful activity
-- **Knowledge docs design TBD** — auto-injection was too aggressive; need a better pattern (on-demand, per-project, or agent-requested)
-- **No shared fleet memory** — agents don't share learnings across sessions (brainstorm item)
-- **No task routing** — no shared work queue between agents (brainstorm item)
+- **Heartbeat is Claude-only** — Codex adapter doesn't inject heartbeat
+- **CLI stdout buffering** — `bun run src/cli.ts task` produces no output (Bun issue); API works fine
+- **Wiki is boot-time only** — edits don't take effect until agent restart
+- **No auto-zoom on timeline** — activity cluster detection computed but not applied to default range
+- **Badge theming** — `color-mix()` not supported in Safari <16.2
+- **No drag-and-drop on board** — read-only (signaled with cursor:default)
+- **No server endpoint test coverage** — 193 unit tests, zero HTTP API tests
 
 ## Architecture Decisions
 
-- **TypeScript + Bun** — fast startup, built-in test runner, single binary potential
-- **tmux for process management** — universal, works over SSH, supports capture/send-keys
-- **Heartbeat via background bash loop** — no daemon, cleaned up via trap, minimal footprint
-- **CLAUDE.md for dynamic context** — re-read every turn by Claude Code, enables live roster updates
-- **SSH for remote agents** — reuses existing infra, no new ports or services
+- **TypeScript + Bun** — fast startup, built-in test runner
+- **tmux for process management** — universal, works over SSH
+- **Single-file dashboard** — zero deps, curl-deployable, View Source debuggable
+- **CLAUDE.md for dynamic context** — re-read every turn by Claude Code
+- **SSH for remote agents** — reuses existing infra
+- **Central task server on SG-Lab** — agents use localhost:4680, lead uses Tailscale
+- **Filesystem-backed docs** — no database, resolver maps project → workspace via fleet.yaml
 
 ## Next Priorities
 
-1. **Shared fleet memory** — design a better pattern than auto-injecting all knowledge. Options: agent-requested retrieval, per-project knowledge, tagged/scoped docs
-2. **Agent-to-agent task routing** — shared task queue (lead creates, workers claim, status flows automatically)
-3. **Observability dashboard** — `fleet watch` Phase 3: TUI with panels, scrollable activity, alert on errors
-4. **Codex heartbeat** — extend heartbeat to Codex adapter (different injection mechanism needed)
-5. **Adoption improvements** — `fleet init` wizard, better error messages, guided setup for first-time users
+1. **Battle test with SysBuilder** — use the fleet task system for real project management
+2. **CLI stdout fix** — investigate Bun buffering issue so `fleet task` works from local Mac
+3. **Auto-zoom timeline** — detect activity cluster and set tight default range
+4. **HTTP API tests** — cover the 11 endpoints
+5. **Drag-and-drop on board** — visual affordance triggering `fleet task update`
+6. **Wiki live reload** — mid-session wiki edits take effect without restart
