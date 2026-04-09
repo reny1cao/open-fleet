@@ -154,6 +154,7 @@ function scanSkillsDir(dir: string, tier: "global" | "project"): SkillEntry[] {
   const entries: SkillEntry[] = []
 
   for (const item of readdirSync(dir)) {
+    if (item.startsWith(".")) continue
     const skillDir = join(dir, item)
     const skillFile = join(skillDir, "SKILL.md")
 
