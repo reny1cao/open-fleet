@@ -83,7 +83,7 @@ export class DiscordBot {
   private socket: WebSocket | null = null
   private sequence: number | null = null
   private heartbeatTimer: Timer | null = null
-  private queue = Promise.resolve()
+  private readonly scopeQueues = new Map<string, Promise<void>>()
   private readyResolve: (() => void) | null = null
   private readyReject: ((reason?: unknown) => void) | null = null
   private closeResolve: (() => void) | null = null
@@ -165,9 +165,7 @@ export class DiscordBot {
 
     if (payload.t === "MESSAGE_CREATE" && payload.d) {
       const message = payload.d as unknown as DiscordMessagePayload
-      this.queue = this.queue
-        .then(() => this.handleMessage(message))
-        .catch((error) => console.error(`[fleet] Discord bot handler error: ${error instanceof Error ? error.message : error}`))
+      this.enqueueMessage(message)
     }
   }
 
@@ -210,25 +208,46 @@ export class DiscordBot {
     this.socket?.send(JSON.stringify(payload))
   }
 
-  private async handleMessage(message: DiscordMessagePayload): Promise<void> {
-    if (!message.author || message.author.id === this.opts.botUserId) {
-      return
-    }
+  private enqueueMessage(message: DiscordMessagePayload): void {
+    // Quick pre-filter before async work (no await needed)
+    if (!message.author || message.author.id === this.opts.botUserId) return
+    if (!isBotMentioned(message, this.opts.botUserId)) return
 
-    if (!isBotMentioned(message, this.opts.botUserId)) {
-      return
-    }
+    // Resolve scope asynchronously, then queue per-scope
+    this.resolveScopeAndEnqueue(message).catch((error) =>
+      console.error(`[fleet] Discord scope resolution error: ${error instanceof Error ? error.message : error}`),
+    )
+  }
 
+  private async resolveScopeAndEnqueue(message: DiscordMessagePayload): Promise<void> {
     const channel = await this.getChannelContext(message.channel_id)
     const scopeKey = resolveScopeKey(
       message,
       channel ? { id: channel.id, type: channel.type, parent_id: channel.parentId } : null,
       this.managedChannels.keys(),
     )
-    if (!scopeKey) {
-      return
-    }
+    if (!scopeKey) return
 
+    // Chain onto the per-scope queue — unrelated scopes run concurrently
+    const prev = this.scopeQueues.get(scopeKey) ?? Promise.resolve()
+    const next = prev
+      .then(() => this.handleMessage(message, scopeKey, channel))
+      .catch((error) => console.error(`[fleet] Discord bot handler error: ${error instanceof Error ? error.message : error}`))
+    this.scopeQueues.set(scopeKey, next)
+
+    // Clean up completed scope queues to prevent memory leaks
+    next.then(() => {
+      if (this.scopeQueues.get(scopeKey) === next) {
+        this.scopeQueues.delete(scopeKey)
+      }
+    })
+  }
+
+  private async handleMessage(
+    message: DiscordMessagePayload,
+    scopeKey: string,
+    channel: { id: string; type: number; parentId?: string } | null,
+  ): Promise<void> {
     const workspace = this.resolveWorkspace(message.channel_id, channel)
     const stripped = stripBotMention(message.content, this.opts.botUserId)
     const prompt = [
