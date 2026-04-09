@@ -1,7 +1,8 @@
-import { existsSync, realpathSync } from "fs"
+import { existsSync, realpathSync, writeFileSync } from "fs"
 import { basename, dirname, join } from "path"
 import { writeBootIdentity, writeRoster } from "../../core/identity"
-import { getToken } from "../../core/config"
+import { getToken, resolveStateDir } from "../../core/config"
+import { heartbeatShellSnippet } from "../../core/heartbeat"
 import { DiscordApi } from "../../channel/discord/api"
 import { scp, sshRun } from "../../runtime/remote"
 import type { AgentAdapter, StartAgentContext } from "../types"
@@ -166,18 +167,71 @@ export class CodexAgentAdapter implements AgentAdapter {
       ? `http://${apiHost}:${apiPort}`
       : `http://127.0.0.1:${apiPort}`
 
+    // Generate wrapper script with heartbeat, boot-check, and auto-restart
+    const hbStateDir = stateDir
+    const bootCheckCmd = isRemote
+      ? null
+      : `cd '${configDir}' && bun run src/cli.ts boot-check ${agentName} 2>&1 | tail -20`
+
+    const wrapperLines = [
+      "#!/bin/bash",
+      ...(isRemote ? ['export PATH="$HOME/.local/bin:$HOME/.bun/bin:$HOME/.npm-global/bin:$PATH"'] : ['export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"']),
+      `export DISCORD_BOT_TOKEN="${token}"`,
+      `export ${agentDef.tokenEnv}="${token}"`,
+      `export FLEET_CONFIG="${fleetConfigPath}"`,
+      `export FLEET_SELF="${agentName}"`,
+      `export FLEET_API_URL="${apiUrl}"`,
+      ...(process.env.FLEET_API_TOKEN ? [`export FLEET_API_TOKEN="${process.env.FLEET_API_TOKEN}"`] : []),
+      "",
+      ...heartbeatShellSnippet(hbStateDir),
+      "MAX_RETRIES=5",
+      "RETRY_COUNT=0",
+      "MIN_UPTIME=30",
+      "",
+      "while true; do",
+      ...(bootCheckCmd
+        ? [
+            `  echo "[fleet] ${agentName}: running boot-check..."`,
+            `  ${bootCheckCmd}`,
+            `  BOOT_EXIT=$?`,
+            `  if [ $BOOT_EXIT -ne 0 ]; then`,
+            `    echo "[fleet] ${agentName}: boot-check failed (exit $BOOT_EXIT) — launching anyway"`,
+            `  fi`,
+          ]
+        : [`  echo "[fleet] ${agentName}: skipping boot-check (remote agent)"`]),
+      "  START_TIME=$(date +%s)",
+      `  ${command}`,
+      "  UPTIME=$(($(date +%s) - START_TIME))",
+      "  if [ $UPTIME -gt $MIN_UPTIME ]; then",
+      "    RETRY_COUNT=0",
+      "  else",
+      "    RETRY_COUNT=$((RETRY_COUNT + 1))",
+      "  fi",
+      "  if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then",
+      `    echo "[fleet] ${agentName}: too many rapid restarts. Giving up."`,
+      "    break",
+      "  fi",
+      `  echo "[fleet] ${agentName}: restarting in 3s..."`,
+      "  sleep 3",
+      "done",
+    ]
+
+    const wrapperScript = isRemote
+      ? `/tmp/fleet-wrapper-${session}.sh`
+      : join(stateDir, "wrapper.sh")
+    const localWrapperPath = isRemote ? `/tmp/fleet-wrapper-${session}-local.sh` : wrapperScript
+    writeFileSync(localWrapperPath, wrapperLines.join("\n") + "\n", { encoding: "utf8", mode: 0o700 })
+
+    if (isRemote) {
+      const serverConfig = config.servers![agentDef.server]
+      await scp(serverConfig, localWrapperPath, wrapperScript)
+    }
+
     await runtime.start({
       session,
-      env: {
-        DISCORD_BOT_TOKEN: token,
-        [agentDef.tokenEnv]: token,
-        FLEET_CONFIG: fleetConfigPath,
-        FLEET_SELF: agentName,
-        FLEET_API_URL: apiUrl,
-        ...(process.env.FLEET_API_TOKEN ? { FLEET_API_TOKEN: process.env.FLEET_API_TOKEN } : {}),
-      },
+      env: {},
       workDir,
-      command,
+      command: `bash ${wrapperScript}`,
     })
 
     if (opts.wait) {
