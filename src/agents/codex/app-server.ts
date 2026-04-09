@@ -58,6 +58,7 @@ class CodexAppServerClient {
   private stdoutBuffer = ""
   private stderrBuffer = ""
   private closed = false
+  private exitCallback: (() => void) | null = null
 
   constructor(private readonly cwd: string) {
     this.proc = Bun.spawn(["codex", "app-server", "--listen", "stdio://", "-s", "danger-full-access", "-c", 'sandbox_permissions=["disk-full-read-access","disk-write-access","network-full-access"]'], {
@@ -73,7 +74,11 @@ class CodexAppServerClient {
     this.pump(this.proc.stdout, "stdout").catch((error) => this.failAll(error))
     this.pump(this.proc.stderr, "stderr").catch((error) => this.failAll(error))
     this.proc.exited.then((code) => {
-      if (this.closed) return
+      if (this.closed) {
+        this.exitCallback?.()
+        return
+      }
+      this.exitCallback?.()
       this.failAll(new Error(`codex app-server exited with code ${code}${this.stderrBuffer ? `: ${this.stderrBuffer.trim()}` : ""}`))
     })
 
@@ -101,6 +106,10 @@ class CodexAppServerClient {
       this.proc.kill()
     } catch {}
     await this.proc.exited.catch(() => undefined)
+  }
+
+  onExit(callback: () => void): void {
+    this.exitCallback = callback
   }
 
   async runTurn(params: RunCodexTurnParams): Promise<RunCodexTurnResult> {
@@ -340,5 +349,70 @@ export async function runCodexTurn(params: RunCodexTurnParams): Promise<RunCodex
     return await client.runTurn(params)
   } finally {
     await client.close()
+  }
+}
+
+/**
+ * Long-lived wrapper around CodexAppServerClient.
+ * Keeps one codex app-server process alive across turns.
+ * Auto-restarts if the process dies between turns.
+ */
+export class PersistentCodexSession {
+  private client: CodexAppServerClient | null = null
+  private starting: Promise<void> | null = null
+
+  constructor(private readonly cwd: string) {}
+
+  async runTurn(params: RunCodexTurnParams): Promise<RunCodexTurnResult> {
+    await this.ensureClient()
+    try {
+      return await this.client!.runTurn(params)
+    } catch (error) {
+      // If the turn failed because the process died, discard the client
+      // so the next call creates a fresh one
+      this.discardClient()
+      throw error
+    }
+  }
+
+  async close(): Promise<void> {
+    this.starting = null
+    if (this.client) {
+      const c = this.client
+      this.client = null
+      await c.close()
+    }
+  }
+
+  private async ensureClient(): Promise<void> {
+    if (this.client) return
+    if (this.starting) {
+      await this.starting
+      return
+    }
+    this.starting = this.createClient()
+    await this.starting
+    this.starting = null
+  }
+
+  private async createClient(): Promise<void> {
+    const client = new CodexAppServerClient(this.cwd)
+    await client.start()
+    this.client = client
+
+    // If the process dies unexpectedly between turns, discard the client
+    client.onExit(() => {
+      if (this.client === client) {
+        this.client = null
+      }
+    })
+  }
+
+  private discardClient(): void {
+    if (this.client) {
+      const c = this.client
+      this.client = null
+      c.close().catch(() => {})
+    }
   }
 }

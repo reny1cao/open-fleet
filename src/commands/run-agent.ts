@@ -4,7 +4,7 @@ import { getToken, loadConfig, findConfigDir, resolveStateDir } from "../core/co
 import { getAgentAdapterKind } from "../agents/resolve"
 import { buildCodexDeveloperInstructions } from "../agents/codex/instructions"
 import { getCodexThreadId, setCodexThreadId } from "../agents/codex/state"
-import { runCodexTurn } from "../agents/codex/app-server"
+import { PersistentCodexSession } from "../agents/codex/app-server"
 import { DiscordApi } from "../channel/discord/api"
 import { DiscordBot } from "../channel/discord/bot"
 
@@ -40,6 +40,9 @@ export async function runAgent(agentName: string): Promise<void> {
     agentDef.workspace ?? config.defaults.workspace ?? "~/workspace",
   )
 
+  // Long-lived Codex session — reuses the same app-server process across turns
+  const codexSession = new PersistentCodexSession(defaultWorkspace)
+
   const bot = new DiscordBot({
     token,
     botUserId: me.id,
@@ -50,7 +53,7 @@ export async function runAgent(agentName: string): Promise<void> {
       const developerInstructions = buildCodexDeveloperInstructions(stateDir)
       const workspacePath = resolveWorkspacePath(configDir, context.workspace)
       const prompt = context.prompt.replace(`Workspace: ${context.workspace}`, `Workspace: ${workspacePath}`)
-      const result = await runCodexTurn({
+      const result = await codexSession.runTurn({
         cwd: workspacePath,
         developerInstructions,
         prompt,
@@ -62,6 +65,7 @@ export async function runAgent(agentName: string): Promise<void> {
   })
 
   const shutdown = async (): Promise<void> => {
+    await codexSession.close()
     await bot.close()
     process.exit(0)
   }
