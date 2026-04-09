@@ -314,6 +314,7 @@ async function skillValidate(args: string[], opts: { json?: boolean; workspace?:
   for (const dir of [globalSkillsDir(), projectSkillsDir(opts.workspace)].filter(Boolean) as string[]) {
     if (!existsSync(dir)) continue
     for (const item of readdirSync(dir)) {
+      if (item.startsWith(".")) continue
       const skillDir = join(dir, item)
       if (!statSync(skillDir).isDirectory()) continue
       if (!existsSync(join(skillDir, "SKILL.md"))) {
