@@ -103,7 +103,7 @@ describe("secret detection", () => {
   const SECRET_PATTERNS = [
     /(?:api[_-]?key|apikey)\s*[:=]\s*\S+/i,
     /(?:secret|password|passwd|token)\s*[:=]\s*\S+/i,
-    /sk-[a-zA-Z0-9]{20,}/,
+    /sk-[a-zA-Z0-9-]{20,}/,
     /ghp_[a-zA-Z0-9]{36,}/,
     /-----BEGIN (?:RSA |EC |DSA )?PRIVATE KEY-----/,
     /AKIA[0-9A-Z]{16}/,
@@ -119,6 +119,11 @@ describe("secret detection", () => {
 
   it("detects OpenAI-style API keys", () => {
     const secrets = detectSecrets("Use this key: sk-abcdefghijklmnopqrstuvwxyz")
+    expect(secrets.length).toBeGreaterThan(0)
+  })
+
+  it("detects Anthropic API keys (sk-ant-)", () => {
+    const secrets = detectSecrets("ANTHROPIC_API_KEY=sk-ant-api03-abcdefghijklmnopqrstuvwxyz")
     expect(secrets.length).toBeGreaterThan(0)
   })
 

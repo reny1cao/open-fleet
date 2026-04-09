@@ -118,7 +118,7 @@ function validateFrontmatter(fm: Record<string, unknown>): { valid: boolean; err
 const SECRET_PATTERNS = [
   /(?:api[_-]?key|apikey)\s*[:=]\s*\S+/i,
   /(?:secret|password|passwd|token)\s*[:=]\s*\S+/i,
-  /sk-[a-zA-Z0-9]{20,}/,           // OpenAI-style keys
+  /sk-[a-zA-Z0-9-]{20,}/,          // OpenAI + Anthropic (sk-ant-) API keys
   /ghp_[a-zA-Z0-9]{36,}/,          // GitHub PATs
   /glpat-[a-zA-Z0-9_-]{20,}/,      // GitLab PATs
   /xoxb-[0-9]+-[0-9]+-[a-zA-Z0-9]+/, // Slack bot tokens
@@ -314,7 +314,6 @@ async function skillValidate(args: string[], opts: { json?: boolean; workspace?:
   for (const dir of [globalSkillsDir(), projectSkillsDir(opts.workspace)].filter(Boolean) as string[]) {
     if (!existsSync(dir)) continue
     for (const item of readdirSync(dir)) {
-      if (item.startsWith(".")) continue
       const skillDir = join(dir, item)
       if (!statSync(skillDir).isDirectory()) continue
       if (!existsSync(join(skillDir, "SKILL.md"))) {
