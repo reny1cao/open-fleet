@@ -129,6 +129,16 @@ export class CodexAgentAdapter implements AgentAdapter {
         await scp(serverConfig, rosterPath, `${remoteStateDir}/.claude/CLAUDE.md`)
       }
 
+      // Copy task context and project wiki for remote agents
+      const tasksContextPath = join(stateDir, "tasks-context.md")
+      if (existsSync(tasksContextPath)) {
+        await scp(serverConfig, tasksContextPath, `${remoteStateDir}/tasks-context.md`)
+      }
+      const projectWikiPath = join(stateDir, "project-wiki.md")
+      if (existsSync(projectWikiPath)) {
+        await scp(serverConfig, projectWikiPath, `${remoteStateDir}/project-wiki.md`)
+      }
+
       const localBundle = resolveFleetRemoteBundlePath()
       const remoteBundle = `${remoteBundleDir}/fleet-remote.mjs`
       const remoteFleetConfig = `${remoteBundleDir}/fleet.yaml`
