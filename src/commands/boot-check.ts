@@ -6,6 +6,7 @@ import { writeBootIdentity, writeRoster } from "../core/identity"
 import { writeAccessConfig } from "../channel/discord/access"
 import { DiscordApi } from "../channel/discord/api"
 import { loadWikiSections, buildProjectWiki } from "../core/wiki"
+import { resolvePluginPath, PLUGIN_CACHE_ROOT, PLUGIN_MARKETPLACE_ROOT } from "../core/claude-plugin"
 import type { FleetConfig } from "../core/types"
 
 export interface BootCheckResult {
@@ -16,41 +17,7 @@ export interface BootCheckResult {
 
 // ── Plugin resolution (shared with doctor/patch) ────────────────────────────
 
-const PLUGIN_CACHE_ROOT = ".claude/plugins/cache/claude-plugins-official/discord"
-const PLUGIN_MARKETPLACE_ROOT = ".claude/plugins/marketplaces/claude-plugins-official/external_plugins/discord"
-
-function compareVersionSegments(a: string, b: string): number {
-  const aParts = a.split(".").map(Number)
-  const bParts = b.split(".").map(Number)
-  const max = Math.max(aParts.length, bParts.length)
-  for (let i = 0; i < max; i++) {
-    const diff = (aParts[i] ?? 0) - (bParts[i] ?? 0)
-    if (diff !== 0) return diff
-  }
-  return 0
-}
-
-function resolvePluginPath(): string | null {
-  const cacheRoot = join(homedir(), PLUGIN_CACHE_ROOT)
-  if (existsSync(cacheRoot)) {
-    const { readdirSync } = require("fs")
-    const versions = (readdirSync(cacheRoot) as string[])
-      .filter((entry: string) => {
-        const entryPath = join(cacheRoot, entry)
-        const serverPath = join(entryPath, "server.ts")
-        return statSync(entryPath).isDirectory() && existsSync(serverPath)
-      })
-      .sort(compareVersionSegments)
-    if (versions.length > 0) {
-      return join(cacheRoot, versions[versions.length - 1], "server.ts")
-    }
-  }
-
-  const marketplacePath = join(homedir(), PLUGIN_MARKETPLACE_ROOT, "server.ts")
-  if (existsSync(marketplacePath)) return marketplacePath
-
-  return null
-}
+// Plugin path resolution imported from ../core/claude-plugin
 
 // ── Boot-check steps ────────────────────────────────────────────────────────
 
