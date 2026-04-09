@@ -180,6 +180,60 @@
   .view { display: none; }
   .view.active { display: block; }
 
+  /* ── Skills grid ── */
+  .skills-scope-header {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 16px 0 8px 0;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+  .skills-scope-header:first-child { margin-top: 0; }
+  .skills-grid-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .skill-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .skill-card:hover { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .skill-card-name { font-weight: 600; font-size: 14px; color: var(--text); }
+  .skill-card-desc { font-size: 12px; color: var(--text-muted); margin-top: 4px; line-height: 1.4; }
+  .skill-card-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; align-items: center; }
+  .skill-tag {
+    font-size: 10px;
+    padding: 1px 7px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    color: var(--accent);
+    font-weight: 500;
+  }
+  .skill-meta-item { font-size: 11px; color: var(--text-muted); }
+  .skill-expanded {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+    line-height: 1.6;
+    max-height: 400px;
+    overflow-y: auto;
+  }
+  .skill-expanded pre { background: var(--bg); padding: 10px; border-radius: 6px; overflow-x: auto; margin: 8px 0; }
+  .skill-expanded code { font-size: 12px; }
+  .skill-expanded h1, .skill-expanded h2, .skill-expanded h3 { margin-top: 12px; margin-bottom: 4px; }
+  .skill-expanded ul, .skill-expanded ol { padding-left: 20px; margin: 4px 0; }
+  .skills-empty { color: var(--text-muted); font-size: 13px; padding: 24px 0; text-align: center; }
+
   /* ── Mission Control ── */
   .mc-layout {
     display: flex;
@@ -664,6 +718,7 @@
       <button class="view-tab active" data-view="mc" role="tab" aria-selected="true" onclick="switchView('mc')">Mission Control</button>
       <button class="view-tab" data-view="board" role="tab" aria-selected="false" onclick="switchView('board')">Board</button>
       <button class="view-tab" data-view="timeline" role="tab" aria-selected="false" onclick="switchView('timeline')">Timeline</button>
+      <button class="view-tab" data-view="skills" role="tab" aria-selected="false" onclick="switchView('skills')">Skills</button>
     </div>
   </div>
   <div class="header-right">
@@ -706,6 +761,13 @@
 <!-- View: Timeline -->
 <div class="view" id="view-timeline" role="tabpanel" aria-label="Timeline">
   <div id="timeline-container" style="height:calc(100vh - 82px)"></div>
+</div>
+
+<!-- View: Skills -->
+<div class="view" id="view-skills" role="tabpanel" aria-label="Skills">
+  <div style="padding:16px 24px">
+    <div class="skills-grid" id="skills-grid"><div class="loading"><span class="loading-spinner"></span>Loading skills...</div></div>
+  </div>
 </div>
 
 <!-- Modal -->
@@ -760,6 +822,8 @@ const TL_STATUS_COLORS = {
 let allTasks = [];
 let allAgents = [];
 let allActivity = [];
+let allSkills = [];
+let expandedSkill = null; // track which skill card is expanded
 let currentView = 'mc';
 let currentProject = '';
 let showAllDoneBoard = false;
@@ -838,6 +902,7 @@ function switchView(view) {
   });
   if (view === 'board') renderBoard();
   if (view === 'timeline') renderTimeline();
+  if (view === 'skills') renderSkills();
 }
 
 function onSearch() {
@@ -1595,14 +1660,16 @@ if (savedTheme) {
 // ── Data refresh ──
 async function refresh() {
   try {
-    const [tasks, agentsData, activityData] = await Promise.all([
+    const [tasks, agentsData, activityData, skillsData] = await Promise.all([
       apiFetch('/tasks'),
       apiFetch('/agents').catch(() => null),
       apiFetch('/activity?since=4h&limit=30').catch(() => null),
+      fetch('/skills').then(r => r.json()).catch(() => null),
     ]);
 
     allTasks = tasks;
     allActivity = activityData?.events || [];
+    allSkills = skillsData?.skills || [];
     if (agentsData) {
       allAgents = agentsData.agents || agentsData || [];
     } else {
@@ -1619,6 +1686,7 @@ async function refresh() {
     if (currentView === 'mc') renderMissionControl();
     if (currentView === 'board') renderBoard();
     if (currentView === 'timeline') renderTimeline();
+    if (currentView === 'skills') renderSkills();
     document.getElementById('error-banner').classList.remove('show');
     pollInterval = BASE_POLL_INTERVAL;
   } catch (err) {
@@ -1634,6 +1702,88 @@ let refreshTimer;
 function scheduleRefresh() {
   clearTimeout(refreshTimer);
   refreshTimer = setTimeout(refresh, pollInterval);
+}
+
+// ══════════════════════════════════════════════════════════════
+// SKILLS VIEW
+// ══════════════════════════════════════════════════════════════
+
+function renderSkills() {
+  const container = document.getElementById('skills-grid');
+  if (allSkills.length === 0) {
+    container.innerHTML = '<div class="skills-empty">No skills found. Skills are created in <code>~/.fleet/skills/</code>.</div>';
+    return;
+  }
+
+  // Group by scope (global vs project)
+  const global = allSkills.filter(s => !s.scope || s.scope === 'global');
+  const byProject = {};
+  allSkills.filter(s => s.scope && s.scope !== 'global').forEach(s => {
+    if (!byProject[s.scope]) byProject[s.scope] = [];
+    byProject[s.scope].push(s);
+  });
+
+  let html = '';
+
+  // Project-scoped skills first
+  for (const [project, skills] of Object.entries(byProject)) {
+    html += `<div class="skills-scope-header">${escapeHtml(project)}</div>`;
+    html += '<div class="skills-grid-cards">';
+    for (const s of skills) html += renderSkillCard(s);
+    html += '</div>';
+  }
+
+  // Global skills
+  if (global.length > 0) {
+    html += `<div class="skills-scope-header">Global</div>`;
+    html += '<div class="skills-grid-cards">';
+    for (const s of global) html += renderSkillCard(s);
+    html += '</div>';
+  }
+
+  container.innerHTML = html;
+}
+
+function renderSkillCard(skill) {
+  const tags = (skill.tags || []).map(t => `<span class="skill-tag">${escapeHtml(t)}</span>`).join('');
+  const modified = skill.modified ? `<span class="skill-meta-item">${relTime(new Date(skill.modified))}</span>` : '';
+  const isExpanded = expandedSkill === skill.name;
+  const expandedContent = isExpanded ? `<div class="skill-expanded" id="skill-body-${escapeHtml(skill.name)}"><span class="loading-spinner"></span> Loading...</div>` : '';
+
+  return `<div class="skill-card" onclick="toggleSkill('${escapeJs(skill.name)}')">
+    <div class="skill-card-name">${escapeHtml(skill.name)}</div>
+    <div class="skill-card-desc">${escapeHtml(skill.description || '')}</div>
+    <div class="skill-card-meta">${tags}${modified}</div>
+    ${expandedContent}
+  </div>`;
+}
+
+async function toggleSkill(name) {
+  if (expandedSkill === name) {
+    expandedSkill = null;
+    renderSkills();
+    return;
+  }
+  expandedSkill = name;
+  renderSkills();
+
+  // Fetch full content
+  try {
+    const data = await fetch('/skills/' + encodeURIComponent(name)).then(r => r.json());
+    const el = document.getElementById('skill-body-' + name);
+    if (el && data.content) {
+      // Strip frontmatter, render markdown
+      let body = data.content;
+      const fmEnd = body.indexOf('\n---', 3);
+      if (body.startsWith('---') && fmEnd > 0) {
+        body = body.slice(fmEnd + 4).trim();
+      }
+      el.innerHTML = renderMarkdown(body);
+    }
+  } catch (err) {
+    const el = document.getElementById('skill-body-' + name);
+    if (el) el.innerHTML = '<em>Failed to load skill content</em>';
+  }
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1740,6 +1890,7 @@ document.addEventListener('keydown', e => {
     if (e.key === '1') switchView('mc');
     if (e.key === '2') switchView('board');
     if (e.key === '3') switchView('timeline');
+    if (e.key === '4') switchView('skills');
     if (e.key === 'd' && currentProject) openDocsDrawer(currentProject);
   }
 });
