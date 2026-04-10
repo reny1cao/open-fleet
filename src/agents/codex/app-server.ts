@@ -61,12 +61,12 @@ class CodexAppServerClient {
   private exitCallback: (() => void) | null = null
 
   constructor(private readonly cwd: string) {
-    this.proc = Bun.spawn(["codex", "app-server", "--listen", "stdio://", "-s", "danger-full-access", "-c", 'sandbox_permissions=["disk-full-read-access","disk-write-access","network-full-access"]'], {
+    this.proc = Bun.spawn(["codex", "app-server", "--listen", "stdio://"], {
       cwd,
       stdin: "pipe",
       stdout: "pipe",
       stderr: "pipe",
-      env: { ...process.env, CODEX_UNSAFE_ALLOW_NO_SANDBOX: "1" },
+      env: process.env,
     })
   }
 

@@ -1746,7 +1746,7 @@ function renderSkills() {
 
 function renderSkillCard(skill) {
   const tags = (skill.tags || []).map(t => `<span class="skill-tag">${escapeHtml(t)}</span>`).join('');
-  const modified = skill.modified ? `<span class="skill-meta-item">${relTime(new Date(skill.modified))}</span>` : '';
+  const modified = skill.modified ? `<span class="skill-meta-item">${timeAgo(skill.modified)}</span>` : '';
   const isExpanded = expandedSkill === skill.name;
   const expandedContent = isExpanded ? `<div class="skill-expanded" id="skill-body-${escapeHtml(skill.name)}"><span class="loading-spinner"></span> Loading...</div>` : '';
 
