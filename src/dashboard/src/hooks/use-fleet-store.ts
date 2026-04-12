@@ -16,6 +16,9 @@ interface FleetStore {
   loading: boolean
   lastFetchTs: string | null
 
+  // Actions — lifecycle
+  reset: () => void
+
   // Actions — data
   setAgents: (agents: Agent[]) => void
   setTasks: (tasks: Task[]) => void
@@ -46,6 +49,8 @@ export const useFleetStore = create<FleetStore>((set, get) => ({
   connected: false,
   loading: true,
   lastFetchTs: null,
+
+  reset: () => set({ agents: [], tasks: [], activity: [], sprints: [], alerts: [], connected: false, loading: true, lastFetchTs: null }),
 
   setAgents: (agents) => set({ agents }),
   setTasks: (tasks) => set({ tasks }),

@@ -25,10 +25,13 @@ export function App() {
   // SSE connection (only when authenticated)
   useSSE(authenticated)
 
+  const reset = useFleetStore((s) => s.reset)
+
   const handleSignOut = useCallback(() => {
     clearToken()
+    reset()
     setAuthenticated(false)
-  }, [])
+  }, [reset])
 
   if (!authenticated) {
     return <LoginScreen onLogin={() => setAuthenticated(true)} />
