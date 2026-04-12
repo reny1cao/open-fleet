@@ -1,5 +1,6 @@
 export type TaskStatus = "backlog" | "open" | "in_progress" | "review" | "verify" | "done" | "blocked" | "cancelled"
 export type TaskPriority = "low" | "normal" | "high" | "urgent"
+export type SprintStatus = "planned" | "active" | "closed"
 
 export type TaskNoteType = "comment" | "status_change" | "assignment" | "priority_change"
 
@@ -35,6 +36,8 @@ export interface Task {
   priority: TaskPriority
   blockedReason?: string
 
+  sprintId?: string
+
   parentId?: string
   dependsOn?: string[]
 
@@ -48,17 +51,30 @@ export interface Task {
   notes: TaskNote[]
 }
 
+export interface Sprint {
+  id: string
+  name: string
+  startDate: string
+  endDate?: string
+  status: SprintStatus
+  goals?: string
+  createdAt: string
+  updatedAt: string
+}
+
 export interface TaskStore {
-  version: 1
+  version: 1 | 2
   fleet: string
   nextId: number
+  nextSprintId?: number
+  sprints?: Sprint[]
   tasks: Task[]
 }
 
 // Valid status transitions
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   backlog: ["open", "in_progress", "cancelled"],
-  open: ["in_progress", "cancelled", "blocked"],
+  open: ["backlog", "in_progress", "cancelled", "blocked"],
   in_progress: ["review", "done", "blocked", "cancelled"],
   review: ["verify", "in_progress", "blocked", "cancelled"],
   verify: ["done", "in_progress", "blocked", "cancelled"],

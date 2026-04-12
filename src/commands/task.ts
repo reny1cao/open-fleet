@@ -1,3 +1,4 @@
+import { readFileSync, writeFileSync, existsSync } from "fs"
 import { loadTaskStore, saveTaskStore, createTask, updateTask, getTask, listTasks, activeTasks, sortByPriority } from "../tasks/store"
 import type { TaskStatus, TaskPriority, TaskResult } from "../tasks/types"
 import { notifyTaskAssigned, notifyTaskDone, notifyTaskBlocked, notifyTaskReassigned, notifyTaskReview, notifyTaskVerify } from "../tasks/notify"
@@ -44,18 +45,21 @@ export async function task(args: string[], opts: { json?: boolean }): Promise<vo
       return taskShow(args.slice(1), opts)
     case "recap":
       return taskRecap(args.slice(1), opts)
+    case "status-gen":
+      return taskStatusGen(args.slice(1), opts)
     case "comment":
       return taskComment(args.slice(1), opts)
     default:
       throw new Error(
-        "Usage: fleet task <create|update|comment|list|board|show|recap>\n" +
+        "Usage: fleet task <create|update|comment|list|board|show|recap|status-gen>\n" +
         "  fleet task create <title> [--assign <agent>] [--priority <p>] [--workspace <ws>] [--desc <d>] [--project <proj>]\n" +
         "  fleet task update <task-id> --status <status> [--assign <agent>] [--note <text>] [--result <json>] [--quiet]\n" +
         "  fleet task comment <task-id> <text>        Post a comment/update to a task\n" +
         "  fleet task list [--assignee <agent>] [--status <status>] [--project <proj>] [--mine]\n" +
         "  fleet task board [--project <proj>]\n" +
         "  fleet task show <task-id>\n" +
-        "  fleet task recap [--since 2h|4h|today|24h]"
+        "  fleet task recap [--since 2h|4h|today|24h]\n" +
+        "  fleet task status-gen [--output <path>] [--since 24h|today|7d] [--project <proj>]"
       )
   }
 }
@@ -70,6 +74,8 @@ async function taskCreate(args: string[], opts: { json?: boolean }): Promise<voi
   let parentId: string | undefined
   let project: string | undefined
   let dependsOn: string[] | undefined
+  let status: "open" | "backlog" | undefined
+  let sprintId: string | undefined
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--assign" && args[i + 1]) { assign = args[++i]; continue }
@@ -78,6 +84,13 @@ async function taskCreate(args: string[], opts: { json?: boolean }): Promise<voi
     if (args[i] === "--desc" && args[i + 1]) { description = args[++i]; continue }
     if (args[i] === "--parent" && args[i + 1]) { parentId = args[++i]; continue }
     if (args[i] === "--project" && args[i + 1]) { project = args[++i]; continue }
+    if (args[i] === "--sprint" && args[i + 1]) { sprintId = args[++i]; continue }
+    if (args[i] === "--status" && args[i + 1]) {
+      const s = args[++i]
+      if (s !== "open" && s !== "backlog") throw new Error(`Invalid create status: "${s}". Must be: open, backlog`)
+      status = s
+      continue
+    }
     if (args[i] === "--depends-on" && args[i + 1]) {
       dependsOn = dependsOn ?? []
       dependsOn.push(args[++i])
@@ -91,7 +104,7 @@ async function taskCreate(args: string[], opts: { json?: boolean }): Promise<voi
 
   let created
   if (useHttpApi()) {
-    created = await httpCreateTask({ title, assignee: assign, priority, workspace, description, parentId, dependsOn, project })
+    created = await httpCreateTask({ title, assignee: assign, priority, workspace, description, parentId, dependsOn, project, status, sprintId })
   } else {
     const store = loadTaskStore()
     if (dependsOn && dependsOn.length > 0) {
@@ -99,7 +112,11 @@ async function taskCreate(args: string[], opts: { json?: boolean }): Promise<voi
         if (!getTask(store, depId)) throw new Error(`Dependency not found: ${depId}`)
       }
     }
-    created = createTask(store, { title, assignee: assign, priority, workspace, description, parentId, dependsOn, project })
+    if (sprintId) {
+      const { getSprint } = await import("../tasks/store")
+      if (!getSprint(store, sprintId)) throw new Error(`Sprint not found: ${sprintId}`)
+    }
+    created = createTask(store, { title, assignee: assign, priority, workspace, description, parentId, dependsOn, project, status, sprintId })
     saveTaskStore(store)
   }
 
@@ -225,12 +242,14 @@ async function taskList(args: string[], opts: { json?: boolean }): Promise<void>
   let assignee: string | undefined
   let status: TaskStatus | undefined
   let project: string | undefined
+  let sprintFilter: string | undefined
   let mine = false
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--assignee" && args[i + 1]) { assignee = args[++i]; continue }
     if (args[i] === "--status" && args[i + 1]) { status = args[++i] as TaskStatus; continue }
     if (args[i] === "--project" && args[i + 1]) { project = args[++i]; continue }
+    if (args[i] === "--sprint" && args[i + 1]) { sprintFilter = args[++i]; continue }
     if (args[i] === "--mine") { mine = true; continue }
     if (args[i] === "--json") continue
   }
@@ -242,10 +261,10 @@ async function taskList(args: string[], opts: { json?: boolean }): Promise<void>
 
   let tasks
   if (useHttpApi()) {
-    tasks = await httpListTasks({ assignee, status, project })
+    tasks = await httpListTasks({ assignee, status, project, sprintId: sprintFilter })
   } else {
     const store = loadTaskStore()
-    tasks = sortByPriority(listTasks(store, { assignee, status, project }))
+    tasks = sortByPriority(listTasks(store, { assignee, status, project, sprintId: sprintFilter }))
   }
 
   if (opts.json) {
@@ -509,4 +528,172 @@ async function taskRecap(args: string[], opts: { json?: boolean }): Promise<void
   }
 
   console.log("")
+}
+
+async function taskStatusGen(args: string[], opts: { json?: boolean }): Promise<void> {
+  let output = "STATUS.md"
+  let since = "24h"
+  let project: string | undefined
+
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--output" && args[i + 1]) { output = args[++i]; continue }
+    if (args[i] === "--since" && args[i + 1]) { since = args[++i]; continue }
+    if (args[i] === "--project" && args[i + 1]) { project = args[++i]; continue }
+    if (args[i] === "--json") continue
+  }
+
+  const cutoff = parseSince(since)
+
+  let tasks
+  if (useHttpApi()) {
+    tasks = await httpListTasks(project ? { project } : undefined)
+  } else {
+    const store = loadTaskStore()
+    tasks = project ? store.tasks.filter(t => t.project === project) : store.tasks
+  }
+
+  // Categorize by status
+  const done = tasks.filter(t => t.status === "done")
+  const cancelled = tasks.filter(t => t.status === "cancelled")
+  const active = tasks.filter(t => t.status !== "done" && t.status !== "cancelled")
+  const blocked = active.filter(t => t.status === "blocked")
+  const inProgress = active.filter(t => t.status === "in_progress")
+  const inReview = active.filter(t => t.status === "review")
+  const inVerify = active.filter(t => t.status === "verify")
+  const open = active.filter(t => t.status === "open")
+  const backlog = active.filter(t => t.status === "backlog")
+
+  // Recently completed (since cutoff)
+  const recentlyCompleted = done.filter(t => t.completedAt && new Date(t.completedAt) >= cutoff)
+
+  // Preserve hand-written sections from existing file
+  const preserved = extractPreservedSections(output)
+
+  // Build markdown
+  const lines: string[] = []
+  const fleetName = project ?? (useHttpApi() ? "Fleet" : loadTaskStore().fleet)
+  const today = new Date().toISOString().slice(0, 10)
+
+  lines.push(`# ${fleetName} — Current Status`)
+  lines.push("")
+  lines.push(`Last updated: ${today}`)
+  lines.push("")
+
+  // Summary stats
+  lines.push(`## Summary`)
+  lines.push("")
+  lines.push(`**${active.length}** active | **${done.length}** done | **${cancelled.length}** cancelled`)
+  if (inReview.length > 0 || inVerify.length > 0) {
+    const parts: string[] = []
+    if (inVerify.length > 0) parts.push(`${inVerify.length} in verify`)
+    if (inReview.length > 0) parts.push(`${inReview.length} in review`)
+    if (inProgress.length > 0) parts.push(`${inProgress.length} in progress`)
+    if (blocked.length > 0) parts.push(`${blocked.length} blocked`)
+    lines.push(`Active breakdown: ${parts.join(" | ")}`)
+  }
+  lines.push("")
+
+  // Recently completed
+  if (recentlyCompleted.length > 0) {
+    const sinceLabel = cutoff.toISOString().slice(0, 10)
+    lines.push(`## Completed (since ${sinceLabel})`)
+    lines.push("")
+    for (const t of recentlyCompleted) {
+      const result = t.result?.summary ? ` — ${t.result.summary}` : ""
+      const assignee = t.assignee ? ` (${t.assignee})` : ""
+      lines.push(`- **${t.id}**: ${t.title}${assignee}${result}`)
+    }
+    lines.push("")
+  }
+
+  // Active work (verify → review → in_progress by priority)
+  const activeWork = [...sortByPriority(inVerify), ...sortByPriority(inReview), ...sortByPriority(inProgress)]
+  if (activeWork.length > 0) {
+    lines.push(`## Active Work`)
+    lines.push("")
+    for (const t of activeWork) {
+      const status = t.status === "in_progress" ? "in progress" : t.status
+      lines.push(`- **${t.id}** [${t.priority.toUpperCase()}] ${t.assignee ?? "unassigned"}: ${t.title} _(${status})_`)
+    }
+    lines.push("")
+  }
+
+  // Blocked
+  if (blocked.length > 0) {
+    lines.push(`## Blocked`)
+    lines.push("")
+    for (const t of blocked) {
+      lines.push(`- **${t.id}** ${t.assignee ?? "unassigned"}: ${t.title} — ${t.blockedReason || "no reason given"}`)
+    }
+    lines.push("")
+  }
+
+  // Preserved: Decisions
+  lines.push(`## Decisions`)
+  lines.push("")
+  lines.push(preserved.decisions ?? "_No decisions recorded yet._")
+  lines.push("")
+
+  // Preserved: Open Questions
+  lines.push(`## Open Questions`)
+  lines.push("")
+  lines.push(preserved.openQuestions ?? "_No open questions recorded yet._")
+  lines.push("")
+
+  // Next priorities (open + backlog sorted by priority, cap at 10)
+  const upcoming = sortByPriority([...open, ...backlog])
+  if (upcoming.length > 0) {
+    lines.push(`## Next Priorities`)
+    lines.push("")
+    const count = Math.min(upcoming.length, 10)
+    for (let i = 0; i < count; i++) {
+      const t = upcoming[i]
+      const assignee = t.assignee ? ` → ${t.assignee}` : ""
+      lines.push(`${i + 1}. **${t.id}** [${t.priority.toUpperCase()}]: ${t.title}${assignee}`)
+    }
+    if (upcoming.length > 10) {
+      lines.push("")
+      lines.push(`_...and ${upcoming.length - 10} more in backlog/open_`)
+    }
+    lines.push("")
+  }
+
+  const content = lines.join("\n")
+
+  if (opts.json) {
+    console.log(JSON.stringify({ output, content }))
+    return
+  }
+
+  writeFileSync(output, content, "utf8")
+  console.log(`STATUS.md written to ${output}`)
+  console.log(`  ${active.length} active | ${done.length} done | ${blocked.length} blocked | ${recentlyCompleted.length} recently completed`)
+}
+
+/** Extract hand-written Decisions and Open Questions sections from an existing STATUS.md */
+function extractPreservedSections(filePath: string): { decisions?: string; openQuestions?: string } {
+  if (!existsSync(filePath)) return {}
+
+  const content = readFileSync(filePath, "utf8")
+  const result: { decisions?: string; openQuestions?: string } = {}
+
+  const extractSection = (heading: string): string | undefined => {
+    const marker = `## ${heading}`
+    const start = content.indexOf(marker)
+    if (start === -1) return undefined
+    const contentStart = content.indexOf("\n\n", start)
+    if (contentStart === -1) return undefined
+    const nextHeading = content.indexOf("\n## ", contentStart + 2)
+    const body = nextHeading === -1
+      ? content.slice(contentStart + 2).trimEnd()
+      : content.slice(contentStart + 2, nextHeading).trimEnd()
+    if (!body || (body.startsWith("_No ") && body.endsWith("_"))) return undefined
+    return body
+  }
+
+  // Try both naming conventions (new format + common alternatives)
+  result.decisions = extractSection("Decisions") ?? extractSection("Architecture Decisions")
+  result.openQuestions = extractSection("Open Questions") ?? extractSection("Known Gaps")
+
+  return result
 }

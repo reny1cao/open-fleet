@@ -21,6 +21,7 @@ import { validate } from "./commands/validate"
 import { clear } from "./commands/clear"
 import { watchdog } from "./commands/watchdog"
 import { task } from "./commands/task"
+import { sprint } from "./commands/sprint"
 import { server } from "./commands/server"
 import { wiki } from "./commands/wiki"
 import { skill } from "./commands/skill"
@@ -60,6 +61,10 @@ Usage:
   fleet task board
   fleet task show <task-id>
   fleet task recap [--since 2h|today|24h]
+  fleet sprint create <name> [--start <date>] [--end <date>] [--goals <text>]
+  fleet sprint close [sprint-id]
+  fleet sprint list
+  fleet sprint active
   fleet skill list
   fleet skill show <name>
   fleet skill validate [name]
@@ -192,6 +197,9 @@ export async function main(argv: string[]): Promise<void> {
         break
       case "task":
         await task(args.slice(1), { json: parseFlag(args, "--json") })
+        break
+      case "sprint":
+        await sprint(args.slice(1), { json: parseFlag(args, "--json") })
         break
       case "skill":
         await skill(args.slice(1), { json: parseFlag(args, "--json"), workspace: process.cwd() })
