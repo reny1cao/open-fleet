@@ -4,11 +4,13 @@ import { api } from "../lib/api"
 
 const RECONNECT_DELAY = 3000
 
-export function useSSE() {
+export function useSSE(enabled = true) {
   const store = useFleetStore()
   const esRef = useRef<EventSource | null>(null)
 
   useEffect(() => {
+    if (!enabled) return
+
     let reconnectTimer: ReturnType<typeof setTimeout>
 
     function connect() {
@@ -84,5 +86,5 @@ export function useSSE() {
       clearTimeout(reconnectTimer)
       esRef.current?.close()
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [enabled]) // eslint-disable-line react-hooks/exhaustive-deps
 }

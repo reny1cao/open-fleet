@@ -1,10 +1,41 @@
 import type { Agent, Task, ActivityEvent, Sprint } from "./types"
 
-// Cache token at module load — Shell strips it from URL via history.replaceState
-const token = new URLSearchParams(window.location.search).get("token")
+const TOKEN_KEY = "fleet_token"
 
-function getToken(): string | null {
-  return token
+// Token resolution: URL param (one-time) → localStorage (persistent)
+// If token is in URL, save to localStorage and strip from URL
+const urlToken = new URLSearchParams(window.location.search).get("token")
+if (urlToken) {
+  localStorage.setItem(TOKEN_KEY, urlToken)
+  window.history.replaceState({}, "", window.location.pathname)
+}
+
+export function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY)
+}
+
+export function setToken(token: string): void {
+  localStorage.setItem(TOKEN_KEY, token)
+}
+
+export function clearToken(): void {
+  localStorage.removeItem(TOKEN_KEY)
+}
+
+export function hasToken(): boolean {
+  return !!getToken()
+}
+
+/** Validate a token by calling an authenticated endpoint. Returns true if valid. */
+export async function validateToken(token: string): Promise<boolean> {
+  try {
+    const res = await fetch("/tasks/stats", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    return res.ok
+  } catch {
+    return false
+  }
 }
 
 function headers(): HeadersInit {

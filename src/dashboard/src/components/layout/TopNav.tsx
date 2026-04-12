@@ -11,9 +11,10 @@ interface Props {
   current: View
   onChange: (view: View) => void
   connected: boolean
+  onSignOut: () => void
 }
 
-export function TopNav({ current, onChange, connected }: Props) {
+export function TopNav({ current, onChange, connected, onSignOut }: Props) {
   return (
     <header className="hidden md:flex items-center h-12 px-4 bg-white dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700">
       <h1 className="text-sm font-semibold mr-6">Fleet Dashboard</h1>
@@ -32,11 +33,19 @@ export function TopNav({ current, onChange, connected }: Props) {
           </button>
         ))}
       </nav>
-      <div className="ml-auto flex items-center gap-2">
-        <span className={`w-2 h-2 rounded-full ${connected ? "bg-green-500 animate-pulse" : "bg-red-500"}`} />
-        <span className="text-xs text-gray-500 dark:text-gray-400">
-          {connected ? "Live" : "Disconnected"}
-        </span>
+      <div className="ml-auto flex items-center gap-4">
+        <div className="flex items-center gap-2">
+          <span className={`w-2 h-2 rounded-full ${connected ? "bg-green-500 animate-pulse" : "bg-red-500"}`} />
+          <span className="text-xs text-gray-500 dark:text-gray-400">
+            {connected ? "Live" : "Disconnected"}
+          </span>
+        </div>
+        <button
+          onClick={onSignOut}
+          className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+        >
+          Sign out
+        </button>
       </div>
     </header>
   )
