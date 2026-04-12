@@ -22,8 +22,17 @@ const clients = new Set<SSEClient>()
 
 const encoder = new TextEncoder()
 
+// Monotonic event counter — enables Last-Event-ID reconnect
+let nextEventId = 1
+
 function formatSSE(event: string, data: unknown): Uint8Array {
-  return encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+  const id = nextEventId++
+  return encoder.encode(`id: ${id}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+}
+
+/** Current event ID (for debugging/monitoring) */
+export function currentEventId(): number {
+  return nextEventId - 1
 }
 
 /** Broadcast an event to all connected SSE clients */
