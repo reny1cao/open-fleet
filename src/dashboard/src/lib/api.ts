@@ -76,8 +76,10 @@ export const api = {
   },
   fetchAgentsLive: () => get<Agent[]>("/agents"),
   fetchTasks: () => get<Task[]>("/tasks"),
-  fetchActivity: (since = "4h", limit = 50) =>
-    get<ActivityEvent[]>(`/activity?since=${since}&limit=${limit}`),
+  fetchActivity: async (since = "4h", limit = 50) => {
+    const res = await get<{ events: ActivityEvent[] } | ActivityEvent[]>(`/activity?since=${since}&limit=${limit}`)
+    return Array.isArray(res) ? res : Array.isArray(res.events) ? res.events : []
+  },
   fetchSprints: () => get<Sprint[]>("/sprints"),
 
   updateTask: (id: string, body: Record<string, unknown>) => patch<Task>(`/tasks/${id}`, body),

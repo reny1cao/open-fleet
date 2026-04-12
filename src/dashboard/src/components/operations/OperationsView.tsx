@@ -4,11 +4,11 @@ import { ActivityFeed } from "./ActivityFeed"
 import { AlertBanner } from "./AlertBanner"
 
 export function OperationsView() {
-  const agents = useFleetStore((s) => s.agents)
-  const tasks = useFleetStore((s) => s.tasks)
-  const activity = useFleetStore((s) => s.activity)
-  const alerts = useFleetStore((s) => s.alerts)
-  const sprints = useFleetStore((s) => s.sprints)
+  const agents = useFleetStore((s) => s.agents ?? [])
+  const tasks = useFleetStore((s) => s.tasks ?? [])
+  const activity = useFleetStore((s) => s.activity ?? [])
+  const alerts = useFleetStore((s) => s.alerts ?? [])
+  const sprints = useFleetStore((s) => s.sprints ?? [])
   const dismissAlert = useFleetStore((s) => s.dismissAlert)
 
   const alive = agents.filter((a) => a.status === "alive").length

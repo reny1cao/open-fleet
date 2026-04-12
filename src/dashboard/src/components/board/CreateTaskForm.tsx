@@ -9,7 +9,7 @@ interface Props {
 }
 
 export function CreateTaskForm({ defaultStatus, onClose }: Props) {
-  const agents = useFleetStore((s) => s.agents)
+  const agents = useFleetStore((s) => s.agents ?? [])
   const updateTask = useFleetStore((s) => s.updateTask)
 
   const [title, setTitle] = useState("")

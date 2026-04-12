@@ -1,7 +1,7 @@
 import { useFleetStore } from "../../hooks/use-fleet-store"
 
 export function SprintView() {
-  const sprints = useFleetStore((s) => s.sprints)
+  const sprints = useFleetStore((s) => s.sprints ?? [])
   const activeSprint = sprints.find((s) => s.status === "active")
 
   if (!activeSprint) {

@@ -25,15 +25,17 @@ interface Props {
 
 export function AgentCard({ agent, alerts }: Props) {
   const [expanded, setExpanded] = useState(false)
-  const currentTask = agent.activeTasks[0]
-  const agentAlerts = alerts.filter((a) => a.affectedAgent === agent.name)
+  const activeTasks = agent.activeTasks ?? []
+  const recentActivity = agent.recentActivity ?? []
+  const currentTask = activeTasks[0]
+  const agentAlerts = (alerts ?? []).filter((a) => a.affectedAgent === agent.name)
   const hasError = agentAlerts.length > 0
   const worstSeverity = hasError
     ? agentAlerts.some((a) => a.severity === "fatal") ? "fatal"
     : agentAlerts.some((a) => a.severity === "critical") ? "critical"
     : "warning"
     : null
-  const lastAction = agent.recentActivity[0]
+  const lastAction = recentActivity[0]
 
   return (
     <div className={`bg-white dark:bg-slate-800 rounded-lg border transition-colors ${
@@ -88,15 +90,15 @@ export function AgentCard({ agent, alerts }: Props) {
             <span className="capitalize">{agent.role}</span>
             <span>
               {statusLabel[agent.status] ?? "unknown"}
-              {agent.heartbeat.ageSec != null && agent.status === "alive" && ` ${agent.heartbeat.ageSec}s`}
+              {agent.heartbeat?.ageSec != null && agent.status === "alive" && ` ${agent.heartbeat.ageSec}s`}
             </span>
             <span>{agent.server}</span>
-            {agent.watchdog.consecutiveFailures > 0 && (
+            {agent.watchdog?.consecutiveFailures > 0 && (
               <span className="text-red-500 dark:text-red-400">
                 {agent.watchdog.consecutiveFailures} consecutive failures
               </span>
             )}
-            {agent.watchdog.lastRestart && (
+            {agent.watchdog?.lastRestart && (
               <span>last restart {timeAgo(agent.watchdog.lastRestart)}</span>
             )}
           </div>
@@ -117,7 +119,7 @@ export function AgentCard({ agent, alerts }: Props) {
           )}
 
           {/* Active tasks */}
-          {agent.activeTasks.map((task) => (
+          {activeTasks.map((task) => (
             <div
               key={task.id}
               className="bg-gray-50 dark:bg-slate-700/50 rounded px-2.5 py-2"
@@ -149,7 +151,7 @@ export function AgentCard({ agent, alerts }: Props) {
             </div>
           ))}
 
-          {agent.activeTasks.length === 0 && !lastAction && (
+          {activeTasks.length === 0 && !lastAction && (
             <p className="text-xs text-gray-400 dark:text-gray-500">No active tasks</p>
           )}
 
@@ -165,8 +167,8 @@ export function AgentCard({ agent, alerts }: Props) {
 
           {/* Footer stats */}
           <div className="flex gap-4 text-xs text-gray-500 dark:text-gray-400 pt-1 border-t border-gray-100 dark:border-slate-700">
-            <span>Done today: <span className="font-medium text-gray-700 dark:text-gray-300">{agent.dailyStats.completed}</span></span>
-            <span>Events: <span className="font-medium text-gray-700 dark:text-gray-300">{agent.dailyStats.events}</span></span>
+            <span>Done today: <span className="font-medium text-gray-700 dark:text-gray-300">{agent.dailyStats?.completed ?? 0}</span></span>
+            <span>Events: <span className="font-medium text-gray-700 dark:text-gray-300">{agent.dailyStats?.events ?? 0}</span></span>
           </div>
         </div>
       )}

@@ -28,8 +28,8 @@ const columns: { status: TaskStatus; label: string; color: string }[] = [
 const PRIORITY_ORDER: Record<string, number> = { urgent: 0, high: 1, normal: 2, low: 3 }
 
 export function BoardView() {
-  const tasks = useFleetStore((s) => s.tasks)
-  const sprints = useFleetStore((s) => s.sprints)
+  const tasks = useFleetStore((s) => s.tasks ?? [])
+  const sprints = useFleetStore((s) => s.sprints ?? [])
   const updateTask = useFleetStore((s) => s.updateTask)
   const [sprintFilter, setSprintFilter] = useState<string>("all")
   const [projectFilter, setProjectFilter] = useState<string>("all")
