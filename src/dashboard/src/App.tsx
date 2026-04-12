@@ -7,6 +7,7 @@ import { LoginScreen } from "./components/LoginScreen"
 import { HealthView } from "./components/health/HealthView"
 import { ProgressView } from "./components/progress/ProgressView"
 import { BoardView } from "./components/board/BoardView"
+import { TimelineView } from "./components/timeline/TimelineView"
 
 export function App() {
   const [authenticated, setAuthenticated] = useState(hasToken)
@@ -47,15 +48,7 @@ export function App() {
       {view === "health" && <HealthView />}
       {view === "progress" && <ProgressView />}
       {view === "board" && <BoardView />}
-      {view === "timeline" && <Placeholder label="Timeline" />}
+      {view === "timeline" && <TimelineView />}
     </Shell>
-  )
-}
-
-function Placeholder({ label }: { label: string }) {
-  return (
-    <div className="flex items-center justify-center h-64 text-caption text-muted">
-      {label} — Phase 2
-    </div>
   )
 }
