@@ -6,6 +6,7 @@ import { Shell } from "./components/layout/Shell"
 import { LoginScreen } from "./components/LoginScreen"
 import { HealthView } from "./components/health/HealthView"
 import { ProgressView } from "./components/progress/ProgressView"
+import { BoardView } from "./components/board/BoardView"
 
 export function App() {
   const [authenticated, setAuthenticated] = useState(hasToken)
@@ -45,7 +46,7 @@ export function App() {
     >
       {view === "health" && <HealthView />}
       {view === "progress" && <ProgressView />}
-      {view === "board" && <Placeholder label="Board" />}
+      {view === "board" && <BoardView />}
       {view === "timeline" && <Placeholder label="Timeline" />}
     </Shell>
   )

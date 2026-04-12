@@ -31,7 +31,7 @@ export function SprintBar({ sprint, stats }: Props) {
 
       {/* Progress bar */}
       <div className="flex items-center gap-8px">
-        <div className="flex-1 h-2 bg-[#1a1a1a] rounded-card overflow-hidden">
+        <div className="flex-1 h-2 bg-border-subtle rounded-card overflow-hidden">
           <div
             className="h-full bg-status-green rounded-card transition-all duration-500"
             style={{ width: `${pct}%` }}
