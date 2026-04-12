@@ -1,8 +1,101 @@
+/*
+ * ============================================================
+ * FLEET DASHBOARD — DESIGN SYSTEM
+ * ============================================================
+ *
+ * Reference designs:
+ *   - Vercel dashboard: information density at high taste
+ *   - Linear app: status encoding, hierarchy, monochrome restraint
+ *
+ * SPACING
+ *   4px base unit. Only use: 4 / 8 / 12 / 16 / 24 / 32 / 48px.
+ *   Card padding: 12px. Card gap: 8px. Section gap: 24px.
+ *
+ * BORDER RADIUS
+ *   4px for cards, inputs, badges. No rounded-xl. No rounded-full
+ *   except status indicator dots. Restrained radius = high taste.
+ *
+ * STATUS INDICATORS
+ *   3px left border accent on cards (Grafana pattern).
+ *   Triple encoding: color + shape + text label.
+ *   Never rely on color alone.
+ *
+ * TYPOGRAPHY
+ *   Font: Geist (UI), Geist Mono (data: IDs, numbers, timestamps).
+ *   Scale: 32px bold (KPIs), 16px semibold (sections), 14px (body),
+ *          12px (metadata/captions). No other sizes.
+ *
+ * COLOR
+ *   Background: #0a0a0a. Surface: #111111. Border: #222222.
+ *   Text: #fafafa primary, #a1a1aa secondary, #52525b muted.
+ *   Semantic: green #22c55e, amber #f59e0b, red #ef4444,
+ *            blue #3b82f6, gray #6b7280.
+ *   No purple. No gradients. No decorative color.
+ *
+ * SHADOWS
+ *   None on dark backgrounds. Shadow on dark = muddled.
+ *
+ * ANIMATIONS
+ *   Only on data changes (new event, status transition).
+ *   No hover decorations, no entrance animations, no parallax.
+ *
+ * ============================================================
+ */
+
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Safe area insets for mobile notch/home indicator */
-:root {
-  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+@layer base {
+  :root {
+    --bg: #0a0a0a;
+    --surface: #111111;
+    --border: #222222;
+    --border-subtle: #1a1a1a;
+    --text-primary: #fafafa;
+    --text-secondary: #a1a1aa;
+    --text-muted: #52525b;
+    --status-green: #22c55e;
+    --status-amber: #f59e0b;
+    --status-red: #ef4444;
+    --status-blue: #3b82f6;
+    --status-gray: #6b7280;
+    --radius: 4px;
+    --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  * {
+    border-color: var(--border);
+  }
+
+  body {
+    background-color: var(--bg);
+    color: var(--text-primary);
+    font-family: 'Geist Variable', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer utilities {
+  .text-primary { color: var(--text-primary); }
+  .text-secondary { color: var(--text-secondary); }
+  .text-muted { color: var(--text-muted); }
+
+  .bg-surface { background-color: var(--surface); }
+  .border-subtle { border-color: var(--border-subtle); }
+
+  .font-mono {
+    font-family: 'Geist Mono Variable', ui-monospace, monospace;
+  }
+
+  /* Status left-border accents (3px, Grafana pattern) */
+  .border-accent-green { border-left: 3px solid var(--status-green); }
+  .border-accent-amber { border-left: 3px solid var(--status-amber); }
+  .border-accent-red { border-left: 3px solid var(--status-red); }
+  .border-accent-blue { border-left: 3px solid var(--status-blue); }
+  .border-accent-gray { border-left: 3px solid var(--status-gray); }
 }
