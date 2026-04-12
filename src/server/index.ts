@@ -1,4 +1,4 @@
-import { loadTaskStore, saveTaskStore, createTask, updateTask, getTask, listTasks, activeTasks, sortByPriority } from "../tasks/store"
+import { loadTaskStore, saveTaskStore, createTask, updateTask, getTask, listTasks, activeTasks, sortByPriority, createSprint, closeSprint, listSprints } from "../tasks/store"
 import type { TaskStatus, TaskPriority, TaskResult } from "../tasks/types"
 import { notifyTaskAssigned, notifyTaskDone, notifyTaskBlocked, notifyTaskReassigned, notifyTaskReview, notifyTaskVerify } from "../tasks/notify"
 import { findConfigDir, loadConfig, resolveStateDir, sessionName } from "../core/config"
@@ -465,7 +465,8 @@ const server = Bun.serve({
       const assignee = url.searchParams.get("assignee") ?? undefined
       const status = url.searchParams.get("status") as TaskStatus | undefined
       const project = url.searchParams.get("project") ?? undefined
-      const tasks = sortByPriority(listTasks(store, { assignee, status, project }))
+      const sprintId = url.searchParams.get("sprintId") ?? undefined
+      const tasks = sortByPriority(listTasks(store, { assignee, status, project, sprintId }))
       return json(tasks)
     }
 
@@ -505,6 +506,8 @@ const server = Bun.serve({
       if (project && project.length > MAX_PROJECT) return badRequest(`project exceeds ${MAX_PROJECT} characters`)
       const priority = (body.priority as string) ?? "normal"
       if (!VALID_PRIORITIES.has(priority)) return badRequest(`invalid priority: "${priority}". Must be: low, normal, high, urgent`)
+      const status = body.status as string | undefined
+      if (status && status !== "open" && status !== "backlog") return badRequest(`invalid create status: "${status}". Must be: open, backlog`)
 
       // Validate dependsOn IDs exist
       const store = loadTaskStore()
@@ -513,6 +516,12 @@ const server = Bun.serve({
         for (const depId of dependsOn) {
           if (!getTask(store, depId)) return badRequest(`dependency not found: ${depId}`)
         }
+      }
+
+      const sprintId = body.sprintId as string | undefined
+      if (sprintId) {
+        const { getSprint } = await import("../tasks/store")
+        if (!getSprint(store, sprintId)) return badRequest(`sprint not found: ${sprintId}`)
       }
 
       const task = createTask(store, {
@@ -525,6 +534,8 @@ const server = Bun.serve({
         dependsOn,
         createdBy: body.createdBy as string | undefined,
         project,
+        status: status as "open" | "backlog" | undefined,
+        sprintId,
       })
       saveTaskStore(store)
 
@@ -584,7 +595,52 @@ const server = Bun.serve({
     }
 
 
-    return new Response(JSON.stringify({ error: "Not found", endpoints: ["GET /dashboard", "GET /agents", "GET /agents/:name/logs", "GET /activity", "GET /docs/:project", "GET /docs/:project/*path", "GET /skills", "GET /skills/:name", "POST /agents/:name/restart", "GET /tasks", "GET /tasks/:id", "GET /tasks/board", "POST /tasks", "PATCH /tasks/:id"] }), {
+    // --- Sprint endpoints ---
+
+    // GET /sprints — list all sprints
+    if (method === "GET" && path === "/sprints") {
+      const store = loadTaskStore()
+      const sprints = listSprints(store)
+      return json(sprints)
+    }
+
+    // POST /sprints — create a new sprint
+    if (method === "POST" && path === "/sprints") {
+      const body = await parseBody(req)
+      if (!body) return badRequest("invalid JSON body")
+      const name = body.name as string | undefined
+      if (!name) return badRequest("name is required")
+      if (name.length > 100) return badRequest("name exceeds 100 characters")
+
+      const store = loadTaskStore()
+      try {
+        const sprint = createSprint(store, {
+          name,
+          startDate: body.startDate as string | undefined,
+          endDate: body.endDate as string | undefined,
+          goals: body.goals as string | undefined,
+        })
+        saveTaskStore(store)
+        return json(sprint, 201)
+      } catch (err) {
+        return badRequest(err instanceof Error ? err.message : String(err))
+      }
+    }
+
+    // PATCH /sprints/:id/close — close a sprint
+    const sprintCloseMatch = path.match(/^\/sprints\/(sprint-\d+)\/close$/)
+    if (method === "PATCH" && sprintCloseMatch) {
+      const store = loadTaskStore()
+      try {
+        const sprint = closeSprint(store, sprintCloseMatch[1])
+        saveTaskStore(store)
+        return json(sprint)
+      } catch (err) {
+        return badRequest(err instanceof Error ? err.message : String(err))
+      }
+    }
+
+    return new Response(JSON.stringify({ error: "Not found", endpoints: ["GET /dashboard", "GET /agents", "GET /agents/:name/logs", "GET /activity", "GET /docs/:project", "GET /docs/:project/*path", "GET /skills", "GET /skills/:name", "POST /agents/:name/restart", "GET /tasks", "GET /tasks/:id", "GET /tasks/board", "POST /tasks", "PATCH /tasks/:id", "GET /sprints", "POST /sprints", "PATCH /sprints/:id/close"] }), {
       status: 404,
       headers: { "Content-Type": "application/json" },
     })

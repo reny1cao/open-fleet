@@ -3,7 +3,7 @@ import { join } from "path"
 import { homedir } from "os"
 import { findConfigDir, loadConfig } from "../core/config"
 import { atomicWriteJsonSync } from "../core/atomic-write"
-import type { Task, TaskStore, TaskStatus, TaskPriority, TaskResult } from "./types"
+import type { Task, TaskStore, TaskStatus, TaskPriority, TaskResult, Sprint, SprintStatus } from "./types"
 import { isValidTransition, transitionError } from "./types"
 
 function tasksDir(): string {
@@ -15,7 +15,17 @@ function tasksFilePath(fleet: string): string {
 }
 
 function defaultStore(fleet: string): TaskStore {
-  return { version: 1, fleet, nextId: 1, tasks: [] }
+  return { version: 2, fleet, nextId: 1, nextSprintId: 1, sprints: [], tasks: [] }
+}
+
+/** Migrate v1 store to v2: add sprints array and nextSprintId */
+function migrateStore(data: TaskStore): TaskStore {
+  if (data.version === 1) {
+    data.version = 2
+    data.sprints = data.sprints ?? []
+    data.nextSprintId = data.nextSprintId ?? 1
+  }
+  return data
 }
 
 export function loadTaskStore(fleet?: string): TaskStore {
@@ -28,7 +38,7 @@ export function loadTaskStore(fleet?: string): TaskStore {
   if (!existsSync(filePath)) return defaultStore(fleet)
   try {
     const data = JSON.parse(readFileSync(filePath, "utf8")) as TaskStore
-    return data
+    return migrateStore(data)
   } catch {
     console.warn(`[tasks] Corrupt task store at ${filePath}, starting fresh`)
     return defaultStore(fleet)
@@ -58,6 +68,8 @@ export function createTask(
     dependsOn?: string[]
     createdBy?: string
     project?: string
+    status?: "open" | "backlog"
+    sprintId?: string
   }
 ): Task {
   const now = new Date().toISOString()
@@ -79,8 +91,9 @@ export function createTask(
     assignee: opts.assignee,
     project: opts.project,
     workspace: opts.workspace,
-    status: "open",
+    status: opts.status ?? "open",
     priority: opts.priority ?? "normal",
+    sprintId: opts.sprintId,
     parentId: opts.parentId,
     dependsOn: opts.dependsOn,
     createdAt: now,
@@ -166,6 +179,7 @@ export function listTasks(
     assignee?: string
     status?: TaskStatus
     project?: string
+    sprintId?: string
   }
 ): Task[] {
   let tasks = store.tasks
@@ -177,6 +191,9 @@ export function listTasks(
   }
   if (filters?.project) {
     tasks = tasks.filter((t) => t.project === filters.project)
+  }
+  if (filters?.sprintId) {
+    tasks = tasks.filter((t) => t.sprintId === filters.sprintId)
   }
   return tasks
 }
@@ -207,4 +224,60 @@ function hasCycle(store: TaskStore, depId: string, sourceId: string, visited = n
     if (hasCycle(store, nextDep, sourceId, visited)) return true
   }
   return false
+}
+
+// --- Sprint CRUD ---
+
+function nextSprintId(store: TaskStore): string {
+  const num = store.nextSprintId ?? 1
+  const id = `sprint-${String(num).padStart(3, "0")}`
+  store.nextSprintId = num + 1
+  return id
+}
+
+export function createSprint(
+  store: TaskStore,
+  opts: { name: string; startDate?: string; endDate?: string; goals?: string }
+): Sprint {
+  const sprints = store.sprints ?? []
+  const active = sprints.find((s) => s.status === "active")
+  if (active) {
+    throw new Error(`Sprint "${active.name}" (${active.id}) is already active. Close it first.`)
+  }
+  const now = new Date().toISOString()
+  const sprint: Sprint = {
+    id: nextSprintId(store),
+    name: opts.name,
+    startDate: opts.startDate ?? now.slice(0, 10),
+    endDate: opts.endDate,
+    status: "active",
+    goals: opts.goals,
+    createdAt: now,
+    updatedAt: now,
+  }
+  sprints.push(sprint)
+  store.sprints = sprints
+  return sprint
+}
+
+export function closeSprint(store: TaskStore, sprintId: string): Sprint {
+  const sprints = store.sprints ?? []
+  const sprint = sprints.find((s) => s.id === sprintId)
+  if (!sprint) throw new Error(`Sprint not found: ${sprintId}`)
+  if (sprint.status === "closed") throw new Error(`Sprint "${sprint.name}" is already closed.`)
+  sprint.status = "closed"
+  sprint.updatedAt = new Date().toISOString()
+  return sprint
+}
+
+export function getActiveSprint(store: TaskStore): Sprint | undefined {
+  return (store.sprints ?? []).find((s) => s.status === "active")
+}
+
+export function getSprint(store: TaskStore, sprintId: string): Sprint | undefined {
+  return (store.sprints ?? []).find((s) => s.id === sprintId)
+}
+
+export function listSprints(store: TaskStore): Sprint[] {
+  return store.sprints ?? []
 }
