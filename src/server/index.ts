@@ -108,8 +108,40 @@ function parseSince(since: string): Date {
   return new Date(now.getTime() - 2 * 3600000) // default 2h
 }
 
-// Load dashboard HTML at startup
-const DASHBOARD_HTML = await Bun.file(new URL("dashboard.html", import.meta.url).pathname).text()
+// Dashboard static file serving
+// Priority: Vite build (src/dashboard/dist/) → fallback to legacy dashboard.html
+const DASHBOARD_DIST = resolve(join(new URL(".", import.meta.url).pathname, "..", "dashboard", "dist"))
+const LEGACY_DASHBOARD_HTML = await Bun.file(new URL("dashboard.html", import.meta.url).pathname).text()
+const HAS_VITE_BUILD = existsSync(join(DASHBOARD_DIST, "index.html"))
+
+const MIME_TYPES: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "application/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+}
+
+function serveDashboardFile(filePath: string): Response | null {
+  const resolved = resolve(filePath)
+  // Prevent path traversal
+  if (!resolved.startsWith(DASHBOARD_DIST)) return null
+  if (!existsSync(resolved) || !statSync(resolved).isFile()) return null
+
+  const ext = extname(resolved)
+  const contentType = MIME_TYPES[ext] ?? "application/octet-stream"
+  const content = readFileSync(resolved)
+  const headers: Record<string, string> = { "Content-Type": contentType }
+  // Cache static assets (hashed filenames) aggressively
+  if (ext === ".js" || ext === ".css") {
+    headers["Cache-Control"] = "public, max-age=31536000, immutable"
+  }
+  return new Response(content, { headers })
+}
 
 const server = Bun.serve({
   port: PORT,
@@ -118,11 +150,26 @@ const server = Bun.serve({
     const url = new URL(req.url)
     const path = url.pathname
 
-    // GET /dashboard — serve the web UI (no auth required, JS handles it via token param)
+    // GET /dashboard — serve the web UI (no auth required)
     if (path === "/dashboard" || path === "/dashboard/") {
-      return new Response(DASHBOARD_HTML, {
+      if (HAS_VITE_BUILD) {
+        const indexHtml = readFileSync(join(DASHBOARD_DIST, "index.html"), "utf8")
+        return new Response(indexHtml, { headers: { "Content-Type": "text/html; charset=utf-8" } })
+      }
+      return new Response(LEGACY_DASHBOARD_HTML, {
         headers: { "Content-Type": "text/html; charset=utf-8" },
       })
+    }
+
+    // GET /dashboard/* — serve Vite build static assets (JS, CSS, images)
+    if (HAS_VITE_BUILD && path.startsWith("/dashboard/")) {
+      const assetPath = path.slice("/dashboard/".length)
+      const filePath = join(DASHBOARD_DIST, assetPath)
+      const response = serveDashboardFile(filePath)
+      if (response) return response
+      // SPA fallback: serve index.html for client-side routing
+      const indexHtml = readFileSync(join(DASHBOARD_DIST, "index.html"), "utf8")
+      return new Response(indexHtml, { headers: { "Content-Type": "text/html; charset=utf-8" } })
     }
 
     // GET /events — SSE event stream (auth via query param since EventSource can't set headers)
