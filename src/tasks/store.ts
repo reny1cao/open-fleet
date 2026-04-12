@@ -110,6 +110,8 @@ export function updateTask(
   opts: {
     status?: TaskStatus
     assignee?: string
+    priority?: TaskPriority
+    sprintId?: string
     note?: string
     result?: TaskResult
     blockedReason?: string
@@ -122,6 +124,18 @@ export function updateTask(
   const now = new Date().toISOString()
   const author = opts.author ?? process.env.FLEET_SELF ?? "human"
   let changed = false
+
+  if (opts.priority && opts.priority !== task.priority) {
+    changed = true
+    const oldPriority = task.priority
+    task.priority = opts.priority
+    task.notes.push({ timestamp: now, author, type: "priority_change", text: `Priority: ${oldPriority} → ${opts.priority}`, oldValue: oldPriority, newValue: opts.priority })
+  }
+
+  if (opts.sprintId !== undefined && opts.sprintId !== task.sprintId) {
+    changed = true
+    task.sprintId = opts.sprintId || undefined
+  }
 
   if (opts.assignee !== undefined && opts.assignee !== task.assignee) {
     changed = true

@@ -1,4 +1,4 @@
-import { loadTaskStore, saveTaskStore, createTask, updateTask, getTask, listTasks, activeTasks, sortByPriority, createSprint, closeSprint, listSprints } from "../tasks/store"
+import { loadTaskStore, saveTaskStore, createTask, updateTask, getTask, listTasks, activeTasks, sortByPriority, createSprint, closeSprint, listSprints, getActiveSprint } from "../tasks/store"
 import type { TaskStatus, TaskPriority, TaskResult } from "../tasks/types"
 import { notifyTaskAssigned, notifyTaskDone, notifyTaskBlocked, notifyTaskReassigned, notifyTaskReview, notifyTaskVerify } from "../tasks/notify"
 import { findConfigDir, loadConfig, resolveStateDir, sessionName } from "../core/config"
@@ -8,6 +8,8 @@ import { resolveRuntime } from "../runtime/resolve"
 import { existsSync, readdirSync, statSync, readFileSync } from "fs"
 import { join, resolve, extname, relative } from "path"
 import { homedir } from "os"
+import { handleSSE, broadcast } from "./sse"
+import { startHeartbeatTick } from "./heartbeat-tick"
 
 const PORT = parseInt(process.env.FLEET_API_PORT ?? "4680")
 const HOST = process.env.FLEET_API_HOST ?? "127.0.0.1" // localhost only by default — set to Tailscale IP for remote access
@@ -121,6 +123,50 @@ const server = Bun.serve({
       return new Response(DASHBOARD_HTML, {
         headers: { "Content-Type": "text/html; charset=utf-8" },
       })
+    }
+
+    // GET /events — SSE event stream (auth via query param since EventSource can't set headers)
+    if (req.method === "GET" && path === "/events") {
+      const token = url.searchParams.get("token")
+      if (token !== API_TOKEN) return unauthorized()
+      return handleSSE(req)
+    }
+
+    // GET /sprints/current — active sprint with task stats (no auth, for dashboard)
+    if (req.method === "GET" && path === "/sprints/current") {
+      const store = loadTaskStore()
+      const active = getActiveSprint(store)
+      if (!active) return json(null)
+      const sprintTasks = listTasks(store, { sprintId: active.id })
+      const done = sprintTasks.filter(t => t.status === "done").length
+      const blocked = sprintTasks.filter(t => t.status === "blocked").length
+      const inProgress = sprintTasks.filter(t => t.status === "in_progress" || t.status === "review" || t.status === "verify").length
+      return json({
+        sprint: active,
+        stats: { total: sprintTasks.length, done, blocked, inProgress, open: sprintTasks.length - done - blocked - inProgress },
+        tasks: sprintTasks,
+      })
+    }
+
+    // GET /tasks/stats — summary counts for dashboard (no auth)
+    if (req.method === "GET" && path === "/tasks/stats") {
+      const store = loadTaskStore()
+      const tasks = store.tasks
+
+      const byStatus: Record<string, number> = {}
+      const byAssignee: Record<string, number> = {}
+      const byProject: Record<string, number> = {}
+      const todayStart = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).toISOString()
+      let completedToday = 0
+
+      for (const t of tasks) {
+        byStatus[t.status] = (byStatus[t.status] ?? 0) + 1
+        if (t.assignee) byAssignee[t.assignee] = (byAssignee[t.assignee] ?? 0) + 1
+        if (t.project) byProject[t.project] = (byProject[t.project] ?? 0) + 1
+        if (t.status === "done" && t.completedAt && t.completedAt >= todayStart) completedToday++
+      }
+
+      return json({ total: tasks.length, byStatus, byAssignee, byProject, completedToday })
     }
 
     // GET /agents — no auth required (dashboard fetches this directly)
@@ -453,6 +499,8 @@ const server = Bun.serve({
         const runtime = resolveRuntime(agentName, config)
         await runtime.sendKeys(session, "/exit")
 
+        broadcast("agent:restart", { agent: agentName, by: "dashboard" })
+
         return json({ agent: agentName, status: "restart_triggered", session })
       } catch (err) {
         return badRequest(`Failed to restart agent: ${err instanceof Error ? err.message : String(err)}`)
@@ -474,8 +522,10 @@ const server = Bun.serve({
     if (method === "GET" && path === "/tasks/board") {
       const store = loadTaskStore()
       const project = url.searchParams.get("project") ?? undefined
+      const boardSprintId = url.searchParams.get("sprintId") ?? undefined
       let active = activeTasks(store)
       if (project) active = active.filter(t => t.project === project)
+      if (boardSprintId) active = active.filter(t => t.sprintId === boardSprintId)
       const board: Record<string, typeof active> = {}
       for (const t of active) {
         if (!board[t.status]) board[t.status] = []
@@ -539,6 +589,9 @@ const server = Bun.serve({
       })
       saveTaskStore(store)
 
+      // SSE broadcast
+      broadcast("task:created", { task })
+
       // Fire-and-forget notification — use creator as sender so it comes from their bot
       if (task.assignee) notifyTaskAssigned(task, task.createdBy).catch(e => console.error('[notify]', e.message))
 
@@ -558,20 +611,46 @@ const server = Bun.serve({
       const validStatuses = new Set(["backlog", "open", "in_progress", "review", "verify", "done", "blocked", "cancelled"])
       if (newStatus && !validStatuses.has(newStatus)) return badRequest(`invalid status: "${newStatus}"`)
 
+      const newPriority = body.priority as TaskPriority | undefined
+      if (newPriority && !VALID_PRIORITIES.has(newPriority)) return badRequest(`invalid priority: "${newPriority}"`)
+      const newSprintId = body.sprintId as string | undefined
+
       const store = loadTaskStore()
       const oldAssignee = getTask(store, taskUpdateMatch[1])?.assignee
       const newAssignee = body.assignee as string | undefined
 
+      if (newSprintId) {
+        const { getSprint } = await import("../tasks/store")
+        if (!getSprint(store, newSprintId)) return badRequest(`sprint not found: ${newSprintId}`)
+      }
+
       try {
+        const oldStatus = getTask(store, taskUpdateMatch[1])?.status
         const task = updateTask(store, taskUpdateMatch[1], {
           status: newStatus,
           assignee: newAssignee,
+          priority: newPriority,
+          sprintId: newSprintId,
           note,
           result: body.result as TaskResult | undefined,
           blockedReason,
           author: body.author as string | undefined,
         })
         saveTaskStore(store)
+
+        // SSE broadcasts
+        const changes: string[] = []
+        if (newStatus && newStatus !== oldStatus) changes.push("status")
+        if (newAssignee !== undefined && newAssignee !== oldAssignee) changes.push("assignee")
+        if (note) changes.push("note")
+        if (body.result) changes.push("result")
+        broadcast("task:updated", { task, changes })
+        if (newStatus && newStatus !== oldStatus) {
+          broadcast("task:status", { taskId: task.id, from: oldStatus, to: newStatus, agent: (body.author as string | undefined) ?? task.assignee })
+        }
+        if (newAssignee !== undefined && newAssignee !== oldAssignee) {
+          broadcast("task:assigned", { taskId: task.id, from: oldAssignee, to: newAssignee })
+        }
 
         // Fire-and-forget notifications (skip if quiet)
         // Use author (the agent making the update) as sender so the notification
@@ -621,6 +700,7 @@ const server = Bun.serve({
           goals: body.goals as string | undefined,
         })
         saveTaskStore(store)
+        broadcast("sprint:created", { sprint })
         return json(sprint, 201)
       } catch (err) {
         return badRequest(err instanceof Error ? err.message : String(err))
@@ -634,13 +714,14 @@ const server = Bun.serve({
       try {
         const sprint = closeSprint(store, sprintCloseMatch[1])
         saveTaskStore(store)
+        broadcast("sprint:closed", { sprint })
         return json(sprint)
       } catch (err) {
         return badRequest(err instanceof Error ? err.message : String(err))
       }
     }
 
-    return new Response(JSON.stringify({ error: "Not found", endpoints: ["GET /dashboard", "GET /agents", "GET /agents/:name/logs", "GET /activity", "GET /docs/:project", "GET /docs/:project/*path", "GET /skills", "GET /skills/:name", "POST /agents/:name/restart", "GET /tasks", "GET /tasks/:id", "GET /tasks/board", "POST /tasks", "PATCH /tasks/:id", "GET /sprints", "POST /sprints", "PATCH /sprints/:id/close"] }), {
+    return new Response(JSON.stringify({ error: "Not found", endpoints: ["GET /dashboard", "GET /events", "GET /agents", "GET /agents/:name/logs", "GET /activity", "GET /docs/:project", "GET /docs/:project/*path", "GET /skills", "GET /skills/:name", "GET /tasks/stats", "GET /sprints/current", "POST /agents/:name/restart", "GET /tasks", "GET /tasks/:id", "GET /tasks/board", "POST /tasks", "PATCH /tasks/:id", "GET /sprints", "POST /sprints", "PATCH /sprints/:id/close"] }), {
       status: 404,
       headers: { "Content-Type": "application/json" },
     })
@@ -648,3 +729,7 @@ const server = Bun.serve({
 })
 
 console.log(`[fleet-server] Listening on http://${server.hostname}:${server.port}`)
+
+// Start heartbeat polling → SSE broadcast tick
+startHeartbeatTick()
+console.log(`[fleet-server] Heartbeat tick started (15s interval)`)
