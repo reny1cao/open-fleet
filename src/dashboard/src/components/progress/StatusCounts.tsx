@@ -7,6 +7,7 @@ interface Props {
 const pills: { status: string; label: string; color: string }[] = [
   { status: "in_progress", label: "In Progress", color: "bg-status-green/20 text-status-green" },
   { status: "review", label: "Review", color: "bg-status-amber/20 text-status-amber" },
+  { status: "verify", label: "Verify", color: "bg-status-blue/20 text-status-blue" },
   { status: "blocked", label: "Blocked", color: "bg-status-red/20 text-status-red" },
   { status: "open", label: "Open", color: "bg-border-subtle text-secondary" },
 ]

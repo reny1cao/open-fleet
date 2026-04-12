@@ -39,6 +39,8 @@ export function ProgressView() {
         done: sprintTasks.filter((t) => t.status === "done").length,
         blocked: sprintTasks.filter((t) => t.status === "blocked").length,
         inProgress: sprintTasks.filter((t) => t.status === "in_progress").length,
+        inReview: sprintTasks.filter((t) => t.status === "review").length,
+        inVerify: sprintTasks.filter((t) => t.status === "verify").length,
         open: sprintTasks.filter((t) => t.status === "open" || t.status === "backlog").length,
       }
     : null
