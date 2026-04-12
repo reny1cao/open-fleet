@@ -125,8 +125,10 @@ const server = Bun.serve({
       })
     }
 
-    // GET /events — SSE event stream (no auth required, dashboard subscribes via token param)
+    // GET /events — SSE event stream (auth via query param since EventSource can't set headers)
     if (req.method === "GET" && path === "/events") {
+      const token = url.searchParams.get("token")
+      if (token !== API_TOKEN) return unauthorized()
       return handleSSE(req)
     }
 
