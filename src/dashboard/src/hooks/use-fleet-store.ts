@@ -1,6 +1,9 @@
 import { create } from "zustand"
-import type { Agent, Task, ActivityEvent, Sprint, ClassifiedError, View } from "../lib/types"
+import type { Agent, Task, ActivityEvent, Sprint, ClassifiedError } from "../lib/types"
 import { api } from "../lib/api"
+
+type ConnectionState = "connected" | "silent" | "degraded" | "offline"
+type View = "health" | "progress" | "board" | "timeline"
 
 interface FleetStore {
   // Data
@@ -10,82 +13,54 @@ interface FleetStore {
   sprints: Sprint[]
   alerts: ClassifiedError[]
 
-  // UI state
-  view: View
+  // Connection
   connected: boolean
+  connectionState: ConnectionState
+  lastUpdatedTs: string | null
+
+  // UI
+  view: View
   loading: boolean
-  lastFetchTs: string | null
 
-  // Actions — lifecycle
+  // Lifecycle
   reset: () => void
+  fetchAll: () => Promise<void>
 
-  // Actions — data
+  // Data mutations
   setAgents: (agents: Agent[]) => void
-  setTasks: (tasks: Task[]) => void
-  setActivity: (activity: ActivityEvent[]) => void
-  setSprints: (sprints: Sprint[]) => void
   updateTask: (task: Task) => void
   updateAgent: (partial: { name: string } & Partial<Agent>) => void
   pushActivity: (event: ActivityEvent) => void
   pushAlert: (error: ClassifiedError) => void
   dismissAlert: (index: number) => void
 
-  // Actions — UI
+  // UI mutations
   setView: (view: View) => void
   setConnected: (connected: boolean) => void
-
-  // Actions — fetch
-  fetchAll: () => Promise<void>
+  setConnectionState: (state: ConnectionState) => void
+  setLastUpdatedTs: (ts: string) => void
 }
 
-export const useFleetStore = create<FleetStore>((set, get) => ({
+const INITIAL_VIEW = (localStorage.getItem("fleet_view") as View) ?? "health"
+
+export const useFleetStore = create<FleetStore>((set) => ({
   agents: [],
   tasks: [],
   activity: [],
   sprints: [],
   alerts: [],
 
-  view: "operations",
   connected: false,
+  connectionState: "offline",
+  lastUpdatedTs: null,
+
+  view: INITIAL_VIEW,
   loading: true,
-  lastFetchTs: null,
 
-  reset: () => set({ agents: [], tasks: [], activity: [], sprints: [], alerts: [], connected: false, loading: true, lastFetchTs: null }),
-
-  setAgents: (agents) => set({ agents }),
-  setTasks: (tasks) => set({ tasks }),
-  setActivity: (activity) => set({ activity }),
-  setSprints: (sprints) => set({ sprints }),
-
-  updateTask: (task) =>
-    set((s) => ({
-      tasks: s.tasks.some((t) => t.id === task.id)
-        ? s.tasks.map((t) => (t.id === task.id ? task : t))
-        : [...s.tasks, task],
-    })),
-
-  updateAgent: (partial) =>
-    set((s) => ({
-      agents: s.agents.map((a) => (a.name === partial.name ? { ...a, ...partial } : a)),
-    })),
-
-  pushActivity: (event) =>
-    set((s) => ({
-      activity: [event, ...s.activity].slice(0, 200),
-    })),
-
-  pushAlert: (error) =>
-    set((s) => ({
-      alerts: [error, ...s.alerts].slice(0, 50),
-    })),
-
-  dismissAlert: (index) =>
-    set((s) => ({
-      alerts: s.alerts.filter((_, i) => i !== index),
-    })),
-
-  setView: (view) => set({ view }),
-  setConnected: (connected) => set({ connected }),
+  reset: () => set({
+    agents: [], tasks: [], activity: [], sprints: [], alerts: [],
+    connected: false, connectionState: "offline", loading: true, lastUpdatedTs: null,
+  }),
 
   fetchAll: async () => {
     set({ loading: true })
@@ -102,10 +77,47 @@ export const useFleetStore = create<FleetStore>((set, get) => ({
         activity: activity ?? [],
         sprints: sprints ?? [],
         loading: false,
-        lastFetchTs: new Date().toISOString(),
+        lastUpdatedTs: new Date().toISOString(),
       })
     } catch {
       set({ loading: false })
     }
   },
+
+  setAgents: (agents) => set({ agents }),
+
+  updateTask: (task) =>
+    set((s) => ({
+      tasks: (s.tasks ?? []).some((t) => t.id === task.id)
+        ? s.tasks.map((t) => (t.id === task.id ? task : t))
+        : [...(s.tasks ?? []), task],
+    })),
+
+  updateAgent: (partial) =>
+    set((s) => ({
+      agents: (s.agents ?? []).map((a) => (a.name === partial.name ? { ...a, ...partial } : a)),
+    })),
+
+  pushActivity: (event) =>
+    set((s) => ({
+      activity: [event, ...(s.activity ?? [])].slice(0, 200),
+    })),
+
+  pushAlert: (error) =>
+    set((s) => ({
+      alerts: [error, ...(s.alerts ?? [])].slice(0, 50),
+    })),
+
+  dismissAlert: (index) =>
+    set((s) => ({
+      alerts: (s.alerts ?? []).filter((_, i) => i !== index),
+    })),
+
+  setView: (view) => {
+    localStorage.setItem("fleet_view", view)
+    set({ view })
+  },
+  setConnected: (connected) => set({ connected }),
+  setConnectionState: (connectionState) => set({ connectionState }),
+  setLastUpdatedTs: (lastUpdatedTs) => set({ lastUpdatedTs }),
 }))

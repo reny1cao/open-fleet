@@ -158,14 +158,14 @@ Shared views for deep investigation. Both audiences use these when the quick che
 
 ### Visual Language
 
-**Background:** Dark (slate-900 `#0f172a`). High contrast for readability. Matches Vercel's approach — white on dark is WCAG AAA.
+**Background:** Dark (slate-900 `#0a0a0a`). High contrast for readability. Matches Vercel's approach — white on dark is WCAG AAA.
 
 **Semantic colors (4 + 1 accent):**
 
 | Color | Hex | Usage |
 |-------|-----|-------|
 | Green | `#22c55e` | Alive, done, success |
-| Amber | `#eab308` | Stale, warning, in review |
+| Amber | `#f59e0b` | Stale, warning, in review |
 | Red | `#ef4444` | Dead, blocked, error, critical |
 | Gray | `#6b7280` | Off, unknown, inactive |
 | Blue | `#3b82f6` | Accent (links, active tab, primary action) |
