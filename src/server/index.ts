@@ -219,10 +219,23 @@ const server = Bun.serve({
       const sprintTasks = listTasks(store, { sprintId: active.id })
       const done = sprintTasks.filter(t => t.status === "done").length
       const blocked = sprintTasks.filter(t => t.status === "blocked").length
-      const inProgress = sprintTasks.filter(t => t.status === "in_progress" || t.status === "review" || t.status === "verify").length
+      const inProgress = sprintTasks.filter(t => t.status === "in_progress").length
+      const inReview = sprintTasks.filter(t => t.status === "review").length
+      const inVerify = sprintTasks.filter(t => t.status === "verify").length
+      const open = sprintTasks.filter(t => t.status === "open" || t.status === "backlog").length
+      const cancelled = sprintTasks.filter(t => t.status === "cancelled").length
+
+      // Days remaining (null if no endDate)
+      let daysRemaining: number | null = null
+      if (active.endDate) {
+        const end = new Date(active.endDate)
+        const now = new Date()
+        daysRemaining = Math.max(0, Math.ceil((end.getTime() - now.getTime()) / 86400000))
+      }
+
       return json({
         sprint: active,
-        stats: { total: sprintTasks.length, done, blocked, inProgress, open: sprintTasks.length - done - blocked - inProgress },
+        stats: { total: sprintTasks.length, done, blocked, inProgress, inReview, inVerify, open, cancelled, daysRemaining },
         tasks: sprintTasks,
       })
     }

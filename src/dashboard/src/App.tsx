@@ -1,31 +1,30 @@
 import { useEffect, useState, useCallback } from "react"
 import { useFleetStore } from "./hooks/use-fleet-store"
-import { useSSE } from "./hooks/use-sse"
+import { useConnection } from "./hooks/use-connection"
 import { hasToken, clearToken } from "./lib/api"
 import { Shell } from "./components/layout/Shell"
 import { LoginScreen } from "./components/LoginScreen"
-import { OperationsView } from "./components/operations/OperationsView"
+import { HealthView } from "./components/health/HealthView"
+import { ProgressView } from "./components/progress/ProgressView"
 import { BoardView } from "./components/board/BoardView"
-import { TimelineView } from "./components/timeline/TimelineView"
-import { SprintView } from "./components/sprint/SprintView"
 
 export function App() {
   const [authenticated, setAuthenticated] = useState(hasToken)
   const view = useFleetStore((s) => s.view)
   const setView = useFleetStore((s) => s.setView)
-  const connected = useFleetStore((s) => s.connected)
+  const connectionState = useFleetStore((s) => s.connectionState)
+  const lastUpdatedTs = useFleetStore((s) => s.lastUpdatedTs)
   const loading = useFleetStore((s) => s.loading)
   const fetchAll = useFleetStore((s) => s.fetchAll)
+  const reset = useFleetStore((s) => s.reset)
 
   // Initial data fetch when authenticated
   useEffect(() => {
     if (authenticated) fetchAll()
   }, [authenticated, fetchAll])
 
-  // SSE connection (only when authenticated)
-  useSSE(authenticated)
-
-  const reset = useFleetStore((s) => s.reset)
+  // SSE connection
+  useConnection(authenticated)
 
   const handleSignOut = useCallback(() => {
     clearToken()
@@ -37,20 +36,26 @@ export function App() {
     return <LoginScreen onLogin={() => setAuthenticated(true)} />
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-sm text-gray-500 dark:text-gray-400">Loading fleet data...</div>
-      </div>
-    )
-  }
-
   return (
-    <Shell view={view} onViewChange={setView} connected={connected} onSignOut={handleSignOut}>
-      {view === "operations" && <OperationsView />}
+    <Shell
+      view={view}
+      onViewChange={setView}
+      connectionState={connectionState}
+      lastUpdatedTs={lastUpdatedTs}
+      onSignOut={handleSignOut}
+    >
+      {view === "health" && <HealthView />}
+      {view === "progress" && <ProgressView />}
       {view === "board" && <BoardView />}
-      {view === "timeline" && <TimelineView />}
-      {view === "sprint" && <SprintView />}
+      {view === "timeline" && <Placeholder label="Timeline" />}
     </Shell>
+  )
+}
+
+function Placeholder({ label }: { label: string }) {
+  return (
+    <div className="flex items-center justify-center h-64 text-caption text-muted">
+      {label} — Phase 2
+    </div>
   )
 }

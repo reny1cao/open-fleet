@@ -95,4 +95,4 @@ export interface ClassifiedError {
   rawError: string
 }
 
-export type View = "operations" | "board" | "timeline" | "sprint"
+export type View = "health" | "progress" | "board" | "timeline"
