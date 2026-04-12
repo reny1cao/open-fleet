@@ -91,12 +91,19 @@ export const useFleetStore = create<FleetStore>((set, get) => ({
     set({ loading: true })
     try {
       const [agents, tasks, activity, sprints] = await Promise.all([
-        api.fetchAgents(),
-        api.fetchTasks(),
-        api.fetchActivity(),
+        api.fetchAgents().catch(() => [] as Agent[]),
+        api.fetchTasks().catch(() => [] as Task[]),
+        api.fetchActivity().catch(() => [] as ActivityEvent[]),
         api.fetchSprints().catch(() => [] as Sprint[]),
       ])
-      set({ agents, tasks, activity, sprints, loading: false, lastFetchTs: new Date().toISOString() })
+      set({
+        agents: agents ?? [],
+        tasks: tasks ?? [],
+        activity: activity ?? [],
+        sprints: sprints ?? [],
+        loading: false,
+        lastFetchTs: new Date().toISOString(),
+      })
     } catch {
       set({ loading: false })
     }

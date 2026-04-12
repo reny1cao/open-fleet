@@ -72,7 +72,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 export const api = {
   fetchAgents: async () => {
     const res = await get<{ agents: Agent[]; stale: boolean }>("/agents/summary")
-    return res.agents
+    return Array.isArray(res.agents) ? res.agents : Array.isArray(res) ? res as Agent[] : []
   },
   fetchAgentsLive: () => get<Agent[]>("/agents"),
   fetchTasks: () => get<Task[]>("/tasks"),
