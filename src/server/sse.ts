@@ -159,6 +159,24 @@ export function handleSSE(req: Request): Response {
 }
 
 // --- Keepalive ---
+// SSE comment keepalive every 15s — prevents Caddy/proxy/browser from
+// closing idle connections. Uses bare comment (`: keepalive\n\n`), not
+// a data event, so it doesn't trigger client-side event handlers.
+const KEEPALIVE_INTERVAL = 15_000
+const keepalivePayload = encoder.encode(`: keepalive\n\n`)
+
+setInterval(() => {
+  if (clients.size === 0) return
+  for (const client of clients) {
+    try {
+      client.controller.enqueue(keepalivePayload)
+    } catch {
+      clients.delete(client)
+    }
+  }
+}, KEEPALIVE_INTERVAL)
+
+// system:ping event every 30s — visible to client event handlers
 setInterval(() => {
   if (clients.size === 0) return
   broadcast("system:ping", { ts: new Date().toISOString(), clients: clients.size })
