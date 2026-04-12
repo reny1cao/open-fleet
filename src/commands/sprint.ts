@@ -1,6 +1,6 @@
 import { loadTaskStore, saveTaskStore, createSprint, closeSprint, getActiveSprint, listSprints, listTasks, sortByPriority } from "../tasks/store"
-import type { Sprint } from "../tasks/types"
-import { useHttpApi, httpCreateSprint, httpCloseSprint, httpListSprints } from "../tasks/client"
+import type { Sprint, Task } from "../tasks/types"
+import { useHttpApi, httpCreateSprint, httpCloseSprint, httpListSprints, httpListTasks } from "../tasks/client"
 
 export async function sprint(args: string[], opts: { json?: boolean }): Promise<void> {
   const subcommand = args[0]
@@ -91,8 +91,12 @@ async function sprintClose(args: string[], opts: { json?: boolean }): Promise<vo
     console.log(JSON.stringify(closed))
   } else {
     // Count tasks in this sprint by status
-    const store = loadTaskStore()
-    const sprintTasks = listTasks(store, { sprintId: closed.id })
+    let sprintTasks: Task[]
+    if (useHttpApi()) {
+      sprintTasks = await httpListTasks({ sprintId: closed.id })
+    } else {
+      sprintTasks = listTasks(loadTaskStore(), { sprintId: closed.id })
+    }
     const done = sprintTasks.filter((t) => t.status === "done").length
     const total = sprintTasks.length
     console.log(`Closed ${closed.id}: "${closed.name}"`)
@@ -129,13 +133,12 @@ async function sprintList(_args: string[], opts: { json?: boolean }): Promise<vo
 
 async function sprintActive(opts: { json?: boolean }): Promise<void> {
   let activeSpr: Sprint | undefined
-  const store = loadTaskStore()
 
   if (useHttpApi()) {
     const sprints = await httpListSprints()
     activeSpr = sprints.find((s) => s.status === "active")
   } else {
-    activeSpr = getActiveSprint(store)
+    activeSpr = getActiveSprint(loadTaskStore())
   }
 
   if (!activeSpr) {
@@ -147,7 +150,12 @@ async function sprintActive(opts: { json?: boolean }): Promise<void> {
     return
   }
 
-  const sprintTasks = sortByPriority(listTasks(store, { sprintId: activeSpr.id }))
+  let sprintTasks: Task[]
+  if (useHttpApi()) {
+    sprintTasks = sortByPriority(await httpListTasks({ sprintId: activeSpr.id }))
+  } else {
+    sprintTasks = sortByPriority(listTasks(loadTaskStore(), { sprintId: activeSpr.id }))
+  }
 
   if (opts.json) {
     console.log(JSON.stringify({ sprint: activeSpr, tasks: sprintTasks }))
