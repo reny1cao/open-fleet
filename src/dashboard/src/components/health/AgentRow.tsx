@@ -20,6 +20,16 @@ const statusShape: Record<string, string> = {
   unknown: "\u25cb",
 }
 
+const statusTextColor: Record<string, string> = {
+  alive: "text-status-green",
+  stale: "text-status-amber",
+  dead: "text-status-red",
+  off: "text-status-gray",
+  unknown: "text-status-gray",
+}
+
+import { deriveAgentStatus } from "../../lib/agent-status"
+
 interface Props {
   agent: Agent
   alerts: ClassifiedError[]
@@ -33,6 +43,7 @@ export function AgentRow({ agent, alerts }: Props) {
   const currentTask = activeTasks[0]
   const agentAlerts = (alerts ?? []).filter((a) => a.affectedAgent === agent.name)
   const lastAction = recentActivity[0]
+  const status = deriveAgentStatus(agent)
 
   const handleRestart = async () => {
     setRestarting(true)
@@ -45,20 +56,15 @@ export function AgentRow({ agent, alerts }: Props) {
   }
 
   return (
-    <div className={`bg-surface rounded-card ${statusAccent[agent.status] ?? statusAccent.unknown}`}>
+    <div className={`bg-surface rounded-card ${statusAccent[status] ?? statusAccent.unknown}`}>
       {/* Collapsed row */}
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center gap-8px px-12px py-8px text-left"
       >
-        {/* Status shape */}
-        <span className={`text-caption flex-shrink-0 w-4 text-center ${
-          agent.status === "alive" ? "text-status-green" :
-          agent.status === "stale" ? "text-status-amber" :
-          agent.status === "dead" ? "text-status-red" :
-          "text-status-gray"
-        }`}>
-          {statusShape[agent.status] ?? statusShape.unknown}
+        {/* Status shape — driven by ageSec thresholds */}
+        <span className={`text-caption flex-shrink-0 w-4 text-center ${statusTextColor[status] ?? statusTextColor.unknown}`}>
+          {statusShape[status] ?? statusShape.unknown}
         </span>
 
         {/* Name */}
@@ -103,9 +109,9 @@ export function AgentRow({ agent, alerts }: Props) {
           {/* Meta */}
           <div className="flex flex-wrap gap-x-12px gap-y-2px pt-8px text-caption text-muted">
             <span>{agent.role}</span>
-            <span>
-              {agent.status}
-              {agent.heartbeat?.ageSec != null && agent.status === "alive" && ` ${agent.heartbeat.ageSec}s`}
+            <span className={statusTextColor[status] ?? ""}>
+              {status}
+              {agent.heartbeat?.ageSec != null && <span className="text-muted font-mono"> {agent.heartbeat.ageSec}s ago</span>}
             </span>
             <span>{agent.server}</span>
             {agent.watchdog?.consecutiveFailures > 0 && (
