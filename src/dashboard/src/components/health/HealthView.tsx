@@ -3,6 +3,7 @@ import { KpiStrip } from "./KpiStrip"
 import { AlertBanner } from "./AlertBanner"
 import { AgentRow } from "./AgentRow"
 import { SkeletonHealthPanel } from "../shared/Skeleton"
+import { deriveAgentStatus } from "../../lib/agent-status"
 
 const STATUS_SORT: Record<string, number> = {
   dead: 0,
@@ -21,12 +22,12 @@ export function HealthView() {
 
   if (loading) return <SkeletonHealthPanel />
 
-  // Sort: dead/blocked first, alive last
+  // Sort: dead/blocked first, alive last — using derived status from ageSec
   const sorted = [...agents].sort((a, b) => {
     const aHasError = (alerts ?? []).some((e) => e.affectedAgent === a.name)
     const bHasError = (alerts ?? []).some((e) => e.affectedAgent === b.name)
     if (aHasError !== bHasError) return aHasError ? -1 : 1
-    return (STATUS_SORT[a.status] ?? 3) - (STATUS_SORT[b.status] ?? 3)
+    return (STATUS_SORT[deriveAgentStatus(a)] ?? 3) - (STATUS_SORT[deriveAgentStatus(b)] ?? 3)
   })
 
   return (

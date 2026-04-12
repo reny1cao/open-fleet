@@ -1,4 +1,5 @@
 import type { Agent, Task } from "../../lib/types"
+import { deriveAgentStatus } from "../../lib/agent-status"
 
 interface Props {
   agents: Agent[]
@@ -6,9 +7,9 @@ interface Props {
 }
 
 export function KpiStrip({ agents, tasks }: Props) {
-  const alive = agents.filter((a) => a.status === "alive").length
-  const stale = agents.filter((a) => a.status === "stale").length
-  const dead = agents.filter((a) => a.status === "dead").length
+  const alive = agents.filter((a) => deriveAgentStatus(a) === "alive").length
+  const stale = agents.filter((a) => deriveAgentStatus(a) === "stale").length
+  const dead = agents.filter((a) => deriveAgentStatus(a) === "dead").length
   const blocked = tasks.filter((t) => t.status === "blocked").length
 
   return (
