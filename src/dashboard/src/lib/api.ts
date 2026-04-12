@@ -70,7 +70,10 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 }
 
 export const api = {
-  fetchAgents: () => get<Agent[]>("/agents/summary"),
+  fetchAgents: async () => {
+    const res = await get<{ agents: Agent[]; stale: boolean }>("/agents/summary")
+    return res.agents
+  },
   fetchAgentsLive: () => get<Agent[]>("/agents"),
   fetchTasks: () => get<Task[]>("/tasks"),
   fetchActivity: (since = "4h", limit = 50) =>

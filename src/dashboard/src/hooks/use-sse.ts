@@ -2,7 +2,8 @@ import { useEffect, useRef } from "react"
 import { useFleetStore } from "./use-fleet-store"
 import { api } from "../lib/api"
 
-const RECONNECT_DELAY = 3000
+const INITIAL_RECONNECT_DELAY = 3000
+const MAX_RECONNECT_DELAY = 30000
 
 export function useSSE(enabled = true) {
   const store = useFleetStore()
@@ -12,12 +13,14 @@ export function useSSE(enabled = true) {
     if (!enabled) return
 
     let reconnectTimer: ReturnType<typeof setTimeout>
+    let reconnectDelay = INITIAL_RECONNECT_DELAY
 
     function connect() {
       const es = new EventSource(api.eventsUrl())
       esRef.current = es
 
       es.onopen = () => {
+        reconnectDelay = INITIAL_RECONNECT_DELAY // Reset backoff on success
         store.setConnected(true)
         // Re-fetch full state on reconnect to catch missed events
         store.fetchAll()
@@ -76,7 +79,8 @@ export function useSSE(enabled = true) {
         store.setConnected(false)
         es.close()
         esRef.current = null
-        reconnectTimer = setTimeout(connect, RECONNECT_DELAY)
+        reconnectTimer = setTimeout(connect, reconnectDelay)
+        reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY)
       }
     }
 
