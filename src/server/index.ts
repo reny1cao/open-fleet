@@ -27,20 +27,22 @@ const MAX_NOTE = 2000
 const MAX_PROJECT = 200
 const MAX_BLOCKED_REASON = 2000
 
+const CORS_HEADERS = { "Access-Control-Allow-Origin": "*" }
+
 function unauthorized(): Response {
-  return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } })
+  return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json", ...CORS_HEADERS } })
 }
 
 function badRequest(msg: string): Response {
-  return new Response(JSON.stringify({ error: msg }), { status: 400, headers: { "Content-Type": "application/json" } })
+  return new Response(JSON.stringify({ error: msg }), { status: 400, headers: { "Content-Type": "application/json", ...CORS_HEADERS } })
 }
 
 function notFound(msg: string): Response {
-  return new Response(JSON.stringify({ error: msg }), { status: 404, headers: { "Content-Type": "application/json" } })
+  return new Response(JSON.stringify({ error: msg }), { status: 404, headers: { "Content-Type": "application/json", ...CORS_HEADERS } })
 }
 
 function json(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } })
+  return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } })
 }
 
 function checkAuth(req: Request): boolean {
@@ -149,6 +151,19 @@ const server = Bun.serve({
   async fetch(req) {
     const url = new URL(req.url)
     const path = url.pathname
+
+    // CORS preflight — allow cross-origin requests from dashboard
+    if (req.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          "Access-Control-Max-Age": "86400",
+        },
+      })
+    }
 
     // GET /dashboard — serve the web UI (no auth required)
     if (path === "/dashboard" || path === "/dashboard/") {

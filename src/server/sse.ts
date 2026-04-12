@@ -75,6 +75,7 @@ export function handleSSE(_req: Request): Response {
       "Cache-Control": "no-cache",
       "Connection": "keep-alive",
       "Access-Control-Allow-Origin": "*",
+      "X-Accel-Buffering": "no",  // Prevent Nginx/Caddy from buffering SSE
     },
   })
 }
