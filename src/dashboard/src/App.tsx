@@ -5,6 +5,7 @@ import { hasToken, clearToken } from "./lib/api"
 import { Shell } from "./components/layout/Shell"
 import { LoginScreen } from "./components/LoginScreen"
 import { HealthView } from "./components/health/HealthView"
+import { ProgressView } from "./components/progress/ProgressView"
 
 export function App() {
   const [authenticated, setAuthenticated] = useState(hasToken)
@@ -43,7 +44,7 @@ export function App() {
       onSignOut={handleSignOut}
     >
       {view === "health" && <HealthView />}
-      {view === "progress" && <Placeholder label="Progress" />}
+      {view === "progress" && <ProgressView />}
       {view === "board" && <Placeholder label="Board" />}
       {view === "timeline" && <Placeholder label="Timeline" />}
     </Shell>
