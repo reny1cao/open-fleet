@@ -1,29 +1,58 @@
 /**
- * Heartbeat tick — polls agent heartbeat files and broadcasts SSE events.
- * Runs every 15s when there are SSE clients connected.
+ * Heartbeat tick — polls agent heartbeat files every 15s, caches full agent
+ * state for GET /agents/summary, and broadcasts SSE events for live updates.
+ *
+ * Always runs (not gated on SSE client count) since the summary endpoint
+ * needs the cache regardless of whether anyone is streaming events.
  */
 
-import { findConfigDir, loadConfig, resolveStateDir, sessionName } from "../core/config"
+import { findConfigDir, loadConfig, resolveStateDir } from "../core/config"
 import { readHeartbeat, readRemoteHeartbeat } from "../core/heartbeat"
 import { loadState, getAgentState } from "../watchdog/state"
+import { loadTaskStore } from "../tasks/store"
 import { broadcast, clientCount } from "./sse"
 
-interface AgentHeartbeatState {
+export interface CachedAgent {
   name: string
+  role: string
+  server: string
+  workspace: string
+  channels?: unknown
   status: string
   heartbeat: { state: string; lastSeen: string | null; ageSec: number }
+  watchdog: {
+    lastHealthy: string | null
+    consecutiveFailures: number
+    lastRestart: string | null
+    outputStaleCount: number
+  }
+  activeTasks: { id: string; title: string; status: string; priority: string; startedAt?: string }[]
+  recentActivity: { timestamp: string; taskId: string; type: string; text: string }[]
+  dailyStats: { completed: number; events: number }
 }
 
+interface AgentSummaryCache {
+  agents: CachedAgent[]
+  updatedAt: string
+}
+
+let cache: AgentSummaryCache | null = null
 let lastStates = new Map<string, string>()
 
-async function tick(): Promise<void> {
-  // Skip if no clients are listening
-  if (clientCount() === 0) return
+/** Get the cached agent summary. Returns null if no tick has run yet. */
+export function getAgentSummaryCache(): AgentSummaryCache | null {
+  return cache
+}
 
+async function tick(): Promise<void> {
   try {
     const configDir = findConfigDir()
     const config = loadConfig(configDir)
     const watchdogState = loadState()
+    const taskStore = loadTaskStore()
+    const todayStart = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).toISOString()
+
+    const agents: CachedAgent[] = []
 
     for (const [name, def] of Object.entries(config.agents)) {
       let heartbeat
@@ -43,28 +72,73 @@ async function tick(): Promise<void> {
         status = "off"
       }
 
-      // Always broadcast heartbeat so dashboard stays fresh
-      broadcast("agent:heartbeat", {
-        agent: name,
-        state: heartbeat.state,
+      // Active tasks
+      const active = taskStore.tasks
+        .filter(t => t.assignee === name && (t.status === "in_progress" || t.status === "review"))
+        .map(t => ({ id: t.id, title: t.title, status: t.status, priority: t.priority, startedAt: t.startedAt }))
+
+      // Recent activity: last 5 events from this agent
+      const recentEvents: { timestamp: string; taskId: string; type: string; text: string }[] = []
+      for (const task of taskStore.tasks) {
+        for (const note of task.notes) {
+          if (note.author === name) {
+            recentEvents.push({ timestamp: note.timestamp, taskId: task.id, type: note.type, text: note.text })
+          }
+        }
+      }
+      recentEvents.sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+
+      // Daily stats
+      const todayCompleted = taskStore.tasks.filter(t => t.assignee === name && t.completedAt && t.completedAt >= todayStart).length
+      const todayEvents = recentEvents.filter(e => e.timestamp >= todayStart).length
+
+      agents.push({
+        name,
+        role: def.role,
+        server: def.server,
+        workspace: def.workspace ?? config.defaults.workspace,
+        channels: def.channels,
         status,
-        lastSeen: heartbeat.lastSeen,
-        ageSec: heartbeat.ageSec,
+        heartbeat: {
+          state: heartbeat.state,
+          lastSeen: heartbeat.lastSeen,
+          ageSec: heartbeat.ageSec,
+        },
+        watchdog: {
+          lastHealthy: agentWatch.lastHealthy,
+          consecutiveFailures: agentWatch.consecutiveFailures,
+          lastRestart: agentWatch.lastRestart,
+          outputStaleCount: agentWatch.outputStaleCount,
+        },
+        activeTasks: active,
+        recentActivity: recentEvents.slice(0, 5),
+        dailyStats: { completed: todayCompleted, events: todayEvents },
       })
 
-      // Broadcast status change event if status changed since last tick
-      const prevStatus = lastStates.get(name)
-      if (prevStatus && prevStatus !== status) {
-        broadcast("agent:status", {
+      // Broadcast SSE events if clients are listening
+      if (clientCount() > 0) {
+        broadcast("agent:heartbeat", {
           agent: name,
-          from: prevStatus,
-          to: status,
+          state: heartbeat.state,
+          status,
+          lastSeen: heartbeat.lastSeen,
+          ageSec: heartbeat.ageSec,
         })
+
+        const prevStatus = lastStates.get(name)
+        if (prevStatus && prevStatus !== status) {
+          broadcast("agent:status", {
+            agent: name,
+            from: prevStatus,
+            to: status,
+          })
+        }
       }
       lastStates.set(name, status)
     }
+
+    cache = { agents, updatedAt: new Date().toISOString() }
   } catch (err) {
-    // Don't crash the tick — log and continue
     console.error("[heartbeat-tick]", err instanceof Error ? err.message : err)
   }
 }
@@ -73,7 +147,6 @@ const HEARTBEAT_INTERVAL = 15_000
 
 /** Start the heartbeat polling loop */
 export function startHeartbeatTick(): void {
-  // Run first tick immediately
   tick()
   setInterval(tick, HEARTBEAT_INTERVAL)
 }

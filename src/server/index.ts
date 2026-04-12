@@ -9,7 +9,7 @@ import { existsSync, readdirSync, statSync, readFileSync } from "fs"
 import { join, resolve, extname, relative } from "path"
 import { homedir } from "os"
 import { handleSSE, broadcast } from "./sse"
-import { startHeartbeatTick } from "./heartbeat-tick"
+import { startHeartbeatTick, getAgentSummaryCache } from "./heartbeat-tick"
 
 const PORT = parseInt(process.env.FLEET_API_PORT ?? "4680")
 const HOST = process.env.FLEET_API_HOST ?? "127.0.0.1" // localhost only by default — set to Tailscale IP for remote access
@@ -214,6 +214,16 @@ const server = Bun.serve({
       }
 
       return json({ total: tasks.length, byStatus, byAssignee, byProject, completedToday })
+    }
+
+    // GET /agents/summary — cached agent state, max 15s stale, no SSH in request path
+    if (req.method === "GET" && path === "/agents/summary") {
+      const cached = getAgentSummaryCache()
+      if (!cached) {
+        // No tick has run yet — fall through to /agents for live data
+        return json({ agents: [], updatedAt: null, stale: true })
+      }
+      return json(cached)
     }
 
     // GET /agents — no auth required (dashboard fetches this directly)
