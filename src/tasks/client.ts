@@ -92,6 +92,8 @@ export async function httpCreateTask(opts: {
 export async function httpUpdateTask(taskId: string, opts: {
   status?: TaskStatus
   assignee?: string
+  priority?: TaskPriority
+  sprintId?: string
   note?: string
   result?: TaskResult
   blockedReason?: string
