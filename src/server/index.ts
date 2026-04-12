@@ -114,7 +114,17 @@ function parseSince(since: string): Date {
 // Priority: Vite build (src/dashboard/dist/) → fallback to legacy dashboard.html
 const DASHBOARD_DIST = resolve(join(new URL(".", import.meta.url).pathname, "..", "dashboard", "dist"))
 const LEGACY_DASHBOARD_HTML = await Bun.file(new URL("dashboard.html", import.meta.url).pathname).text()
-const HAS_VITE_BUILD = existsSync(join(DASHBOARD_DIST, "index.html"))
+
+// Check for Vite build per-request with a short TTL cache (5s) to avoid hitting
+// the filesystem on every request while still picking up new builds without restart.
+let _viteBuildCache: { value: boolean; expires: number } = { value: false, expires: 0 }
+function hasViteBuild(): boolean {
+  const now = Date.now()
+  if (now < _viteBuildCache.expires) return _viteBuildCache.value
+  const result = existsSync(join(DASHBOARD_DIST, "index.html"))
+  _viteBuildCache = { value: result, expires: now + 5000 }
+  return result
+}
 
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -167,7 +177,7 @@ const server = Bun.serve({
 
     // GET /dashboard — serve the web UI (no auth required)
     if (path === "/dashboard" || path === "/dashboard/") {
-      if (HAS_VITE_BUILD) {
+      if (hasViteBuild()) {
         const indexHtml = readFileSync(join(DASHBOARD_DIST, "index.html"), "utf8")
         return new Response(indexHtml, { headers: { "Content-Type": "text/html; charset=utf-8" } })
       }
@@ -177,7 +187,7 @@ const server = Bun.serve({
     }
 
     // GET /dashboard/* — serve Vite build static assets (JS, CSS, images)
-    if (HAS_VITE_BUILD && path.startsWith("/dashboard/")) {
+    if (hasViteBuild() && path.startsWith("/dashboard/")) {
       const assetPath = path.slice("/dashboard/".length)
       const filePath = join(DASHBOARD_DIST, assetPath)
       const response = serveDashboardFile(filePath)
@@ -188,7 +198,7 @@ const server = Bun.serve({
     }
 
     // GET /assets/* — Vite build assets (JS, CSS bundles) served at root /assets/ path
-    if (HAS_VITE_BUILD && path.startsWith("/assets/")) {
+    if (hasViteBuild() && path.startsWith("/assets/")) {
       const filePath = join(DASHBOARD_DIST, path.slice(1))
       const response = serveDashboardFile(filePath)
       if (response) return response
@@ -196,7 +206,7 @@ const server = Bun.serve({
 
     // GET /favicon.ico — serve from Vite build if available
     if (path === "/favicon.ico") {
-      if (HAS_VITE_BUILD) {
+      if (hasViteBuild()) {
         const filePath = join(DASHBOARD_DIST, "favicon.ico")
         const response = serveDashboardFile(filePath)
         if (response) return response
