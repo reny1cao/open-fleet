@@ -53,9 +53,9 @@ export function handleSSE(_req: Request): Response {
       const client: SSEClient = { controller, id: clientId }
       clients.add(client)
 
-      // Send initial connection event
+      // Send initial connection event (with id for consistency)
       controller.enqueue(
-        encoder.encode(`event: system:connected\ndata: ${JSON.stringify({ clientId, ts: new Date().toISOString() })}\n\n`)
+        formatSSE("system:connected", { clientId, ts: new Date().toISOString() })
       )
     },
     cancel() {
