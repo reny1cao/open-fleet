@@ -728,7 +728,10 @@ const server = Bun.serve({
       const newSprintId = body.sprintId as string | undefined
 
       const store = loadTaskStore()
-      const oldAssignee = getTask(store, taskUpdateMatch[1])?.assignee
+      const existingTask = getTask(store, taskUpdateMatch[1])
+      const oldAssignee = existingTask?.assignee
+      const oldPriority = existingTask?.priority
+      const oldSprintId = existingTask?.sprintId
       const newAssignee = body.assignee as string | undefined
 
       if (newSprintId) {
@@ -754,6 +757,8 @@ const server = Bun.serve({
         const changes: string[] = []
         if (newStatus && newStatus !== oldStatus) changes.push("status")
         if (newAssignee !== undefined && newAssignee !== oldAssignee) changes.push("assignee")
+        if (newPriority && newPriority !== oldPriority) changes.push("priority")
+        if (newSprintId !== undefined && newSprintId !== oldSprintId) changes.push("sprintId")
         if (note) changes.push("note")
         if (body.result) changes.push("result")
         broadcast("task:updated", { task, changes })
