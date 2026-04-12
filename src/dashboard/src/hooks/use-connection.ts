@@ -5,9 +5,8 @@ import { getToken } from "../lib/api"
 
 type ConnectionState = "connected" | "silent" | "degraded" | "offline"
 
-const SILENT_THRESHOLD = 2_000
+const SILENT_THRESHOLD = 40_000   // 30s ping + 10s grace
 const DEGRADED_THRESHOLD = 120_000
-const VISIBILITY_POLL_INTERVAL = 30_000
 
 export function useConnection(enabled: boolean) {
   const store = useFleetStore()
@@ -118,30 +117,16 @@ export function useConnection(enabled: boolean) {
           // fetch-event-source handles reconnect with backoff automatically
         },
 
-        openWhenHidden: false,
+        openWhenHidden: true,
       })
     }
 
     connect()
 
-    // Tab visibility: poll when hidden, SSE when visible
-    const handleVisibility = () => {
-      if (document.hidden) {
-        // Tab hidden — abort SSE, rely on periodic refetch
-        // fetch-event-source handles this via openWhenHidden: false
-      } else {
-        // Tab visible — refetch to catch up
-        store.fetchAll()
-        lastEventRef.current = Date.now()
-      }
-    }
-    document.addEventListener("visibilitychange", handleVisibility)
-
     return () => {
       ctrl.abort()
       abortRef.current = null
       if (timerRef.current) clearInterval(timerRef.current)
-      document.removeEventListener("visibilitychange", handleVisibility)
     }
   }, [enabled]) // eslint-disable-line react-hooks/exhaustive-deps
 }
