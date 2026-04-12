@@ -263,7 +263,7 @@ Task[]   // Raw array, sorted by updatedAt desc
 ```typescript
 {
   sprint: Sprint,
-  stats: { done: number, total: number, blocked: number },
+  stats: { total: number, done: number, blocked: number, inProgress: number, open: number },
   tasks: Task[]
 } | null                     // null when no active sprint
 ```
@@ -282,7 +282,7 @@ Task[]   // Raw array, sorted by updatedAt desc
 **`PATCH /tasks/:id`** (auth required)
 ```typescript
 // Request body:
-{ status?: TaskStatus, assignee?: string, note?: string, blockedReason?: string }
+{ status?: TaskStatus, assignee?: string, priority?: TaskPriority, note?: string, blockedReason?: string, sprintId?: string, result?: TaskResult }
 
 // Response:
 Task                         // Updated task object
@@ -337,7 +337,7 @@ event: sprint:closed      data: { sprint }
 event: system:ping        data: { ts }
 ```
 
-**Event IDs:** Every event includes a monotonic `id:` field. On reconnect, the client sends `Last-Event-ID` — the server replays missed events from that point.
+**Event IDs (Phase 2):** Events will include a monotonic `id:` field, and the client will send `Last-Event-ID` on reconnect for server-side replay. This requires a server-side replay buffer that doesn't exist yet. **Phase 1:** On reconnect, the client does a full REST refetch before resuming SSE deltas (current working pattern).
 
 ### Connection State Machine
 
