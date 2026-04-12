@@ -172,6 +172,23 @@ const server = Bun.serve({
       return new Response(indexHtml, { headers: { "Content-Type": "text/html; charset=utf-8" } })
     }
 
+    // GET /assets/* — Vite build assets (JS, CSS bundles) served at root /assets/ path
+    if (HAS_VITE_BUILD && path.startsWith("/assets/")) {
+      const filePath = join(DASHBOARD_DIST, path.slice(1))
+      const response = serveDashboardFile(filePath)
+      if (response) return response
+    }
+
+    // GET /favicon.ico — serve from Vite build if available
+    if (path === "/favicon.ico") {
+      if (HAS_VITE_BUILD) {
+        const filePath = join(DASHBOARD_DIST, "favicon.ico")
+        const response = serveDashboardFile(filePath)
+        if (response) return response
+      }
+      return new Response(null, { status: 204 })
+    }
+
     // GET /events — SSE event stream (auth via query param since EventSource can't set headers)
     if (req.method === "GET" && path === "/events") {
       const token = url.searchParams.get("token")
